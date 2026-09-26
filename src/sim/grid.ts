@@ -30,6 +30,8 @@ export class Grid {
   readonly heights = new Float32Array(SIZE * SIZE);
   private readonly classes: CellClass[] = new Array(SIZE * SIZE);
   private readonly occupancy: (Building | null)[] = new Array(SIZE * SIZE).fill(null);
+  /** Cell index → deep? for the field code's hot loops. */
+  readonly deep = new Uint8Array(SIZE * SIZE);
 
   constructor(public state: SimState) {
     for (let i = -HALF; i < HALF; i++) for (let j = -HALF; j < HALF; j++) {
@@ -37,6 +39,7 @@ export class Grid {
       const k = cellIndex(i, j);
       this.heights[k] = h;
       this.classes[k] = h < TIDE_LO ? "deep" : h <= TIDE_HI ? "flat" : "high";
+      this.deep[k] = h < TIDE_LO ? 1 : 0;
     }
     this.rebuild();
   }
@@ -145,7 +148,7 @@ export class Grid {
     const s = this.state;
     const b: Building = {
       id: s.nextId++, kind, cells, floorY: this.floorFor(kind, cells), cut: false, reached: false,
-      workers: 0, residents: 0, boats: 0, atSea: false, ground: null, output: 0, happiness: 1, progress: 0,
+      workers: 0, residents: 0, boats: 0, atSea: false, ground: null, output: 0, happiness: 1, progress: 0, stress: 0,
     };
     for (const c of cells) this.occupancy[cellIndex(c.i, c.j)] = b;
     s.buildings[b.id] = b;

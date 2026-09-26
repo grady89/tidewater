@@ -84,6 +84,13 @@
       .palette button.unaffordable { opacity: 0.45; }
       .palette button.unaffordable .cost { color: var(--bad); }
 
+      .overlays { display: flex; gap: 4px; align-items: center; }
+      .overlays label { margin-right: 4px; }
+      .overlays button {
+        font: inherit; font-size: 11px; color: var(--ink-dim); background: rgba(255, 255, 255, 0.05);
+        border: 1px solid var(--panel-line); border-radius: 6px; padding: 3px 8px; cursor: pointer;
+      }
+      .overlays button.active { color: var(--accent); border-color: rgba(255, 209, 138, 0.4); }
       .score { border-top: 1px solid var(--panel-line); padding-top: 10px; display: grid; gap: 4px; }
       .score-value { font-size: 13px; }
       .score-value.flash { animation: flash 1.2s ease-out; }

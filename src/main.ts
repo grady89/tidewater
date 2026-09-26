@@ -11,6 +11,7 @@ import { cycleFraction } from "./sim/tide";
 import { Hud } from "./ui/hud";
 import { Boats } from "./view/boats";
 import { BuildingViews } from "./view/buildingViews";
+import { OverlayKind, Overlays } from "./view/overlays";
 import { Trees } from "./view/trees";
 import { Walkers } from "./view/walkers";
 import { computeLighting, createLights, duskAt } from "./world/lighting";
@@ -65,8 +66,9 @@ const views = new BuildingViews(scene);
 const boats = new Boats(scene, grid);
 const walkers = new Walkers(scene, grid);
 const trees = new Trees(scene);
+const overlays = new Overlays(scene, grid);
 const placement = new Placement(scene, camera, grid, canvas);
-const hud = new Hud(document.getElementById("hud")!, document.getElementById("resources")!, document.getElementById("notes")!, grid, tool => placement.setTool(tool));
+const hud = new Hud(document.getElementById("hud")!, document.getElementById("resources")!, document.getElementById("notes")!, grid, tool => placement.setTool(tool), kind => overlays.show(kind));
 
 function newTown(): void {
   try { localStorage.removeItem(AUTOSAVE_KEY); } catch { /* ignore */ }
@@ -93,6 +95,7 @@ function syncView(): void {
   sky.setLighting(light);
   views.sync(state, light.lamp);
   trees.sync(state);
+  overlays.sync(state);
   boats.sync(state, viewTime);
   walkers.sync(state, viewTime);
   terrain.update(camera.position, state.tide.level, state.tide.wetLevel);
@@ -118,8 +121,11 @@ window.addEventListener("resize", () => engine.resize());
 const api = {
   get sim() { return state; },
   grid,
-  fields: {} as Record<string, Float32Array>,
+  get fields() { return state.fields; },
   ready: false,
+  setOverlay(kind: OverlayKind | null) {
+    overlays.show(kind);
+  },
   /** Place (and pay for) a building; "boat" buys a boat at the pier under (i, j). Null when blocked. */
   place(type: Tool, i: number, j: number) {
     placement.setTool(type);
@@ -167,6 +173,11 @@ const api = {
     let x = 0, z = 0, n = 0;
     for (const b of bs) for (const c of b.cells) { x += c.i + 0.5; z += c.j + 0.5; n++; }
     camera.target.set(x / n, 0.8, z / n);
+    camera.radius = radius; camera.alpha = -0.8; camera.beta = 0.95;
+  },
+  /** View only: aim the camera at a world point. */
+  frameAt(x: number, z: number, radius = 16) {
+    camera.target.set(x, 0.8, z);
     camera.radius = radius; camera.alpha = -0.8; camera.beta = 0.95;
   },
   /** Read-only view probes for the smoke scenario. */

@@ -5,11 +5,12 @@ import { SPRING_LO } from "../config";
 import {
   BOAT_BASE_FISH, BOAT_COST, BUILDINGS, BuildingKind, CAP_BASE, CLAM_PER_CELL, CLAM_RADIUS, Cost, FOOD_PER_CYCLE,
   FOOD_RESERVE_CYCLES, GoodKind, IMMIGRANTS_PER_CYCLE, IMMIGRATION_HAPPINESS, LUMBER_TREES_PER_CYCLE, MARKET_SELL_PER_CYCLE,
-  NET_LOFT_BONUS, NET_LOFT_RADIUS, OYSTER_YIELD, PRICE_FISH, PRICE_SHELLFISH, PURCHASABLE_BOATS, SAWMILL_RATE,
-  SHIPYARD_BOAT_COST, SHIPYARD_CYCLES, SMOKEHOUSE_RATE, SPRING_LOW_BONUS, TAX_PER_RESIDENT, TIMBER_PER_TREE,
-  WAREHOUSE_CAP,
+  NET_LOFT_BONUS, NET_LOFT_RADIUS, OYSTER_YIELD, POLLUTION_HAPPY_SCALE, PRICE_FISH, PRICE_SHELLFISH, PURCHASABLE_BOATS,
+  SAWMILL_RATE, SHIPYARD_BOAT_COST, SHIPYARD_CYCLES, SMOKEHOUSE_RATE, SPRING_LOW_BONUS, TAX_PER_RESIDENT,
+  TIMBER_PER_TREE, WAREHOUSE_CAP, WASTE_BACKLOG_PENALTY,
 } from "./balance";
 import { Grid } from "./grid";
+import { depleteGround, fishAt, pollutionAt, routeWaste, settleFields } from "./pollution";
 import { chooseGround } from "./sea";
 import { Building, buildingList, Cell, notify, Phase, SimState } from "./state";
 import { fellTrees, regrowTrees } from "./trees";
@@ -100,24 +101,26 @@ export function netLoftBonus(state: SimState, harbour: Building): number {
   return 1;
 }
 
-/** Shift start: boats leave for their ground, low-water crews walk out. */
+/** Shift start: boats leave for the richest ground in range, low-water crews walk out. */
 export function shiftStart(state: SimState, grid: Grid, phase: Phase): void {
   for (const b of buildingList(state)) {
     if (!b.reached || b.cut) continue;
     if (isHarbour(b) && b.boats > 0 && sailsIn(b, phase) && staffing(b) > 0) {
-      b.ground = chooseGround(grid, b);
+      b.ground = chooseGround(grid, b, state.fields.fish);
       b.atSea = b.ground !== null;
     }
   }
 }
 
-/** Shift end: boats land their catch; shellfish comes in from the flats. */
+/** Shift end: boats land a catch scaled by the ground's fish density and thin it; shellfish comes in from the flats. */
 export function shiftEnd(state: SimState, grid: Grid, phase: Phase): void {
   const springLow = phase === "low" && state.tide.level <= SPRING_LO + 0.05;
   for (const b of buildingList(state)) {
     if (isHarbour(b) && b.atSea) {
       b.atSea = false;
-      const fish = b.boats * BOAT_BASE_FISH * staffing(b) * netLoftBonus(state, b);
+      const density = b.ground ? fishAt(state, b.ground) : 0;
+      const fish = b.boats * BOAT_BASE_FISH * staffing(b) * netLoftBonus(state, b) * density;
+      depleteGround(state, b);
       b.output += addCapped(state, "fish", fish);
       state.last.fishCaught += fish;
       continue;
@@ -198,7 +201,9 @@ export function settleCycle(state: SimState, grid: Grid): void {
     const more = Math.min(r.shellfish, need - ate); r.shellfish -= more; ate += more;
     const fed = need > 0 ? ate / need : 1;
     const jobs = b.reached ? employed(state, b) / b.residents : 0;
-    b.happiness = 0.5 * fed + 0.5 * jobs;
+    const foul = Math.min(1, pollutionAt(state, b.cells[0]) / POLLUTION_HAPPY_SCALE);
+    const backlog = state.wasteBacklog > 0 ? WASTE_BACKLOG_PENALTY : 0;
+    b.happiness = Math.max(0, Math.min(1, 0.5 * fed + 0.5 * jobs - foul - backlog));
     happySum += b.happiness; houses++;
   }
   state.happiness = houses ? happySum / houses : 1;
@@ -221,6 +226,8 @@ export function settleCycle(state: SimState, grid: Grid): void {
 
   produce(state, grid, buildings);
   regrowTrees(state);
+  settleFields(state, grid);
+  routeWaste(state);
 
   // Upkeep.
   for (const b of buildings) stats.expenses += BUILDINGS[b.kind].upkeep;

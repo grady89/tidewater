@@ -26,16 +26,17 @@ export function seaDistanceField(grid: Grid, from: Building, out: Int32Array = n
 }
 
 /**
- * The ground boats from `harbour` fish: the deepest reachable cell between BOAT_MIN_RANGE and BOAT_RANGE by
- * water (ties: nearest, then lowest index). M6 replaces "deepest" with "richest".
+ * The ground boats from `harbour` fish: the richest reachable cell between BOAT_MIN_RANGE and BOAT_RANGE by
+ * water (ties: nearest, then lowest index).
  */
-export function chooseGround(grid: Grid, harbour: Building, field?: Int32Array): Cell | null {
+export function chooseGround(grid: Grid, harbour: Building, fish: number[], field?: Int32Array): Cell | null {
   const f = seaDistanceField(grid, harbour, field);
   let best: Cell | null = null, bestScore = Infinity;
   for (let i = -HALF; i < HALF; i++) for (let j = -HALF; j < HALF; j++) {
-    const d = f[cellIndex(i, j)];
+    const k = cellIndex(i, j);
+    const d = f[k];
     if (d < BOAT_MIN_RANGE || d > BOAT_RANGE) continue;
-    const score = grid.heightAt({ i, j }) * 10 + d * 0.01;
+    const score = -fish[k] * 100 + d * 0.01;
     if (score < bestScore) { bestScore = score; best = { i, j }; }
   }
   if (best) return best;

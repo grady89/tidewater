@@ -307,8 +307,42 @@ function shipyard(scene: Scene, b: Building): BuildingMeshes {
   return { root: mergeFlat("shipyard", parts, scene) };
 }
 
+function outfall(scene: Scene, b: Building): BuildingMeshes {
+  const { x, z } = cellCenter(b.cells[0]);
+  const F = b.floorY;
+  const parts: Mesh[] = [];
+  // A pipe on two piles, open end to the sea, with a small valve house on the platform.
+  parts.push(box(scene, 0.8, 0.08, 0.5, x, F - 0.04, z, PALETTE.planks));
+  for (const sz of [-1, 1]) parts.push(stilt(scene, x, z + sz * 0.18, F - 0.08, 0.14, 6));
+  const pipe = MeshBuilder.CreateCylinder("pipe", { diameter: 0.26, height: 1.4, tessellation: 8 }, scene);
+  pipe.rotation.x = Math.PI / 2;
+  pipe.position.set(x, F - 0.35, z);
+  parts.push(tint(pipe, "#8d8a83"));
+  parts.push(box(scene, 0.3, 0.3, 0.3, x, F + 0.15, z, PALETTE.walls[2]));
+  return { root: mergeFlat("outfall", parts, scene) };
+}
+
+function treatmentPlant(scene: Scene, b: Building): BuildingMeshes {
+  const { cx, cz, w, d } = bounds(b.cells);
+  const F = b.floorY;
+  const parts: Mesh[] = [];
+  deck(scene, parts, cx, cz, w, d, F);
+  shed(scene, parts, cx - 0.5, cz - 0.45, 0.8, 0.7, 0.8, F, PALETTE.walls[2], PALETTE.roofs[3]);
+  for (const [dx, dz] of [[0.45, -0.45], [0.45, 0.45], [-0.45, 0.45]]) {
+    const tank = MeshBuilder.CreateCylinder("tank", { diameter: 0.7, height: 0.5, tessellation: 8 }, scene);
+    tank.position.set(cx + dx, F + 0.25, cz + dz);
+    parts.push(tint(tank, "#8d8a83"));
+    const water = MeshBuilder.CreateCylinder("tankWater", { diameter: 0.6, height: 0.04, tessellation: 8 }, scene);
+    water.position.set(cx + dx, F + 0.49, cz + dz);
+    parts.push(tint(water, "#2f6f8f"));
+  }
+  return { root: mergeFlat("treatmentPlant", parts, scene) };
+}
+
 export function createBuildingMeshes(scene: Scene, b: Building): BuildingMeshes {
   switch (b.kind) {
+    case "outfall": return outfall(scene, b);
+    case "treatmentPlant": return treatmentPlant(scene, b);
     case "hut": return home(scene, b, 0.66, 0.62);
     case "house": return home(scene, b, 0.8, 0.9);
     case "tallHouse": return home(scene, b, 0.8, 1.5);

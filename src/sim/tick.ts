@@ -3,6 +3,7 @@ import { HIGH_WATER_MARK, LOW_WATER_MARK, SIM_TICK, TIDE_PERIOD } from "../confi
 import { settleCycle, shiftEnd, shiftStart } from "./economy";
 import { Grid } from "./grid";
 import { updateNetwork } from "./network";
+import { tickPollution } from "./pollution";
 import { notify, Phase, SimState } from "./state";
 import { isSpringCycle, tickTide } from "./tide";
 
@@ -15,6 +16,7 @@ export function tick(state: SimState, grid: Grid, dt = SIM_TICK): void {
   state.tick++;
   tickTide(state.tide, dt);
   updateNetwork(state, grid, state.tide.level);
+  tickPollution(state, grid, dt);
 
   const phase = phaseFor(state.tide.level);
   if (phase !== state.phase) {

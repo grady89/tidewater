@@ -1,6 +1,7 @@
 // The ledger. Everything the game knows is in one plain JSON-serializable object; the view only reads it.
 import { TIDE_HI } from "../config";
-import { BuildingKind, ResourceKind, STARTING_FISH, STARTING_MONEY } from "./balance";
+import { BuildingKind, FISH_CAP, ResourceKind, STARTING_FISH, STARTING_MONEY } from "./balance";
+import { filled, zeros } from "./fields";
 import { initialTrees } from "./trees";
 
 export type { BuildingKind } from "./balance";
@@ -35,6 +36,17 @@ export interface Building {
   happiness: number;
   /** Work accumulated toward the next boat (shipyards), in staffed cycles. */
   progress: number;
+  /** Consecutive cycles in foul water (oyster beds). */
+  stress: number;
+}
+
+export interface Emitter { k: number; rate: number }
+
+export interface Fields {
+  /** Pollution per cell. */
+  pollution: number[];
+  /** Fish density per deep cell, 0..FISH_CAP. */
+  fish: number[];
 }
 
 export interface TideState {
@@ -80,6 +92,11 @@ export interface SimState {
   assignments: Assignment[];
   /** Age of every tree site, 0..1 (see trees.ts). */
   trees: number[];
+  fields: Fields;
+  /** Pollution sources for the current cycle: per-tick rates at cells (rebuilt at every settlement). */
+  emitters: Emitter[];
+  /** Waste with no outfall to go to, last cycle. */
+  wasteBacklog: number;
   /** Town happiness 0..1, averaged over occupied houses (1 when empty). */
   happiness: number;
   /** Last completed cycle's ledger, for the HUD. */
@@ -102,6 +119,9 @@ export function createState(seed = 1): SimState {
     nextId: 1,
     assignments: [],
     trees: initialTrees(),
+    fields: { pollution: zeros(), fish: filled(FISH_CAP) },
+    emitters: [],
+    wasteBacklog: 0,
     happiness: 1,
     last: { cycle: 0, fishCaught: 0, fishSold: 0, shellfishSold: 0, income: 0, expenses: 0, immigrants: 0 },
     log: [],

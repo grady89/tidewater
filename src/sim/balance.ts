@@ -5,7 +5,8 @@ export type BuildingKind =
   | "hut" | "house" | "tallHouse"
   | "walkway" | "raisedWalkway"
   | "pier" | "dock" | "shipyard"
-  | "market" | "oysterBed" | "clamCamp" | "lumberCamp" | "sawmill" | "smokehouse" | "netLoft" | "warehouse";
+  | "market" | "oysterBed" | "clamCamp" | "lumberCamp" | "sawmill" | "smokehouse" | "netLoft" | "warehouse"
+  | "outfall" | "treatmentPlant";
 export type Category = "Homes" | "Streets" | "Sea" | "Production" | "Services" | "Leisure";
 export const CATEGORIES: Category[] = ["Homes", "Streets", "Sea", "Production", "Services", "Leisure"];
 /**
@@ -63,6 +64,8 @@ export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
   smokehouse: { name: "Smokehouse", category: "Production", w: 2, d: 1, cls: "flat", cost: { money: 160 }, workers: 3, residents: 0, upkeep: 2, floor: 1.0, network: "leaf", desc: "Fish → smoked goods; fire risk" },
   netLoft: { name: "Net loft", category: "Production", w: 1, d: 1, cls: "flat", cost: { money: 90 }, workers: 0, residents: 0, upkeep: 0.5, floor: 1.0, network: "leaf", desc: "+15% catch for boats within 8" },
   warehouse: { name: "Warehouse", category: "Production", w: 2, d: 2, cls: "flat", cost: { money: 120 }, workers: 0, residents: 0, upkeep: 1, floor: 1.0, network: "leaf", desc: "+100 storage for every good" },
+  outfall: { name: "Sewage outfall", category: "Services", w: 1, d: 1, cls: "edge", cost: { money: 40 }, workers: 0, residents: 0, upkeep: 0.5, floor: 1.0, network: "leaf", desc: "Dumps the town's waste into the sea; the tide carries it" },
+  treatmentPlant: { name: "Treatment plant", category: "Services", w: 2, d: 2, cls: "flatOrHigh", cost: { money: 350 }, workers: 4, residents: 0, upkeep: 3, floor: "ground", network: "leaf", desc: "Neutralises waste from homes within 12" },
 };
 
 export const BUILDING_KINDS = Object.keys(BUILDINGS) as BuildingKind[];
@@ -111,6 +114,30 @@ export const FOOD_PER_CYCLE = 0.5;
 export const FOOD_RESERVE_CYCLES = 2;
 export const IMMIGRANTS_PER_CYCLE = 4;
 export const IMMIGRATION_HAPPINESS = 0.5;
+
+// Pollution (field units per cell; a small town's outfall cell settles around 1, its neighbours around 0.4)
+export const WASTE_PER_RESIDENT = 2;
+export const SMOKEHOUSE_POLLUTION = 4;
+export const DOCK_POLLUTION = 1.5;
+/** Per second. */
+export const POLLUTION_DECAY = 0.006;
+/** Fraction handed to each neighbour per second. */
+export const POLLUTION_DIFFUSE = 0.03;
+/** Fraction carried along the tide's flow per second. */
+export const POLLUTION_ADVECT = 0.05;
+export const OYSTER_POLLUTION_KILL = 0.25;
+export const OYSTER_KILL_CYCLES = 2;
+export const TREATMENT_RADIUS = 12;
+/** Pollution at home that costs a full happiness point. */
+export const POLLUTION_HAPPY_SCALE = 8;
+/** Happiness lost while waste has nowhere to go. */
+export const WASTE_BACKLOG_PENALTY = 0.25;
+
+// Fish density (deep cells, 0..FISH_CAP)
+export const FISH_CAP = 1;
+export const FISH_REGEN = 0.15;
+export const FISH_DEPLETE_PER_BOAT = 0.12;
+export const FISH_FLOOR = 0.05;
 
 // Stockpile caps before warehouses
 export const CAP_BASE: Record<GoodKind, number> = { fish: 100, shellfish: 100, smoked: 60, timber: 80, planks: 60 };

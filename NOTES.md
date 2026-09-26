@@ -176,6 +176,28 @@ Decisions and findings that CLAUDE.md does not cover. Newest at the bottom of ea
 - Scripted streets now raise any walkway that isn't safe at spring tide; otherwise the whole town idles every
   fourth cycle and no 12-cycle check can pass. That is the real design lesson: **the flats need raised walkways**.
 
+### M6 pollution and the outfall
+- **Fields** (`sim/fields.ts`) are plain `number[]` of 4096 so they save with the ledger. `stepDrift` does
+  decay (per second), four-neighbour diffusion, and advection along a precomputed flow: each cell's uphill
+  neighbour while the tide rises (shoreward), downhill while it falls (seaward). Pollution runs every tick;
+  fish density settles once a cycle. Reuse `stepDrift` for shark risk and fire risk.
+- Waste routing is a settlement step: untreated waste (residents × `WASTE_PER_RESIDENT`, minus the staffed
+  fraction of a treatment plant within radius 12) is split across every outfall as per-tick emitters; smokehouses
+  and busy piers/docks add their own. No outfall → `wasteBacklog` and a flat happiness penalty. Outfalls need no
+  walkway link (sewers are assumed); everything else still does.
+- Units: with waste 2/resident/cycle, diffusion 3 %/s per neighbour and decay 0.6 %/s, a 6-resident town's
+  outfall cell settles near 1 and its neighbours near 0.4; the oyster kill threshold is 0.25 for 2 cycles. The
+  first cut (0.5/resident, 12 %/s diffusion) spread the mass over dozens of cells in seconds and never fouled
+  anything — diffusion is the sensitive knob.
+- Fish density lives on deep cells (`FISH_CAP` 1). Boats now sail to the *richest* ground in range (ties:
+  nearest), catch scales with the density there, and each trip thins that cell by 0.12 per boat; grounds regrow
+  15 % of the gap per cycle toward `FISH_CAP × (1 − pollution)`. Boats hop between grounds as they thin, so
+  "the ground" in checks means the thinnest deep cell.
+- Happiness now subtracts pollution at home (÷ `POLLUTION_HAPPY_SCALE`) and the backlog penalty; the full
+  formula is M7.
+- Overlays are one 4096-quad mesh with per-vertex colour+alpha, refreshed every 6th frame while shown; quads
+  sit at max(terrain + 0.08, 0.95) so deep water shows the layer above the surface. `__tidewater.setOverlay`.
+
 ## Findings on the v1 questions
 
 (placement and connectivity exist now; play a few cycles and write answers here)

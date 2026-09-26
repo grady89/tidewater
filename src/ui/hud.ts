@@ -7,6 +7,7 @@ import { Grid } from "../sim/grid";
 import { population, SimState } from "../sim/state";
 import { cycleFraction, cyclesToSpring, isRising, secondsToHighTide, secondsToLowTide, tideNormalized } from "../sim/tide";
 import { jobsAt } from "../sim/workers";
+import { OverlayKind, OVERLAYS } from "../view/overlays";
 
 export interface HudState {
   tool: Tool;
@@ -59,7 +60,7 @@ export class Hud {
   private lastCycle = -1;
   private lastLogLen = -1;
 
-  constructor(root: HTMLElement, resources: HTMLElement, notes: HTMLElement, private readonly grid: Grid, private readonly onTool: (tool: Tool) => void) {
+  constructor(root: HTMLElement, resources: HTMLElement, notes: HTMLElement, private readonly grid: Grid, private readonly onTool: (tool: Tool) => void, onOverlay: (kind: OverlayKind | null) => void) {
     resources.innerHTML = RESOURCES.map(k => `<div class="res" data-res="${k}"><label>${k}</label><span>0</span></div>`).join("");
     for (const el of resources.querySelectorAll<HTMLElement>(".res")) this.res[el.dataset.res!] = el.querySelector("span")!;
     this.notes = notes;
@@ -85,6 +86,7 @@ export class Hud {
       <div class="tabs"></div>
       <div class="palette"></div>
       <p class="hint"></p>
+      <div class="overlays"><label>Overlay</label></div>
       <div class="score">
         <label></label>
         <div class="score-value">—</div>
@@ -110,6 +112,18 @@ export class Hud {
       palette.appendChild(b);
       this.buttons.set(t.tool, b);
       this.reasons.set(t.tool, b.querySelector<HTMLElement>(".reason")!);
+    }
+    const overlays = root.querySelector<HTMLElement>(".overlays")!;
+    for (const o of [{ kind: null, label: "None" }, ...OVERLAYS]) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = o.label;
+      b.classList.toggle("active", o.kind === null);
+      b.addEventListener("click", () => {
+        for (const x of overlays.querySelectorAll("button")) x.classList.toggle("active", x === b);
+        onOverlay(o.kind);
+      });
+      overlays.appendChild(b);
     }
     this.tideLevel = root.querySelector<SVGRectElement>(".tide-level")!;
     this.tideMarker = root.querySelector<SVGCircleElement>(".tide-marker")!;

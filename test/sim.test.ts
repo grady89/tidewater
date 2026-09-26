@@ -1,9 +1,10 @@
 // Sim-only unit checks. Nothing here may pull in Babylon; the hygiene test enforces that for src/sim/**.
 import { describe, expect, it } from "vitest";
 import { HIGH_WATER_MARK, LOW_WATER_MARK, SPRING_HI, SPRING_LO, STILT_LENGTH, TIDE_HI, TIDE_LO, TIDE_PERIOD } from "../src/config";
-import { BOAT_COST, BOAT_MIN_RANGE, BOAT_RANGE, BUILDINGS, CAP_BASE, STARTING_MONEY, TREE_REGROW_CYCLES, WAREHOUSE_CAP } from "../src/sim/balance";
+import { BOAT_COST, BOAT_MIN_RANGE, BOAT_RANGE, BUILDINGS, CAP_BASE, FISH_CAP, OYSTER_POLLUTION_KILL, STARTING_MONEY, TREATMENT_RADIUS, TREE_REGROW_CYCLES, WAREHOUSE_CAP } from "../src/sim/balance";
 import { addCapped, boatPurchaseBlocker, buyBoat, capFor, totalBoats, tryPlace } from "../src/sim/economy";
-import { Grid } from "../src/sim/grid";
+import { buildFlow, maxOf, meanHeight, stepDrift, zeros } from "../src/sim/fields";
+import { cellIndex, Grid } from "../src/sim/grid";
 import { updateNetwork } from "../src/sim/network";
 import { stateHash } from "../src/sim/save";
 import { chooseGround, seaPath } from "../src/sim/sea";
@@ -164,7 +165,7 @@ describe("money loop (M2)", () => {
 describe("the sea (M4 sim side)", () => {
   it("chooses a deep ground within boat range and finds a deep-water path to it", () => {
     const { state, grid, town: t } = town();
-    const ground = chooseGround(grid, t.pier)!;
+    const ground = chooseGround(grid, t.pier, state.fields.fish)!;
     expect(ground).not.toBeNull();
     expect(grid.classAt(ground)).toBe("deep");
     const path = seaPath(grid, t.pier, ground);
@@ -254,6 +255,79 @@ describe("production chain (M5)", () => {
     advanceCycles(state, grid, TREE_REGROW_CYCLES + 1);
     expect(grownTreesNear(state, camp!.cells)).toBeGreaterThan(felledCount);
     expect(grownTreesNear(state, camp!.cells)).toBe(treesBefore);
+  });
+});
+
+describe("pollution and fish (M6)", () => {
+  it("drifts shoreward on a rising tide and seaward on a falling one", () => {
+    const { state, grid } = town();
+    const flow = buildFlow(grid);
+    const start = { i: 0, j: 12 };
+    let c = start;
+    for (let k = 0; k < 40 && grid.classAt(c) !== "deep"; k++) c = { i: c.i, j: c.j + 1 };
+    expect(grid.classAt(c)).toBe("deep");
+    const field = zeros();
+    field[cellIndex(c.i, c.j)] = 10;
+    const h0 = meanHeight(field, grid);
+    for (let k = 0; k < 200; k++) stepDrift(field, flow, 1 / 20, true, 0, 0.05, 0.3);
+    const hRise = meanHeight(field, grid);
+    expect(hRise).toBeGreaterThan(h0);
+    for (let k = 0; k < 400; k++) stepDrift(field, flow, 1 / 20, false, 0, 0.05, 0.3);
+    expect(meanHeight(field, grid)).toBeLessThan(hRise);
+    void state;
+  });
+
+  it("an outfall beside an oyster bed kills it within 4 cycles; a treatment plant saves it", () => {
+    const run = (withPlant: boolean) => {
+      const { state, grid, town: t } = town();
+      state.resources.money += 3000;
+      advanceCycles(state, grid, 2);
+      // Oyster bed on a window cell with a deep neighbour; the outfall on that neighbour.
+      let bed: Building | null = null, outfall: Building | null = null;
+      for (let i = -32; i < 32 && !outfall; i++) for (let j = -32; j < 32 && !outfall; j++) {
+        const c = { i, j };
+        if (grid.classAt(c) !== "flat" || grid.buildingAt(c)) continue;
+        const h = grid.heightAt(c);
+        if (h < 0 || h > 0.45) continue;
+        const deep = grid.neighbors(c).find(n => grid.classAt(n) === "deep" && grid.footprint("outfall", n) && grid.canPlace("outfall", grid.footprint("outfall", n)!));
+        if (!deep) continue;
+        bed = grid.place("oysterBed", [c]);
+        outfall = tryPlace(state, grid, "outfall", deep);
+      }
+      expect(bed && outfall).toBeTruthy();
+      if (withPlant) {
+        const plant = placeByWalkway(state, grid, "treatmentPlant", 1)[0];
+        expect(plant).toBeDefined();
+        for (const h of t.huts) expect(h.cells.some(c => Math.abs(c.i - plant.cells[0].i) <= TREATMENT_RADIUS && Math.abs(c.j - plant.cells[0].j) <= TREATMENT_RADIUS)).toBe(true);
+        t.pier.boats = 0; // free the hands for the plant
+      }
+      let died = -1;
+      for (let cycle = 1; cycle <= 6; cycle++) {
+        advanceCycles(state, grid, 1);
+        if (!state.buildings[bed!.id]) { died = cycle; break; }
+      }
+      return { died, peak: maxOf(state.fields.pollution), plantStaff: buildingList(state).find(b => b.kind === "treatmentPlant")?.workers ?? 0 };
+    };
+    const foul = run(false);
+    expect(foul.peak).toBeGreaterThan(OYSTER_POLLUTION_KILL);
+    expect(foul.died).toBeGreaterThan(0);
+    expect(foul.died).toBeLessThanOrEqual(4);
+    const clean = run(true);
+    expect(clean.plantStaff).toBeGreaterThan(0);
+    expect(clean.died).toBe(-1);
+  });
+
+  it("boats thin the grounds they fish and the sea recovers when they stop", () => {
+    const { state, grid, town: t } = town();
+    advanceCycles(state, grid, 4);
+    expect(t.pier.ground).not.toBeNull();
+    // Boats move to the richest ground each trip, so look at the thinnest deep cell rather than the current one.
+    const thinnest = () => { let m = FISH_CAP; for (let k = 0; k < state.fields.fish.length; k++) if (grid.deep[k] && state.fields.fish[k] < m) m = state.fields.fish[k]; return m; };
+    const fished = thinnest();
+    expect(fished).toBeLessThan(FISH_CAP - 0.1);
+    t.pier.boats = 0;
+    advanceCycles(state, grid, 6);
+    expect(thinnest()).toBeGreaterThan(fished + 0.1);
   });
 });
 
