@@ -439,6 +439,56 @@ function sharkNet(scene: Scene, b: Building): BuildingMeshes {
   return { root: mergeFlat("sharkNet", parts, scene) };
 }
 
+function harbor(scene: Scene, b: Building): BuildingMeshes {
+  const { cx, cz, w, d } = bounds(b.cells);
+  const F = b.floorY;
+  const parts: Mesh[] = [box(scene, w - 0.02, 0.14, d - 0.02, cx, F - 0.07, cz, PALETTE.planks)];
+  for (let sx = -1; sx <= 1; sx++) for (let sz = -1; sz <= 1; sz++) {
+    if (sx === 0 && sz === 0) continue;
+    parts.push(stilt(scene, cx + sx * (w / 2 - 0.2), cz + sz * (d / 2 - 0.2), F - 0.14, 0.22, 6));
+  }
+  // A bonded warehouse, a crane and bollards along the seaward edge.
+  shed(scene, parts, cx - 0.6, cz - 0.5, 1.4, 0.9, 1.2, F, PALETTE.walls[3], PALETTE.roofs[1]);
+  parts.push(box(scene, 0.14, 1.6, 0.14, cx + 0.8, F + 0.8, cz + 0.6, PALETTE.wood));
+  parts.push(box(scene, 1.2, 0.1, 0.1, cx + 1.2, F + 1.55, cz + 0.6, PALETTE.wood));
+  for (const t of [-1, 0, 1]) {
+    const bollard = MeshBuilder.CreateCylinder("bollard", { diameter: 0.16, height: 0.34, tessellation: 5 }, scene);
+    bollard.position.set(cx + t * 1.0, F + 0.17, cz + d / 2 - 0.15);
+    parts.push(tint(bollard, PALETTE.wood));
+  }
+  return { root: mergeFlat("harbor", parts, scene) };
+}
+
+function inn(scene: Scene, b: Building): BuildingMeshes {
+  const { cx, cz, w, d } = bounds(b.cells);
+  const F = b.floorY;
+  const parts: Mesh[] = [];
+  deck(scene, parts, cx, cz, w, d, F);
+  parts.push(box(scene, 1.6, 1.4, 1.3, cx, F + 0.7, cz, PALETTE.walls[4]));
+  parts.push(box(scene, 1.7, 0.06, 1.4, cx, F + 0.75, cz, PALETTE.wood)); // storey line
+  parts.push(pyramid(scene, 2.6, 0.7, cx, F + 1.4 + 0.35, cz, PALETTE.roofs[2]));
+  parts.push(box(scene, 0.05, 1.0, 0.05, cx + 0.95, F + 0.5, cz - 0.6, PALETTE.wood));
+  parts.push(box(scene, 0.34, 0.22, 0.04, cx + 0.95, F + 0.95, cz - 0.6, PALETTE.roofs[0]));
+  return { root: mergeFlat("inn", parts, scene), lantern: lantern(scene, cx + 0.95, cz - 0.6, F + 0.35) };
+}
+
+function lighthouse(scene: Scene, b: Building): BuildingMeshes {
+  const { x, z } = cellCenter(b.cells[0]);
+  const F = b.floorY;
+  const parts: Mesh[] = [];
+  const base = MeshBuilder.CreateCylinder("lhBase", { diameterTop: 0.5, diameterBottom: 0.8, height: 2.6, tessellation: 8 }, scene);
+  base.position.set(x, F + 1.3, z);
+  parts.push(tint(base, PALETTE.walls[0]));
+  const band = MeshBuilder.CreateCylinder("lhBand", { diameterTop: 0.62, diameterBottom: 0.68, height: 0.4, tessellation: 8 }, scene);
+  band.position.set(x, F + 1.2, z);
+  parts.push(tint(band, PALETTE.roofs[0]));
+  parts.push(box(scene, 0.6, 0.45, 0.6, x, F + 2.6 + 0.22, z, PALETTE.roofs[1]));
+  parts.push(pyramid(scene, 0.9, 0.35, x, F + 3.05 + 0.17, z, PALETTE.roofs[1]));
+  const lamp = lantern(scene, x, z, F + 2.1);
+  lamp.scaling.setAll(1.8);
+  return { root: mergeFlat("lighthouse", parts, scene), lantern: lamp };
+}
+
 function outfall(scene: Scene, b: Building): BuildingMeshes {
   const { x, z } = cellCenter(b.cells[0]);
   const F = b.floorY;
@@ -478,6 +528,9 @@ export function createBuildingMeshes(scene: Scene, b: Building): BuildingMeshes 
     case "clinic": return clinic(scene, b);
     case "lifeguard": return lifeguard(scene, b);
     case "sharkNet": return sharkNet(scene, b);
+    case "harbor": return harbor(scene, b);
+    case "inn": return inn(scene, b);
+    case "lighthouse": return lighthouse(scene, b);
     case "well": return well(scene, b);
     case "bathhouse": return bathhouse(scene, b);
     case "tavern": return tavern(scene, b);

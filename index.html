@@ -101,6 +101,10 @@
       }
       .overlays button.active { color: var(--accent); border-color: rgba(255, 209, 138, 0.4); }
       .score { border-top: 1px solid var(--panel-line); padding-top: 10px; display: grid; gap: 4px; }
+      .tide-ship { font-size: 11px; color: var(--ink-dim); margin-top: 2px; }
+      .trade-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 11px; color: var(--ink-dim); min-height: 18px; }
+      .trade-row .order { font: inherit; font-size: 11px; color: var(--ink); background: rgba(255, 255, 255, 0.06); border: 1px solid var(--panel-line); border-radius: 6px; padding: 3px 8px; cursor: pointer; }
+      .trade-row .order[hidden] { display: none; }
       .score-value { font-size: 13px; }
       .score-value.flash { animation: flash 1.2s ease-out; }
       @keyframes flash { 0% { color: var(--accent); } 100% { color: var(--ink); } }

@@ -16,6 +16,7 @@ import { depleteGround, fishAt, pollutionAt, routeWaste, settleFields } from "./
 import { chooseGround } from "./sea";
 import { announceLevel, rebuildCoverage } from "./services";
 import { healInjuries, sharkSources } from "./sharks";
+import { settleTrade } from "./trade";
 import { Building, buildingList, Cell, notify, Phase, SimState } from "./state";
 import { fellTrees, regrowTrees } from "./trees";
 import { assignWorkers, employed, staffing } from "./workers";
@@ -201,7 +202,7 @@ export function homeHappiness(state: SimState, home: Building, fed: number, jobs
 /** The cycle settlement, run once at every high-tide peak. */
 export function settleCycle(state: SimState, grid: Grid): void {
   const r = state.resources;
-  const stats = { cycle: state.tide.cycle, fishCaught: state.last.fishCaught, fishSold: 0, shellfishSold: 0, income: 0, expenses: 0, immigrants: 0 };
+  const stats = { cycle: state.tide.cycle, fishCaught: state.last.fishCaught, fishSold: 0, shellfishSold: 0, income: 0, expenses: 0, immigrants: 0, tourism: 0, trade: 0 };
   const buildings = buildingList(state).sort((a, b) => a.id - b.id);
 
   assignWorkers(state, grid);
@@ -252,6 +253,12 @@ export function settleCycle(state: SimState, grid: Grid): void {
   // Upkeep.
   for (const b of buildings) stats.expenses += BUILDINGS[b.kind].upkeep;
   r.money += stats.income - stats.expenses;
+
+  // The trade ship and the tourists (they move money themselves; the stats just record it).
+  const moved = settleTrade(state, grid);
+  stats.trade = moved.trade;
+  stats.tourism = moved.tourism;
+  stats.income += moved.tourism + Math.max(0, moved.trade);
 
   // Immigration: connected housing with room, food on hand, a town worth joining.
   if (r.fish + r.shellfish > 0 && state.happiness >= IMMIGRATION_HAPPINESS) {

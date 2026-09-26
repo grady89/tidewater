@@ -176,6 +176,19 @@ export function pierByBeach(state: SimState, grid: Grid): { pier: Building; beac
   return { pier, beach: best.beach };
 }
 
+/** The harbor: 3×3 of water deeper than 1.5, nearest `near`. */
+export function placeHarbor(state: SimState, grid: Grid, near: Cell): Building | null {
+  let best: Cell | null = null, bd = Infinity;
+  for (let i = -32; i < 32; i++) for (let j = -32; j < 32; j++) {
+    const c = { i, j };
+    const fp = grid.classAt(c) === "deep" ? grid.footprint("harbor", c) : null;
+    if (!fp || !grid.canPlace("harbor", fp)) continue;
+    const d = dist(c, near);
+    if (d < bd) { bd = d; best = c; }
+  }
+  return best ? tryPlace(state, grid, "harbor", best) : null;
+}
+
 /** Deep cells against the shore that take a shipyard, nearest the street. */
 export function placeShipyard(state: SimState, grid: Grid, near: Cell): Building | null {
   return placeEdge(state, grid, "shipyard", near);

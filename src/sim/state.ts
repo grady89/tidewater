@@ -96,6 +96,21 @@ export interface CycleStats {
   income: number;
   expenses: number;
   immigrants: number;
+  /** Money from tourists this cycle. */
+  tourism: number;
+  /** Money from the trade ship this cycle (net of plank purchases). */
+  trade: number;
+}
+
+export interface TradeState {
+  /** Cycle whose high water the ship next calls on; -1 until a harbor exists. */
+  nextVisit: number;
+  /** Cycle of the current or last visit; the view shows the ship through that high water. */
+  shipCycle: number;
+  /** Planks ordered for the next ship, delivered and paid on arrival. */
+  plankOrder: number;
+  /** Visits so far. */
+  visits: number;
 }
 
 export interface SimState {
@@ -125,6 +140,9 @@ export interface SimState {
   swimmers: Swimmers[];
   /** Shark incidents so far. */
   incidents: number;
+  trade: TradeState;
+  /** Tourists in town (they come and go with the ship). */
+  tourists: number;
   /** Town happiness 0..1, averaged over occupied houses (1 when empty). */
   happiness: number;
   /** Last completed cycle's ledger, for the HUD. */
@@ -153,8 +171,10 @@ export function createState(seed = 1): SimState {
     wasteBacklog: 0,
     swimmers: [],
     incidents: 0,
+    trade: { nextVisit: -1, shipCycle: -1, plankOrder: 0, visits: 0 },
+    tourists: 0,
     happiness: 1,
-    last: { cycle: 0, fishCaught: 0, fishSold: 0, shellfishSold: 0, income: 0, expenses: 0, immigrants: 0 },
+    last: { cycle: 0, fishCaught: 0, fishSold: 0, shellfishSold: 0, income: 0, expenses: 0, immigrants: 0, tourism: 0, trade: 0 },
     log: [],
   };
 }

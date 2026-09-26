@@ -8,12 +8,14 @@ import { newGame } from "./sim/start";
 import { SimState } from "./sim/state";
 import { advanceCycles, tick } from "./sim/tick";
 import { cycleFraction } from "./sim/tide";
+import { orderPlanks } from "./sim/trade";
 import { Hud } from "./ui/hud";
 import { InfoPanel } from "./ui/infoPanel";
 import { Boats } from "./view/boats";
 import { BuildingViews } from "./view/buildingViews";
 import { Effects } from "./view/effects";
 import { OverlayKind, Overlays } from "./view/overlays";
+import { Ship } from "./view/ship";
 import { Trees } from "./view/trees";
 import { Walkers } from "./view/walkers";
 import { computeLighting, createLights, duskAt } from "./world/lighting";
@@ -71,7 +73,8 @@ const trees = new Trees(scene);
 const overlays = new Overlays(scene, grid);
 const effects = new Effects(scene);
 const placement = new Placement(scene, camera, grid, canvas);
-const hud = new Hud(document.getElementById("hud")!, document.getElementById("resources")!, document.getElementById("notes")!, grid, tool => placement.setTool(tool), kind => overlays.show(kind));
+const ship = new Ship(scene, grid);
+const hud = new Hud(document.getElementById("hud")!, document.getElementById("resources")!, document.getElementById("notes")!, grid, tool => placement.setTool(tool), kind => overlays.show(kind), () => orderPlanks(state));
 const info = new InfoPanel(document.getElementById("info")!, grid);
 placement.onSelect = b => info.select(b);
 
@@ -105,6 +108,7 @@ function syncView(): void {
   boats.sync(state, viewTime);
   walkers.sync(state, viewTime);
   effects.sync(state, viewTime);
+  ship.sync(state, viewTime);
   terrain.update(camera.position, state.tide.level, state.tide.wetLevel);
   water.update(viewTime, camera.position, state.tide.level);
   hud.update({ tool: placement.tool, blocker: placement.blocker, fate: placement.fate, state });
@@ -199,7 +203,11 @@ const api = {
     walkers: () => walkers.count,
     swimmers: () => walkers.swimmerCount(state),
     fins: () => effects.finCount,
+    ship: () => ship.pose,
     dusk: () => duskAt(state.time),
+  },
+  orderPlanks() {
+    return orderPlanks(state);
   },
   save,
   newTown,

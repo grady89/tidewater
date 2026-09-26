@@ -7,7 +7,8 @@ export type BuildingKind =
   | "pier" | "dock" | "shipyard"
   | "market" | "oysterBed" | "clamCamp" | "lumberCamp" | "sawmill" | "smokehouse" | "netLoft" | "warehouse"
   | "outfall" | "treatmentPlant" | "well" | "bathhouse" | "tavern" | "shrine" | "marketSquare"
-  | "clinic" | "lifeguard" | "sharkNet";
+  | "clinic" | "lifeguard" | "sharkNet"
+  | "harbor" | "inn" | "lighthouse";
 
 /** Service coverage layers; each building that provides one writes its staffed fraction within `radius`. */
 export type ServiceKind = "water" | "leisure" | "night" | "treatment" | "lifeguard" | "firewatch";
@@ -19,7 +20,7 @@ export const CATEGORIES: Category[] = ["Homes", "Streets", "Sea", "Production", 
  * spring tide. shore: flat cell orthogonally adjacent to a high cell. edge: deep cells against the shore (piers
  * and shipyards extend seaward from the anchor).
  */
-export type PlacementClass = "flat" | "deep" | "high" | "flatOrHigh" | "flatOrDeep" | "shore" | "edge" | "beach";
+export type PlacementClass = "flat" | "deep" | "high" | "flatOrHigh" | "flatOrDeep" | "shore" | "edge" | "beach" | "highOrEdge";
 export type ResourceKind = "money" | "fish" | "shellfish" | "smoked" | "timber" | "planks";
 export type GoodKind = Exclude<ResourceKind, "money">;
 
@@ -83,7 +84,23 @@ export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
   clinic: { name: "Clinic", category: "Services", w: 2, d: 1, cls: "flat", cost: { money: 200 }, workers: 3, residents: 0, upkeep: 2, floor: 1.0, network: "leaf", desc: "Heals the injured so they can work again" },
   lifeguard: { name: "Lifeguard tower", category: "Services", w: 1, d: 1, cls: "beach", cost: { money: 90 }, workers: 1, residents: 0, upkeep: 1, floor: "ground", network: "leaf", service: { kind: "lifeguard", radius: 5 }, desc: "On a beach; shark incidents within 5 drop 80%" },
   sharkNet: { name: "Shark net", category: "Sea", w: 1, d: 1, cls: "flatOrDeep", cost: { money: 20 }, workers: 0, residents: 0, upkeep: 0.1, floor: 1.0, network: "leaf", desc: "Per water cell; shark risk can't cross" },
+  harbor: { name: "Harbor", category: "Sea", w: 3, d: 3, cls: "deep", terrain: { min: -99, max: -1.5 }, cost: { money: 600, planks: 60 }, workers: 0, residents: 0, upkeep: 6, floor: 1.0, network: "root", slots: 6, desc: "Trade ship berth; 6 boats; needs water deeper than 1.5" },
+  inn: { name: "Inn", category: "Leisure", w: 2, d: 2, cls: "flat", cost: { money: 250, planks: 20 }, workers: 2, residents: 0, upkeep: 2, floor: 1.0, network: "leaf", desc: "Tourists off the trade ship stay and spend" },
+  lighthouse: { name: "Lighthouse", category: "Sea", w: 1, d: 1, cls: "highOrEdge", cost: { money: 400 }, workers: 0, residents: 0, upkeep: 2, floor: "ground", network: "leaf", desc: "Boats ride out storms; the trade ship calls every 2 tides" },
 };
+
+// Trade and tourism
+export const TRADE_EVERY = 3;
+export const TRADE_EVERY_LIGHTHOUSE = 2;
+export const TRADE_PRICE_SMOKED = 9;
+export const TRADE_PRICE_FISH = 5;
+export const TRADE_PLANK_PRICE = 3;
+export const PLANK_ORDER_SIZE = 20;
+export const TOURISTS_PER_SHIP = 4;
+export const INN_CAPACITY = 6;
+export const TOURIST_SPEND = 6;
+/** Tourism spend without a tavern, bathhouse or beach to spend it at. */
+export const TOURIST_BORED_FACTOR = 0.4;
 
 // Beaches and sharks
 /** Sand above the tide line up to this height counts as beach when it touches water. */

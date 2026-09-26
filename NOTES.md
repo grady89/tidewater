@@ -246,6 +246,22 @@ Decisions and findings that CLAUDE.md does not cover. Newest at the bottom of ea
   triangle circling the three riskiest water cells above 0.25. Shark-net floats sit at a fixed y (0.15); they
   look odd at spring low. Overlay "Sharks" shows the field.
 
+### M9 trade and tourism
+- **Trade state** lives in `state.trade`: `nextVisit` (cycle), `shipCycle` (the visit in progress or last),
+  `plankOrder`, `visits`. A harbor schedules the first call for the next cycle; each call at that cycle's
+  settlement buys all smoked goods (9$) and fish above the food reserve (5$), delivers as many ordered planks as the
+  purse allows (3$ each), swaps the tourists, and books the next call 3 cycles on (2 with a reached lighthouse).
+- **Tourists** are a count: up to 4 land per call into reached inns (6 beds each; unstaffed inns still offer half),
+  spend 6$ per cycle (×0.4 without a tavern, bathhouse or beach) and sail with the next ship. Losing the harbor
+  sends them home.
+- **The ship is a view function**: through the visit's high water, `phaseProgress` drives it along the sea path
+  from the map edge — in for the first 38 %, berthed on the first cell outside the harbor, out for the last 38 %.
+  `seaEntry` prefers a map-edge cell at least 12 cells out by water so the run-in is watchable; the first cut used
+  the nearest edge cell and the ship "moved" three cells.
+- Harbor placement uses the catalog's terrain window (`max: -1.5`) on top of the deep class; the lighthouse gets a
+  `highOrEdge` class (high cells, or the pier rule).
+- `__tidewater.orderPlanks()` and the "Order 20 planks" button queue a delivery; the tide clock shows the ship's ETA.
+
 ## Findings on the v1 questions
 
 (placement and connectivity exist now; play a few cycles and write answers here)

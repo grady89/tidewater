@@ -1,11 +1,12 @@
 // The UI: resource bar, build menu by category, tide clock, last-cycle ledger, notifications. Plain DOM over the
 // canvas, read-only over the sim.
 import { Fate, Tool } from "../build/placement";
-import { BOAT_COST, BUILDING_KINDS, BuildingKind, BUILDINGS, CATEGORIES, Category, LANTERN_COST } from "../sim/balance";
+import { BOAT_COST, BUILDING_KINDS, BuildingKind, BUILDINGS, CATEGORIES, Category, LANTERN_COST, PLANK_ORDER_SIZE, TRADE_PLANK_PRICE } from "../sim/balance";
 import { canAfford } from "../sim/economy";
 import { Grid } from "../sim/grid";
 import { population, SimState } from "../sim/state";
 import { cycleFraction, cyclesToSpring, isRising, secondsToHighTide, secondsToLowTide, tideNormalized } from "../sim/tide";
+import { cyclesToShip } from "../sim/trade";
 import { jobsAt } from "../sim/workers";
 import { OverlayKind, OVERLAYS } from "../view/overlays";
 
@@ -38,7 +39,7 @@ const FATE_TEXT: Record<Fate, string> = {
   always: "Floods every high tide",
 };
 
-const RESOURCES = ["money", "fish", "shellfish", "smoked", "timber", "planks", "population", "happiness"];
+const RESOURCES = ["money", "fish", "shellfish", "smoked", "timber", "planks", "population", "tourists", "happiness"];
 
 // Tide dial geometry (SVG units). The fill rect is clipped to the inner disc.
 const DIAL_R = 24, DIAL_TOP = 32 - DIAL_R, DIAL_H = DIAL_R * 2;
@@ -53,15 +54,18 @@ export class Hud {
   private readonly tideValue: HTMLElement;
   private readonly tideSub: HTMLElement;
   private readonly tideSpring: HTMLElement;
+  private readonly tideShip: HTMLElement;
   private readonly hint: HTMLElement;
   private readonly ledgerLabel: HTMLElement;
   private readonly ledgerValue: HTMLElement;
+  private readonly tradeStatus: HTMLElement;
+  private readonly orderButton: HTMLButtonElement;
   private readonly notes: HTMLElement;
   private category: Category = "Homes";
   private lastCycle = -1;
   private lastLogLen = -1;
 
-  constructor(root: HTMLElement, resources: HTMLElement, notes: HTMLElement, private readonly grid: Grid, private readonly onTool: (tool: Tool) => void, onOverlay: (kind: OverlayKind | null) => void) {
+  constructor(root: HTMLElement, resources: HTMLElement, notes: HTMLElement, private readonly grid: Grid, private readonly onTool: (tool: Tool) => void, onOverlay: (kind: OverlayKind | null) => void, onOrder: () => void) {
     resources.innerHTML = RESOURCES.map(k => `<div class="res" data-res="${k}"><label>${k}</label><span>0</span></div>`).join("");
     for (const el of resources.querySelectorAll<HTMLElement>(".res")) this.res[el.dataset.res!] = el.querySelector("span")!;
     this.notes = notes;
@@ -82,6 +86,7 @@ export class Hud {
           <div class="tide-value">+0.00 m</div>
           <div class="tide-sub"></div>
           <div class="tide-spring"></div>
+          <div class="tide-ship"></div>
         </div>
       </div>
       <div class="tabs"></div>
@@ -91,6 +96,7 @@ export class Hud {
       <div class="score">
         <label></label>
         <div class="score-value">—</div>
+        <div class="trade-row"><span class="trade-status"></span><button type="button" class="order">Order ${PLANK_ORDER_SIZE} planks · ${PLANK_ORDER_SIZE * TRADE_PLANK_PRICE}$</button></div>
       </div>`;
 
     const tabs = root.querySelector<HTMLElement>(".tabs")!;
@@ -131,9 +137,13 @@ export class Hud {
     this.tideValue = root.querySelector<HTMLElement>(".tide-value")!;
     this.tideSub = root.querySelector<HTMLElement>(".tide-sub")!;
     this.tideSpring = root.querySelector<HTMLElement>(".tide-spring")!;
+    this.tideShip = root.querySelector<HTMLElement>(".tide-ship")!;
     this.hint = root.querySelector<HTMLElement>(".hint")!;
     this.ledgerLabel = root.querySelector<HTMLElement>(".score label")!;
     this.ledgerValue = root.querySelector<HTMLElement>(".score-value")!;
+    this.tradeStatus = root.querySelector<HTMLElement>(".trade-status")!;
+    this.orderButton = root.querySelector<HTMLButtonElement>(".order")!;
+    this.orderButton.addEventListener("click", () => onOrder());
     this.showCategory("Streets");
   }
 
@@ -206,6 +216,7 @@ export class Hud {
     this.res.timber.textContent = `${Math.floor(r.timber)}`;
     this.res.planks.textContent = `${Math.floor(r.planks)}`;
     this.res.population.textContent = `${population(state)} / ${jobs} jobs`;
+    this.res.tourists.textContent = `${state.tourists}`;
     this.res.happiness.textContent = `${Math.round(state.happiness * 100)}%`;
 
     const { tide } = state;
@@ -221,6 +232,10 @@ export class Hud {
     const toSpring = cyclesToSpring(tide);
     this.tideSpring.textContent = toSpring === 1 ? "Spring tide at the next high water" : `Spring tide in ${toSpring} high tides`;
     this.tideSpring.classList.toggle("now", toSpring === 1);
+    const toShip = cyclesToShip(state);
+    this.tideShip.textContent = toShip < 0 ? "" : toShip === 0 ? "Trade ship in port" : `Trade ship in ${toShip} high tide${toShip > 1 ? "s" : ""}`;
+    this.tradeStatus.textContent = state.trade.plankOrder > 0 ? `${state.trade.plankOrder} planks on order` : "";
+    this.orderButton.hidden = toShip < 0;
 
     this.hint.textContent = s.blocker ?? FATE_TEXT[s.fate];
     this.hint.classList.toggle("blocked", s.blocker !== null);
@@ -235,7 +250,8 @@ export class Hud {
       } else {
         const net = l.income - l.expenses;
         this.ledgerLabel.textContent = `Cycle ${l.cycle}`;
-        this.ledgerValue.textContent = `${net >= 0 ? "+" : ""}${net.toFixed(0)}$ · ${l.fishCaught.toFixed(0)} fish landed · ${(l.fishSold + l.shellfishSold).toFixed(0)} sold`;
+        const extras = [l.tourism > 0 ? `${l.tourism.toFixed(0)}$ tourism` : "", l.trade !== 0 ? `${l.trade >= 0 ? "+" : ""}${l.trade.toFixed(0)}$ trade` : ""].filter(Boolean);
+        this.ledgerValue.textContent = `${net >= 0 ? "+" : ""}${net.toFixed(0)}$ · ${l.fishCaught.toFixed(0)} fish landed · ${(l.fishSold + l.shellfishSold).toFixed(0)} sold${extras.length ? " · " + extras.join(" · ") : ""}`;
         this.ledgerValue.classList.remove("flash");
         void this.ledgerValue.offsetWidth;
         this.ledgerValue.classList.add("flash");

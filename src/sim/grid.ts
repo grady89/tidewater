@@ -91,6 +91,7 @@ export class Grid {
       case "shore": return cells.every(c => base(c) === "flat") && cells.some(c => this.touches(c, "high"));
       case "edge": return cells.every(c => base(c) === "deep") && cells.some(c => this.touches(c, "flat"));
       case "beach": return cells.every(c => this.isBeach(c));
+      case "highOrEdge": return cells.every(c => base(c) === "high") || this.classOk("edge", cells);
     }
   }
 

@@ -315,6 +315,52 @@ try {
   await page.screenshot({ path: "shots/m8.png" });
   await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.setOverlay(null));
 
+  // M9: a harbor and an inn; the trade ship sails in and out through its high water; tourists spend.
+  await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.newTown());
+  const m9 = await page.evaluate(async () => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    const url = "/test/scenario.ts";
+    const sc = (await import(url)) as typeof import("./scenario");
+    const s = api.sim, grid = api.grid;
+    const town = sc.starterTown(s, grid);
+    api.grant(5000, 200);
+    sc.growStreet(s, grid, 6);
+    const harbor = sc.placeHarbor(s, grid, town.pier.cells[0]);
+    const inn = sc.placeByWalkway(s, grid, "inn", 1).length === 1;
+    api.orderPlanks();
+    api.advance(1); // the harbor schedules its first visit for the next high water
+    const visit = s.trade.nextVisit;
+    // Into the rising half of the visit's high water: the ship is on its way in.
+    api.advanceTo(0.65); api.advanceTo(0.81);
+    const inbound = api.view.ship();
+    if (harbor) api.frameAt(harbor.cells[4].i + 0.5, harbor.cells[4].j + 0.5, 30);
+    return { harbor: !!harbor, inn, visit, cycle: s.tide.cycle, phase: s.phase, inbound };
+  });
+  console.log("M9 inbound:", JSON.stringify(m9));
+  assert(m9.harbor && m9.inn, "harbor and inn placed");
+  assert(m9.inbound && m9.inbound.leg === "in", "trade ship is sailing in");
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: "shots/m9-in.png" });
+  const m9out = await page.evaluate(() => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    api.advanceTo(0.13); // past the peak, still high water: the ship is leaving
+    return { outbound: api.view.ship(), visits: api.sim.trade.visits, planks: api.sim.resources.planks, log: api.sim.log.slice(-2) };
+  });
+  console.log("M9 outbound:", JSON.stringify(m9out));
+  assert(m9out.outbound && m9out.outbound.leg === "out", "trade ship is sailing out");
+  assert(m9out.visits === 1 && m9out.planks >= 20, "the ship called and delivered the planks");
+  assert(Math.hypot(m9out.outbound.x - m9.inbound.x, m9out.outbound.z - m9.inbound.z) > 1, "the ship moved");
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: "shots/m9-out.png" });
+  const m9tour = await page.evaluate(() => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    let tourism = 0, tourists = 0;
+    for (let c = 0; c < 6; c++) { api.advance(1); tourism += api.sim.last.tourism; tourists = Math.max(tourists, api.sim.tourists); }
+    return { tourism, tourists, visits: api.sim.trade.visits };
+  });
+  console.log("M9 tourism:", JSON.stringify(m9tour));
+  assert(m9tour.tourists > 0 && m9tour.tourism > 0, "tourists came and spent");
+
   // M1: save, reload the page, every building is back and the clock kept its place.
   const before = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; api.save(); return { n: Object.keys(api.sim.buildings).length, cycle: api.sim.tide.cycle, money: api.sim.resources.money }; });
   await page.reload();
