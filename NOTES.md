@@ -520,6 +520,42 @@ What other builders do and what was taken from each:
 - Swimmers stood in the sand: they now pick the deepest water cell beside the beach, only where it is 0.3 deep,
   and never sit below the ground.
 
+### The art pass from reference/ (every asset rebuilt from Grady's Midjourney sheets)
+- `view/buildings.ts` was rewritten around a small kit read off the sheets: `gable` (a 3-sided prism scaled to a
+  rise, with a ridge beam), `hip` (a 4-sided frustum with a cap), `window_` (dark glass, a sill, blue shutters),
+  `door` (blue panel with a lintel), `railing`, `chimney`, `crate`, `barrel`, `bollard` (blue with a red cap on
+  the dock), `bracketLantern` (the arm-hung lantern on every house, tavern, well, shrine), `postLantern`, `net`,
+  `rock` (a squashed icosahedron), `logPile` (red-cut ends with bark). Decks gained posts along their sides and
+  an under-rail. Two hexes were added to the palette for what the sheets needed and nothing covered: pale quay
+  stone `#b9b6ae` and window glass `#2b3a45`; the doors and shutters use the existing hull blue `#2f6f8f`.
+- Homes: hut = one small room with a bracket lantern; house = wider cottage with shutters and (level 2) a window
+  box; tall house = narrow tower with a balcony on posts and upper windows; level 3 adds a chimney. Roof shapes
+  are still seeded per placement. Plank lines are two thin pale bands on the wall.
+- Market = six posts under a wide blue gable with red trim, a blue plank back wall, a white counter with fish
+  laid out, nets hanging, crates, a barrel, a signboard. Dock = tall piles with blue-painted feet, red-capped
+  bollards, a dockmaster's hut, a crane, a ladder. Harbor = a stone quay with a white two-storey harbour house,
+  red roofs, a crane, bollards, barrels, a lamp post. Shipyard = a slipway ramp, a blue hull on a cradle, a
+  workshop with blue doors, a crane, timber. Lighthouse = a tapered white tower with a red band, a glazed lamp
+  room with a blue cap and gallery rail, a keeper's hut, on rock. Breakwater = heaped blue-grey rocks. Sea wall
+  = stone footing under a blue plank face with a plank cap. Shark net = a red buoy on a post and a rope of
+  red-and-white floats. Production sheet: smokehouse (white shed, red roof, tall brick chimney), sawmill (open
+  shed, blue roof, big blade, logs, a boulder), net loft (blue roof, nets on the wall, a red rope coil),
+  warehouse (barn with plank bands, double doors, crates). Services sheet: well (stone ring, A-frame, windlass,
+  bucket, lantern), clinic (two-storey, red cross sign on the lean-to), fire watch (X-braced tower, cabin,
+  hipped red roof, bell beneath), treatment plant (shed, two polyhedron tanks, blue pipes), lifeguard (tall stilt
+  tower, blue band cabin, ladder, red flag). Leisure sheet: bathhouse (shingle roof, two chimneys, round pool),
+  tavern (tall narrow, blue roof, red lean-to, hanging sign), shrine (red pillar on stone steps, crossbar with
+  streamers, little roof), market square (flagstones, bench under a red awning, flower tub, basin), inn
+  (two-storey, blue roof, balcony on posts, lantern by the door).
+- Trees: three stacked tiers per conifer, darker toward the ground, on a taller tapered trunk. Gulls: a tapered
+  body, head, orange beak, wedge tail, red legs, and two wing meshes hinged at the shoulder that beat in bursts
+  (clipped sine, gliding between). Crabs: a rounded shell, claws held forward, six angled legs, eye stalks. Trade
+  ship: blue double-ended hull with a pale sheer line, bowsprit, two masts with booms and furled sails, a jib,
+  crates. Ferry: red hull, white sheer, white wheelhouse under a red roof, funnel, stern lantern.
+- Everything stays one merged mesh per building (chunk-merged in the view) or a thin-instance set; the big town
+  still runs at the cap. A gallery script was used to shoot every kind three at a time from a low angle and
+  compare against the sheets before committing.
+
 ### Chunk merge (the M12 perf pass, done for the mirror)
 - `view/buildingViews.ts` now merges every building in an 8×8-cell chunk into one mesh (`chunk:i,j`), rebuilt
   when any building in the chunk appears, leaves or changes its mesh signature. 300 buildings → 15 chunk meshes;

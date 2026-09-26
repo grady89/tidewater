@@ -1,5 +1,7 @@
 // Trees as two thin-instance meshes (trunks, canopies with per-instance colour), scaled by the ledger's tree
-// ages so felling and regrowth are visible. Rebuilt only when an age changes.
+// ages so felling and regrowth are visible. After reference/trees: tall conifers with the canopy in three
+// stacked tiers, each tier a little darker toward the ground, on a plain straight trunk. Rebuilt only when an
+// age changes.
 import { Color4, Matrix, Mesh, MeshBuilder, Quaternion, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
 import { terrainHeight } from "../sim/heightfield";
 import { SimState } from "../sim/state";
@@ -15,12 +17,18 @@ export class Trees {
   private lastKey = "";
 
   constructor(scene: Scene) {
-    const trunk = MeshBuilder.CreateCylinder("t", { diameter: 0.22, height: 0.9, tessellation: 5 }, scene);
-    trunk.position.y = 0.45;
+    const trunk = MeshBuilder.CreateCylinder("t", { diameterTop: 0.14, diameterBottom: 0.22, height: 1.3, tessellation: 5 }, scene);
+    trunk.position.y = 0.65;
     this.trunks = mergeFlat("treeTrunks", [tint(trunk, TRUNK)], scene);
-    const cone = MeshBuilder.CreateCylinder("c", { diameterTop: 0, diameterBottom: 1.3, height: 2.3, tessellation: 6 }, scene);
-    cone.position.y = 0.9 + 1.15;
-    this.canopies = mergeFlat("treeCanopies", [tint(cone, "#ffffff")], scene);
+    // Three tiers of foliage; the vertex tint darkens the lower tiers under the per-instance green.
+    const tiers: Mesh[] = [];
+    for (const [y, dia, h, shade] of [[1.45, 1.4, 1.1, "#c8c8c8"], [2.15, 1.05, 1.0, "#e4e4e4"], [2.8, 0.66, 0.95, "#ffffff"]] as [number, number, number, string][]) {
+      const cone = MeshBuilder.CreateCylinder("c", { diameterTop: 0, diameterBottom: dia, height: h, tessellation: 7 }, scene);
+      cone.position.y = y;
+      cone.rotation.y = y * 0.7;
+      tiers.push(tint(cone, shade));
+    }
+    this.canopies = mergeFlat("treeCanopies", tiers, scene);
     this.canopies.material = flatMaterial(scene).clone("canopyMat") as StandardMaterial;
     for (const m of [this.trunks, this.canopies]) { m.isPickable = false; m.alwaysSelectAsActiveMesh = true; }
   }

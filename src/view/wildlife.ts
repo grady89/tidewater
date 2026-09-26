@@ -19,10 +19,16 @@ const CRAB_BOUT = 3.2, CRAB_MOVE = 0.35;
 
 interface CrabSite { x: number; z: number; h: number; phase: number }
 
+const PALETTE_BEAK = "#ffb859";
+
 export class Wildlife {
   private readonly gulls: Mesh;
+  private readonly wingL: Mesh;
+  private readonly wingR: Mesh;
   private readonly crabs: Mesh;
   private gullMatrices = new Float32Array(MAX_GULLS * 16);
+  private wingLMatrices = new Float32Array(MAX_GULLS * 16);
+  private wingRMatrices = new Float32Array(MAX_GULLS * 16);
   private crabMatrices = new Float32Array(CRAB_SITES * 16);
   private sites: CrabSite[] = [];
   private siteKey = "";
@@ -30,25 +36,62 @@ export class Wildlife {
   crabCount = 0;
 
   constructor(scene: Scene, private readonly grid: Grid) {
-    // A gull: a slim body and two wings swept up into a shallow V.
-    const body = MeshBuilder.CreateBox("gb", { width: 0.28, height: 0.06, depth: 0.08 }, scene);
-    const parts = [tint(body, "#f2ece0")];
+    // A gull after reference/birds: a tapered white body with a small head, an orange beak, a wedge tail and red
+    // legs; the wings are their own meshes, hinged at the shoulder, so the flock can flap.
+    const body = MeshBuilder.CreateSphere("gb", { diameter: 0.3, segments: 4 }, scene);
+    body.scaling.set(1.35, 0.5, 0.6);
+    const head = MeshBuilder.CreateSphere("gh", { diameter: 0.12, segments: 4 }, scene);
+    head.position.set(0.2, 0.05, 0);
+    const beak = MeshBuilder.CreateCylinder("gk", { diameterTop: 0, diameterBottom: 0.05, height: 0.09, tessellation: 4 }, scene);
+    beak.rotation.z = -Math.PI / 2;
+    beak.position.set(0.29, 0.04, 0);
+    const tail = MeshBuilder.CreateBox("gt", { width: 0.16, height: 0.02, depth: 0.12 }, scene);
+    tail.position.set(-0.24, 0.02, 0);
+    const parts = [tint(body, "#f2ece0"), tint(head, "#f2ece0"), tint(beak, PALETTE_BEAK), tint(tail, "#e6e2d8")];
     for (const side of [-1, 1]) {
-      const wing = MeshBuilder.CreateBox("gw", { width: 0.1, height: 0.02, depth: 0.32 }, scene);
-      wing.position.set(0, 0.04, side * 0.18);
-      wing.rotation.x = side * 0.35;
-      parts.push(tint(wing, "#e6e2d8"));
+      const leg = MeshBuilder.CreateBox("gl", { width: 0.04, height: 0.02, depth: 0.02 }, scene);
+      leg.position.set(-0.06, -0.07, side * 0.04);
+      parts.push(tint(leg, "#b9543f"));
     }
     this.gulls = mergeFlat("gulls", parts, scene);
-    // A crab: a flat oval of a shell with a claw either side.
-    const shell = MeshBuilder.CreateCylinder("cs", { diameter: 0.16, height: 0.05, tessellation: 6 }, scene);
-    shell.scaling.z = 0.7;
-    shell.position.y = 0.04;
+    const wing = (side: number) => {
+      const inner = MeshBuilder.CreateBox("gw", { width: 0.2, height: 0.015, depth: 0.22 }, scene);
+      inner.position.set(-0.02, 0, side * 0.16);
+      const outer = MeshBuilder.CreateBox("gw", { width: 0.13, height: 0.012, depth: 0.2 }, scene);
+      outer.position.set(-0.08, 0, side * 0.36);
+      outer.rotation.y = -side * 0.35;
+      const tip = MeshBuilder.CreateBox("gw", { width: 0.07, height: 0.01, depth: 0.08 }, scene);
+      tip.position.set(-0.13, 0, side * 0.49);
+      tip.rotation.y = -side * 0.5;
+      const m = mergeFlat("gullWing", [tint(inner, "#f2ece0"), tint(outer, "#e6e2d8"), tint(tip, "#5d6d7a")], scene);
+      m.isPickable = false; m.alwaysSelectAsActiveMesh = true; m.setEnabled(false);
+      return m;
+    };
+    this.wingL = wing(-1); this.wingR = wing(1);
+    // A crab after reference/crabs: a rounded shell, two claws held forward, six jointed legs, eyes on stalks.
+    const shell = MeshBuilder.CreateSphere("cs", { diameter: 0.2, segments: 4 }, scene);
+    shell.scaling.set(1.05, 0.45, 0.75);
+    shell.position.y = 0.055;
     const crabParts = [tint(shell, "#c9674f")];
     for (const side of [-1, 1]) {
-      const claw = MeshBuilder.CreateBox("cc", { width: 0.05, height: 0.03, depth: 0.05 }, scene);
-      claw.position.set(side * 0.1, 0.04, 0.05);
-      crabParts.push(tint(claw, "#b9543f"));
+      const arm = MeshBuilder.CreateBox("ca", { width: 0.04, height: 0.03, depth: 0.09 }, scene);
+      arm.position.set(side * 0.11, 0.05, 0.1);
+      arm.rotation.y = -side * 0.4;
+      crabParts.push(tint(arm, "#b9543f"));
+      const claw = MeshBuilder.CreateSphere("cc", { diameter: 0.06, segments: 3 }, scene);
+      claw.scaling.set(1, 0.7, 1.3);
+      claw.position.set(side * 0.13, 0.055, 0.16);
+      crabParts.push(tint(claw, "#c9674f"));
+      for (let k = 0; k < 3; k++) {
+        const leg = MeshBuilder.CreateBox("cl", { width: 0.1, height: 0.015, depth: 0.015 }, scene);
+        leg.position.set(side * 0.13, 0.03, -0.02 + k * 0.045 - 0.04);
+        leg.rotation.z = -side * 0.5;
+        leg.rotation.y = side * (k - 1) * 0.3;
+        crabParts.push(tint(leg, "#b9543f"));
+      }
+      const eye = MeshBuilder.CreateSphere("ce", { diameter: 0.025, segments: 2 }, scene);
+      eye.position.set(side * 0.04, 0.1, 0.07);
+      crabParts.push(tint(eye, "#2b3a45"));
     }
     this.crabs = mergeFlat("crabs", crabParts, scene);
     for (const m of [this.gulls, this.crabs]) { m.isPickable = false; m.alwaysSelectAsActiveMesh = true; m.setEnabled(false); }
@@ -95,15 +138,25 @@ export class Wildlife {
         const t = dir * (viewTime * speed + k * 1.3 + h.id);
         const x = cx + Math.cos(t) * r, z = cz + Math.sin(t) * r;
         const y = h.floorY + 2.2 + k * 0.35 + 0.25 * Math.sin(viewTime * 1.7 + k);
-        const flap = 0.25 * Math.sin(viewTime * 9 + k * 2);
-        const q = Quaternion.FromEulerAngles(flap, -t - dir * Math.PI / 2, dir * 0.15);
-        Matrix.Compose(scale, q, new Vector3(x, y, z)).copyToArray(this.gullMatrices, n++ * 16);
+        // Gliding most of the time with a few quick beats: the flap angle is a clipped sine.
+        const beat = Math.sin(viewTime * 7 + k * 2.1);
+        const flap = Math.max(-0.2, Math.min(0.7, beat * 1.2)) * (Math.sin(viewTime * 0.6 + k) > -0.2 ? 1 : 0.15);
+        const yaw = -t - dir * Math.PI / 2;
+        const bank = dir * 0.18;
+        const bodyM = Matrix.Compose(scale, Quaternion.FromEulerAngles(0, yaw, bank), new Vector3(x, y, z));
+        bodyM.copyToArray(this.gullMatrices, n * 16);
+        // Wings hinge about the body's forward (x) axis, opposite senses either side.
+        Matrix.RotationX(-flap).multiply(bodyM).copyToArray(this.wingLMatrices, n * 16);
+        Matrix.RotationX(flap).multiply(bodyM).copyToArray(this.wingRMatrices, n * 16);
+        n++;
       }
     }
     this.gullCount = n;
-    if (n === 0) { this.gulls.setEnabled(false); return; }
-    this.gulls.setEnabled(true);
+    if (n === 0) { for (const m of [this.gulls, this.wingL, this.wingR]) m.setEnabled(false); return; }
+    for (const m of [this.gulls, this.wingL, this.wingR]) m.setEnabled(true);
     this.gulls.thinInstanceSetBuffer("matrix", this.gullMatrices.subarray(0, n * 16), 16, false);
+    this.wingL.thinInstanceSetBuffer("matrix", this.wingLMatrices.subarray(0, n * 16), 16, false);
+    this.wingR.thinInstanceSetBuffer("matrix", this.wingRMatrices.subarray(0, n * 16), 16, false);
   }
 
   private syncCrabs(state: SimState, viewTime: number): void {

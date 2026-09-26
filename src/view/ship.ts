@@ -21,29 +21,47 @@ export class Ship {
   pose: ShipPose | null = null;
 
   constructor(scene: Scene, private readonly grid: Grid) {
+    // After reference/ships: a blue double-ended hull with a pale sheer line, a bowsprit, two masts with a
+    // jib and furled sails on their booms, cargo crates on deck.
     const parts: Mesh[] = [];
-    const hull = MeshBuilder.CreateBox("th", { width: 2.6, height: 0.5, depth: 1.0 }, scene);
-    hull.position.set(-0.2, 0.25, 0);
-    parts.push(tint(hull, PALETTE.hulls[1]));
-    const bow = MeshBuilder.CreateCylinder("tbow", { diameter: 1.0, height: 0.5, tessellation: 3 }, scene);
-    bow.rotation.z = Math.PI / 2; bow.rotation.y = Math.PI / 2;
-    bow.position.set(1.4, 0.25, 0); bow.scaling.set(1, 0.9, 1);
-    parts.push(tint(bow, PALETTE.hulls[1]));
-    const deck = MeshBuilder.CreateBox("tdeck", { width: 2.4, height: 0.08, depth: 0.9 }, scene);
-    deck.position.set(-0.2, 0.54, 0);
+    const hull = MeshBuilder.CreateCylinder("th", { diameter: 1.1, height: 0.42, tessellation: 6 }, scene);
+    hull.scaling.set(3.1, 1, 1);
+    hull.position.set(0, 0.36, 0);
+    parts.push(tint(hull, "#2f6f8f"));
+    const lower = MeshBuilder.CreateCylinder("tl", { diameterTop: 1.1, diameterBottom: 0.6, height: 0.3, tessellation: 6 }, scene);
+    lower.scaling.set(3.1, 1, 1);
+    lower.position.set(0, 0.0, 0);
+    parts.push(tint(lower, "#4c5a66"));
+    const sheer = MeshBuilder.CreateCylinder("ts", { diameter: 1.16, height: 0.05, tessellation: 6 }, scene);
+    sheer.scaling.set(3.1, 1, 1);
+    sheer.position.set(0, 0.6, 0);
+    parts.push(tint(sheer, PALETTE.walls[0]));
+    const deck = MeshBuilder.CreateCylinder("td", { diameter: 0.9, height: 0.04, tessellation: 6 }, scene);
+    deck.scaling.set(3.0, 1, 1);
+    deck.position.set(0, 0.6, 0);
     parts.push(tint(deck, PALETTE.planks));
-    const cabin = MeshBuilder.CreateBox("tcabin", { width: 0.7, height: 0.45, depth: 0.7 }, scene);
-    cabin.position.set(-1.0, 0.8, 0);
-    parts.push(tint(cabin, PALETTE.walls[0]));
-    for (const mx of [-0.2, 0.7]) {
-      const mast = MeshBuilder.CreateCylinder("tmast", { diameter: 0.07, height: 2.2, tessellation: 5 }, scene);
-      mast.position.set(mx, 1.6, 0);
-      parts.push(tint(mast, PALETTE.wood));
-      const sail = MeshBuilder.CreateCylinder("tsail", { diameterTop: 0, diameterBottom: 1.3, height: 1.4, tessellation: 3 }, scene);
-      sail.rotation.z = -Math.PI / 2; sail.rotation.x = Math.PI / 2;
-      sail.position.set(mx - 0.55, 1.5, 0.04); sail.scaling.set(1, 1, 0.06);
-      parts.push(tint(sail, PALETTE.sail));
+    const sprit = MeshBuilder.CreateCylinder("tb", { diameter: 0.05, height: 0.9, tessellation: 4 }, scene);
+    sprit.rotation.z = Math.PI / 2; sprit.rotation.x = 0; sprit.position.set(1.95, 0.7, 0);
+    parts.push(tint(sprit, PALETTE.wood));
+    for (const [cx, cz, s] of [[-0.2, 0.15, 0.22], [0.15, -0.15, 0.2], [-0.45, -0.1, 0.18], [0.1, 0.2, 0.16]] as [number, number, number][]) {
+      const c = MeshBuilder.CreateBox("tc", { size: s }, scene); c.position.set(cx, 0.62 + s / 2, cz); parts.push(tint(c, "#b9a377"));
     }
+    for (const [mx, mh] of [[0.6, 2.6], [-0.7, 2.2]] as [number, number][]) {
+      const mast = MeshBuilder.CreateCylinder("tmast", { diameter: 0.07, height: mh, tessellation: 5 }, scene);
+      mast.position.set(mx, 0.6 + mh / 2, 0);
+      parts.push(tint(mast, PALETTE.wood));
+      const boom = MeshBuilder.CreateCylinder("tboom", { diameter: 0.05, height: 1.1, tessellation: 4 }, scene);
+      boom.rotation.z = Math.PI / 2; boom.position.set(mx - 0.5, 1.05, 0);
+      parts.push(tint(boom, PALETTE.wood));
+      const furled = MeshBuilder.CreateCylinder("tf", { diameter: 0.14, height: 1.0, tessellation: 5 }, scene);
+      furled.rotation.z = Math.PI / 2; furled.position.set(mx - 0.5, 1.13, 0);
+      parts.push(tint(furled, PALETTE.sail));
+    }
+    // The jib, set forward of the main mast.
+    const jib = MeshBuilder.CreateCylinder("tsail", { diameter: 1.3, height: 0.02, tessellation: 3 }, scene);
+    jib.rotation.x = Math.PI / 2; jib.rotation.y = Math.PI;
+    jib.position.set(1.15, 1.75, 0.03); jib.scaling.set(1.0, 1, 1.7);
+    parts.push(tint(jib, PALETTE.sail));
     this.mesh = mergeFlat("tradeShip", parts, scene);
     this.mesh.isPickable = false;
     this.mesh.setEnabled(false);
