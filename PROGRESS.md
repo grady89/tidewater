@@ -4,8 +4,8 @@ Live status. Update after every milestone (and mid-milestone if you compact). On
 
 | Milestone | Status | Notes |
 |---|---|---|
-| M0 Harness | IN PROGRESS | sub-task: vitest + playwright setup, console API |
-| M1 Ledger refactor | TODO | |
+| M0 Harness | DONE | c499b38 · `npm run test` 6 sim tests, `npm run smoke` places pier/walkways/houses, advances a cycle, asserts score, shots/m0.png · headless 165 fps |
+| M1 Ledger refactor | IN PROGRESS | sub-task: starting |
 | M2 Money loop | TODO | |
 | M3 Tide splits economy | TODO | |
 | M4 Town looks alive | TODO | |
@@ -21,10 +21,11 @@ Live status. Update after every milestone (and mid-milestone if you compact). On
 | M14 Ship it | TODO | |
 
 ## Current focus
-M0 Harness — sub-task: install vitest + playwright, add test/sim.test.ts, test/smoke.ts, console API. Last thing that worked: sessions 1–2 game renders and plays.
+M1 Ledger refactor — sub-task: starting (state.ts, fixed timestep, sim-owned grid/network/tide, save/load). Last thing that worked: M0 harness green.
 
 ## Blocked
 (milestone, why, what was tried, what would unblock)
 
 ## Run log
 (one line per milestone completion: time, commit hash, fps measured)
+- 2026-09-26 02:00 · M0 · c499b38 · headless 165 fps (Chrome headless on the RTX 4060 via --ignore-gpu-blocklist; SwiftShader gave 15.6)

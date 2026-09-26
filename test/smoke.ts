@@ -15,7 +15,8 @@ await server.listen();
 const browser = await chromium.launch({
   channel: "chrome",
   headless: true,
-  args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"],
+  // Headless Chrome uses the real GPU with the blocklist ignored (verified: ANGLE D3D11 on the RTX 4060).
+  args: ["--ignore-gpu-blocklist"],
 });
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
@@ -79,7 +80,7 @@ try {
   await page.waitForTimeout(300);
   await page.screenshot({ path: "shots/m0.png" });
 
-  // Headless fps, averaged over 5 s (SwiftShader software GL, so a floor, not the real number).
+  // Headless fps on the real GPU, averaged over 5 s.
   const fps = await page.evaluate(async () => {
     const tw = (window as unknown as { __tidewater: any }).__tidewater;
     let frames = 0;
