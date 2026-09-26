@@ -278,11 +278,13 @@ try {
     api.select(best.cells[0].i, best.cells[0].j);
     api.frameAt(best.cells[0].i + 0.5, best.cells[0].j + 0.5, 14);
     const panel = document.getElementById("info")!;
-    return { well, shrine, tavern, lanterns, level: best.level, happiness: s.happiness, panelShown: !panel.hidden, panelText: panel.innerText.replace(/\s+/g, " ").slice(0, 160) };
+    return { well, shrine, tavern, lanterns, level: best.level, happiness: s.happiness, panelShown: !panel.hidden, panelText: panel.innerText.replace(/\s+/g, " ").slice(0, 160), district: panel.querySelector(".district")?.textContent?.replace(/\s+/g, " ") ?? "" };
   });
   console.log("M7:", JSON.stringify(m7));
   assert(m7.well && m7.shrine && m7.lanterns > 0, "services placed");
   assert(m7.level === 3, "a home reached level 3 within 8 cycles");
+  // Backlog 5: the panel names the home's district and sums its people.
+  assert(/^[A-Z][a-z]+ [A-Z][a-z]+\d+ buildings · \d+ \/ \d+ residents · \d+ \/ \d+ jobs/.test(m7.district), "district name and stats in the info panel: " + m7.district);
   assert(m7.panelShown && /level 3/.test(m7.panelText), "info panel shows the levelled home");
   await page.waitForTimeout(400);
   await page.screenshot({ path: "shots/m7.png" });

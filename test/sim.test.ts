@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { HIGH_WATER_MARK, LOW_WATER_MARK, SPRING_HI, SPRING_LO, STILT_LENGTH, TIDE_HI, TIDE_LO, TIDE_PERIOD } from "../src/config";
 import { BEACH_MAX_HEIGHT, BOAT_COST, BOAT_MIN_RANGE, BOAT_RANGE, BUILDINGS, CAP_BASE, DRAWDOWN_LEVEL, DRAWDOWN_SECONDS, FIRE_BURN_SECONDS, FIRE_IGNITE_THRESHOLD, FISH_CAP, HAPPY, INJURY_NATURAL_CYCLES, LEVEL_UP_HAPPINESS, MAX_LEVEL, OYSTER_POLLUTION_KILL, PLANK_ORDER_SIZE, STARTING_MONEY, TRADE_EVERY, TRADE_EVERY_LIGHTHOUSE, TREATMENT_RADIUS, TREE_REGROW_CYCLES, WAREHOUSE_CAP } from "../src/sim/balance";
+import { DISTRICT_MIN, districtName, districtOf, districts } from "../src/sim/districts";
 import { sheltered, shielded, startStorm, startTsunami, waveDirection } from "../src/sim/events";
 import { ignite } from "../src/sim/fire";
 import { addLantern, coverageAt, lanternBlocker } from "../src/sim/services";
@@ -700,6 +701,53 @@ function flatCellWithHeight(grid: Grid, lo: number, hi: number, near: Cell): Cel
   }
   return best;
 }
+
+describe("districts (backlog 5)", () => {
+  it("the starter town is one named district that every connected building shares", () => {
+    const { state, grid, town: t } = town();
+    const all = districts(state, grid);
+    expect(all.length).toBe(1);
+    const d = all[0];
+    expect(d.buildings).toBeGreaterThanOrEqual(DISTRICT_MIN);
+    expect(d.ids).toContain(t.pier.id);
+    expect(d.ids).toContain(t.market!.id);
+    for (const h of t.huts) expect(d.ids).toContain(h.id);
+    expect(d.name).toMatch(/^[A-Z][a-z]+ [A-Z][a-z]+$/);
+    expect(districtOf(grid, t.market!)?.name).toBe(d.name);
+    expect(districtOf(grid, t.huts[0])?.name).toBe(d.name);
+  });
+  it("the name is the oldest building's and survives a save; small clusters are outlying", () => {
+    const { state, grid } = town();
+    const d = districts(state, grid)[0];
+    expect(d.name).toBe(districtName(Math.min(...d.ids)));
+    const copy = JSON.parse(JSON.stringify(state)) as SimState;
+    const g2 = new Grid(copy);
+    expect(districts(copy, g2)[0].name).toBe(d.name);
+    // A lone breakwater off the pier is no district.
+    state.resources.money += 1000; state.resources.planks += 10;
+    let lone: Building | null = null;
+    for (let i = -30; i < 30 && !lone; i++) for (let j = -30; j < 30 && !lone; j++) {
+      const c = { i, j };
+      if (grid.buildingAt(c) || grid.neighbors(c).some(n => grid.buildingAt(n))) continue;
+      lone = tryPlace(state, grid, "breakwater", c);
+    }
+    expect(lone).not.toBeNull();
+    expect(districtOf(grid, lone!)).toBeNull();
+    expect(districts(state, grid).length).toBe(1);
+  });
+  it("stats add up over the members", () => {
+    const { state, grid } = town();
+    advanceCycles(state, grid, 3);
+    const d = districts(state, grid)[0];
+    let residents = 0, workers = 0;
+    for (const id of d.ids) { residents += state.buildings[id].residents; workers += state.buildings[id].workers; }
+    expect(d.residents).toBe(residents);
+    expect(d.workers).toBe(workers);
+    expect(d.residents).toBeGreaterThan(0);
+    expect(d.happiness).toBeGreaterThan(0);
+    expect(d.happiness).toBeLessThanOrEqual(1);
+  });
+});
 
 describe("tide splits the economy (M3)", () => {
   it("standard walkways stand STILT_LENGTH above their cell; low ones flood at spring high, not at ordinary high", () => {

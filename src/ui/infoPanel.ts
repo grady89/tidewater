@@ -1,5 +1,6 @@
 // Click a building: what it is, who works there, what it made, and why it might be idle. Read-only over the sim.
 import { BUILDINGS } from "../sim/balance";
+import { districtOf } from "../sim/districts";
 import { Grid } from "../sim/grid";
 import { at } from "../sim/fields";
 import { Building, SimState } from "../sim/state";
@@ -58,6 +59,10 @@ export class InfoPanel {
     if (def.workers > 0 || (def.slots ?? 0) > 0 || b.kind === "oysterBed") rows.push(["Last cycle", b.output.toFixed(1)]);
     if (b.lantern) rows.push(["Lantern", "lit at dusk"]);
     rows.push(["Upkeep", `${def.upkeep}$ / cycle`]);
-    this.body.innerHTML = rows.map(([k, v]) => `<div class="row"><label>${k}</label><span>${v}</span></div>`).join("") + `<p class="desc">${def.desc}</p>`;
+    const d = districtOf(this.grid, b);
+    const district = d
+      ? `<div class="district"><h3>${d.name}</h3><span>${d.buildings} buildings · ${d.residents} / ${d.capacity} residents · ${d.workers} / ${d.jobs} jobs${d.boats ? ` · ${d.boats} boats` : ""}${d.residents ? ` · ${Math.round(d.happiness * 100)}% happy` : ""}</span></div>`
+      : `<div class="district"><span>Outlying — three touching buildings make a district</span></div>`;
+    this.body.innerHTML = rows.map(([k, v]) => `<div class="row"><label>${k}</label><span>${v}</span></div>`).join("") + `<p class="desc">${def.desc}</p>` + district;
   }
 }

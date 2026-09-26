@@ -374,6 +374,17 @@ Decisions and findings that CLAUDE.md does not cover. Newest at the bottom of ea
   The ledger stores nothing new. `__tidewater.view.roofs()` counts shapes over homes; the big-town smoke asserts
   all three appear.
 
+### Backlog 5 districts
+- "Name a cluster" read the simple way: a district is a connected cluster of buildings (orthogonal adjacency
+  through any building, walkways included) with at least 3 members, computed on demand from the ledger
+  (`sim/districts.ts`), nothing stored. Its name is hashed from the lowest building id in the cluster — the oldest
+  building — from a 12 × 8 word list ("Herring Quay", "Gull Reach"…), so it survives saves and stays while that
+  building stands; removing the oldest building renames the district, which is accepted rather than adding a
+  districts table to the state. Players don't name districts; the brief didn't ask and the UI has no text input.
+- Stats (buildings, residents / capacity, workers / jobs, boats, mean happiness of lived-in homes) show at the
+  bottom of the info panel for whatever is clicked; clusters under 3 read "Outlying". The BFS runs each frame the
+  panel is open, over at most a few hundred buildings.
+
 ### Chunk merge (the M12 perf pass, done for the mirror)
 - `view/buildingViews.ts` now merges every building in an 8×8-cell chunk into one mesh (`chunk:i,j`), rebuilt
   when any building in the chunk appears, leaves or changes its mesh signature. 300 buildings → 15 chunk meshes;

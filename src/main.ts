@@ -4,6 +4,7 @@ import { CameraControl } from "./build/cameraControl";
 import { Placement, Tool } from "./build/placement";
 import { SIM_TICK, TIDE_PERIOD } from "./config";
 import { BUILDINGS, STORM_WAVE_AMP, WAVE_HEIGHT, WAVE_WIDTH } from "./sim/balance";
+import { districtOf } from "./sim/districts";
 import { startStorm, startTsunami } from "./sim/events";
 import { ignite } from "./sim/fire";
 import { Grid } from "./sim/grid";
@@ -290,6 +291,11 @@ const api = {
   },
   /** The reflections quality toggle (remembered). */
   setReflections,
+  /** The district of the building at (i, j), if any. */
+  district(i: number, j: number) {
+    const b = grid.buildingAt({ i, j });
+    return b ? districtOf(grid, b) : null;
+  },
   /** Caustics on/off (for A/B checks; on by default). */
   setCaustics(on: boolean) { water.setCaustics(on); },
   /** Mean brightness (0–255) of a viewport rectangle in the next rendered frame; (x, y) from the bottom-left. */
