@@ -1,5 +1,6 @@
 // Bootstrap: engine, scene, the ledger, the fixed-timestep loop, and the dev/test console API.
 import { ArcRotateCamera, Color4, DefaultRenderingPipeline, Engine, Scene, Vector3 } from "@babylonjs/core";
+import { CameraControl } from "./build/cameraControl";
 import { Placement, Tool } from "./build/placement";
 import { SIM_TICK, TIDE_PERIOD } from "./config";
 import { STORM_WAVE_AMP, WAVE_HEIGHT, WAVE_WIDTH } from "./sim/balance";
@@ -14,6 +15,9 @@ import { cycleFraction } from "./sim/tide";
 import { orderPlanks } from "./sim/trade";
 import { Hud } from "./ui/hud";
 import { InfoPanel } from "./ui/infoPanel";
+import { SaveMenu } from "./ui/saveMenu";
+import { Speed, SpeedControls } from "./ui/speed";
+import { Tutorial } from "./ui/tutorial";
 import { Boats } from "./view/boats";
 import { BuildingViews } from "./view/buildingViews";
 import { Effects } from "./view/effects";
@@ -27,6 +31,7 @@ import { createTerrain } from "./world/terrain";
 import { createWater } from "./world/water";
 
 const SEED = 1;
+const bootStart = performance.now();
 
 const canvas = document.getElementById("c") as HTMLCanvasElement;
 const engine = new Engine(canvas, true, { antialias: true, adaptToDeviceRatio: true });
@@ -34,11 +39,11 @@ const scene = new Scene(engine);
 scene.clearColor = new Color4(0.81, 0.90, 0.95, 1);
 
 const camera = new ArcRotateCamera("cam", -0.95, 1.05, 46, new Vector3(0, 0.6, 0), scene);
-camera.lowerRadiusLimit = 14; camera.upperRadiusLimit = 95;
 camera.upperBetaLimit = 1.45; camera.lowerBetaLimit = 0.25;
-camera.wheelPrecision = 18; camera.panningSensibility = 0;
+camera.wheelPrecision = 18;
 camera.minZ = 0.5; camera.maxZ = 900;
 camera.attachControl(canvas, true);
+const cameraControl = new CameraControl(camera, canvas);
 
 const lights = createLights(scene);
 const terrain = createTerrain(scene);
@@ -75,30 +80,47 @@ const walkers = new Walkers(scene, grid);
 const trees = new Trees(scene);
 const overlays = new Overlays(scene, grid);
 const effects = new Effects(scene);
-const placement = new Placement(scene, camera, grid, canvas);
 const ship = new Ship(scene, grid);
+const placement = new Placement(scene, camera, grid, canvas);
 const hud = new Hud(document.getElementById("hud")!, document.getElementById("resources")!, document.getElementById("notes")!, grid, tool => placement.setTool(tool), kind => overlays.show(kind), () => orderPlanks(state));
 const info = new InfoPanel(document.getElementById("info")!, grid);
+const tutorial = new Tutorial(document.getElementById("tutorial")!);
 placement.onSelect = b => info.select(b);
 
-function newTown(): void {
-  try { localStorage.removeItem(AUTOSAVE_KEY); } catch { /* ignore */ }
-  state = newGame(SEED).state;
+/** Swap the whole ledger (load, new town) and let every view rebuild from it. */
+function adopt(next: SimState): void {
+  state = next;
   grid.attach(state);
   views.clear();
   walkers.clear();
+  info.select(null);
+  syncView();
+}
+function newTown(): void {
+  try { localStorage.removeItem(AUTOSAVE_KEY); } catch { /* ignore */ }
+  tutorial.reset();
+  adopt(newGame(SEED).state);
+}
+function load(json: string): void {
+  adopt(deserialize(json));
+  save();
 }
 
+const menu = new SaveMenu(document.getElementById("menu")!, { serialize: () => serialize(state), cycle: () => state.tide.cycle, load, newTown });
+let speed: Speed = 1;
+const speedControls = new SpeedControls(document.getElementById("speed")!, s => { speed = s; }, () => menu.toggle());
+
 window.addEventListener("keydown", e => {
-  if (e.key === "Escape") { info.select(null); return; }
+  if (e.target instanceof HTMLInputElement) return;
+  if (e.key === "Escape") { if (menu.open) menu.toggle(false); else if (info.selectedId !== null) info.select(null); else menu.toggle(true); return; }
+  if (e.key === " ") { speed = speed === 0 ? 1 : 0; e.preventDefault(); return; }
+  if (cameraControl.keyDown(e.key)) { e.preventDefault(); return; }
   if (hud.key(e.key)) e.preventDefault();
 });
+window.addEventListener("keyup", e => cameraControl.keyUp(e.key));
 
-let speed = 1;
 let acc = 0;
 let viewTime = 0;
-
-/** Storm weather eases in and out over a few seconds rather than snapping with the cycle. */
 let stormMix = 0;
 let lastFrameTime = 0;
 
@@ -128,10 +150,14 @@ function syncView(): void {
   water.update(viewTime, camera.position, state.tide.level);
   hud.update({ tool: placement.tool, blocker: placement.blocker, fate: placement.fate, state });
   info.update(state);
+  tutorial.update(state);
+  speedControls.update(speed);
 }
 
 engine.runRenderLoop(() => {
-  const frameDt = Math.min(engine.getDeltaTime() / 1000, 0.1) * speed;
+  const realDt = Math.min(engine.getDeltaTime() / 1000, 0.1);
+  cameraControl.update(realDt);
+  const frameDt = realDt * speed;
   viewTime += frameDt;
   acc += frameDt;
   while (acc >= SIM_TICK) {
@@ -150,6 +176,8 @@ const api = {
   grid,
   get fields() { return state.fields; },
   ready: false,
+  /** Milliseconds from script start to the first ready frame. */
+  bootMs: 0,
   setOverlay(kind: OverlayKind | null) {
     overlays.show(kind);
   },
@@ -189,7 +217,13 @@ const api = {
     }
     syncView();
   },
-  setSpeed(n: number) {
+  /** Tick the ledger for `seconds` of game time (for effects that live between shifts). */
+  tickSeconds(seconds: number) {
+    const n = Math.round(seconds / SIM_TICK);
+    for (let k = 0; k < n; k++) { tick(state, grid); viewTime += SIM_TICK; }
+    syncView();
+  },
+  setSpeed(n: Speed) {
     speed = n;
   },
   /** Cheat for scripted scenarios. */
@@ -222,6 +256,7 @@ const api = {
     burning: () => effects.burning,
     dusk: () => duskAt(state.time),
     stormMix: () => stormMix,
+    drawCalls: () => scene.getActiveMeshes().length,
   },
   orderPlanks() {
     return orderPlanks(state);
@@ -240,15 +275,18 @@ const api = {
     startTsunami(state, grid);
     syncView();
   },
-  /** Tick the ledger for `seconds` of game time (for effects that live between shifts). */
-  tickSeconds(seconds: number) {
-    const n = Math.round(seconds / SIM_TICK);
-    for (let k = 0; k < n; k++) { tick(state, grid); viewTime += SIM_TICK; }
-    syncView();
-  },
   save,
+  load,
   newTown,
+  /** Open or close the town menu. */
+  menu: (open: boolean) => menu.toggle(open),
+  /** Stress test: extra walkers in the view only. Returns how many were added. */
+  stressWalkers(n: number) {
+    const added = walkers.spawnExtra(state, n, viewTime);
+    syncView();
+    return added;
+  },
   engine, scene, camera, placement,
 };
 (window as unknown as { __tidewater: typeof api }).__tidewater = api;
-scene.executeWhenReady(() => { api.ready = true; });
+scene.executeWhenReady(() => { api.ready = true; api.bootMs = performance.now() - bootStart; });

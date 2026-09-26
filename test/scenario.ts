@@ -198,6 +198,51 @@ export function shelterHarbours(state: SimState, grid: Grid): number {
   return laid;
 }
 
+/**
+ * A big town for the performance check: streets of raised walkways across the flats with homes packed along
+ * them, piers (boats set in the ledger) along the shore, and every home filled. Returns what it managed.
+ */
+export function bigTown(state: SimState, grid: Grid, target = { buildings: 300, boats: 30 }): { buildings: number; boats: number; residents: number } {
+  state.resources.money += 100000; state.resources.planks += 5000; state.resources.timber += 5000;
+  // Streets first (homes would block the street's growth), then workplaces for a couple of hundred jobs, then
+  // homes along the rest, then more streets if short.
+  growStreet(state, grid, 130);
+  placeByWalkway(state, grid, "market", 4);
+  placeByWalkway(state, grid, "smokehouse", 15);
+  placeByWalkway(state, grid, "clamCamp", 15);
+  placeByWalkway(state, grid, "oysterBed", 20);
+  placeByWalkway(state, grid, "sawmill", 6);
+  placeByWalkway(state, grid, "well", 2);
+  placeByWalkway(state, grid, "tavern", 2);
+  placeByWalkway(state, grid, "house", 100);
+  for (let k = 0; k < 8 && buildingList(state).length < target.buildings; k++) {
+    if (growStreet(state, grid, 20) === 0) break;
+    placeByWalkway(state, grid, "hut", 40);
+  }
+  // Piers all along the shore, two boats each.
+  let boats = 0;
+  for (let k = 0; k < 40 && boats < target.boats; k++) {
+    const p = placeEdge(state, grid, "pier", { i: 0, j: 0 }, 0);
+    if (!p) break;
+    p.boats = 2; boats += 2;
+  }
+  // Everyone moves in at once.
+  let residents = 0;
+  for (const b of buildingList(state)) if (BUILDINGS[b.kind].residents > 0) { b.residents = grid.capacityOf(b); residents += b.residents; }
+  // The flats run out before 300 on this island; breakwater cells (real meshes, real ledger entries) make up the rest.
+  for (let r = 3; r < 12 && buildingList(state).length < target.buildings; r++) {
+    for (const h of buildingList(state).filter(b => b.kind === "pier")) {
+      if (buildingList(state).length >= target.buildings) break;
+      for (let di = -r; di <= r && buildingList(state).length < target.buildings; di++) for (let dj = -r; dj <= r && buildingList(state).length < target.buildings; dj++) {
+        if (Math.max(Math.abs(di), Math.abs(dj)) !== r) continue;
+        const c = { i: h.cells[0].i + di, j: h.cells[0].j + dj };
+        if (grid.classAt(c) === "deep" && !grid.buildingAt(c) && (di + dj) % 2 === 0) tryPlace(state, grid, "breakwater", c);
+      }
+    }
+  }
+  return { buildings: buildingList(state).length, boats, residents };
+}
+
 /** The harbor: 3×3 of water deeper than 1.5, nearest `near`. */
 export function placeHarbor(state: SimState, grid: Grid, near: Cell): Building | null {
   let best: Cell | null = null, bd = Infinity;

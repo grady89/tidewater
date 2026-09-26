@@ -138,6 +138,22 @@ export class Walkers {
     }
   }
 
+  /** Stress test only: `n` more walkers on the town's existing routes. Pure view; the ledger is untouched. */
+  spawnExtra(state: SimState, n: number, now: number): number {
+    const pairs = state.assignments.map(a => [state.buildings[a.home], state.buildings[a.work]] as const).filter(([h, w]) => h && w);
+    if (!pairs.length) return 0;
+    let spawned = 0;
+    for (let k = 0; k < n && this.walkers.length < MAX_WALKERS * 2; k++) {
+      const [home, work] = pairs[Math.floor(this.rand() * pairs.length)];
+      const path = this.route(home, work);
+      if (!path || path.length < 2) continue;
+      const jitter = new Vector3((this.rand() - 0.5) * 0.4, 0, (this.rand() - 0.5) * 0.4);
+      this.walkers.push({ path: path.map(p => p.add(jitter)), t0: now + this.rand() * 4, duration: path.length / SPEED + 30, color: Color4.FromHexString(COLORS[Math.floor(this.rand() * COLORS.length)]) });
+      spawned++;
+    }
+    return spawned;
+  }
+
   private refreshLoiterers(state: SimState): void {
     this.loiterers = [];
     for (const b of Object.values(state.buildings)) {

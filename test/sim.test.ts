@@ -19,7 +19,8 @@ import { advanceCycles, tick } from "../src/sim/tick";
 import { floodFate, isRising, phaseProgress, tickTide, tideNormalized } from "../src/sim/tide";
 import { grownTreesNear } from "../src/sim/trees";
 import { assignWorkers } from "../src/sim/workers";
-import { beachesNear, growStreet, pierByBeach, placeByWalkway, placeEdge, placeHarbor, placeLumberCamp, placeSecondPier, placeShipyard, reachHill, shelterHarbours, starterTown } from "./scenario";
+import { STEPS } from "../src/ui/tutorial";
+import { beachesNear, bigTown, growStreet, pierByBeach, placeByWalkway, placeEdge, placeHarbor, placeLumberCamp, placeSecondPier, placeShipyard, reachHill, shelterHarbours, starterTown } from "./scenario";
 
 const simSources = import.meta.glob("../src/sim/**/*.ts", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
 
@@ -660,6 +661,29 @@ describe("storms and the tsunami (M11)", () => {
     expect(guarded!.damaged).toBe(false);
     for (const h of exposed) expect(h.damaged).toBe(true);
     expect(t.pier.boats).toBe(0); // unsheltered boats are gone
+  });
+});
+
+describe("tutorial and big town (M12)", () => {
+  it("the tutorial steps clear in order as the starter town takes shape", () => {
+    const { state, grid } = newGame(7);
+    expect(STEPS.map(s => s.done(state))).toEqual([false, false, false, false, false]);
+    starterTown(state, grid);
+    expect(STEPS.slice(0, 4).map(s => s.done(state))).toEqual([true, true, false, true]);
+    advanceCycles(state, grid, 1);
+    expect(STEPS[2].done(state)).toBe(true);
+    advanceCycles(state, grid, 3);
+    expect(STEPS[4].done(state)).toBe(true);
+  });
+
+  it("the big-town script reaches 300 buildings and 30 boats and still settles a cycle", () => {
+    const { state, grid } = town(9);
+    const built = bigTown(state, grid);
+    expect(built.buildings).toBeGreaterThanOrEqual(300);
+    expect(built.boats).toBeGreaterThanOrEqual(30);
+    expect(built.residents).toBeGreaterThanOrEqual(200);
+    advanceCycles(state, grid, 1);
+    expect(state.assignments.reduce((n, a) => n + a.n, 0)).toBeGreaterThan(100);
   });
 });
 
