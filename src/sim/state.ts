@@ -177,6 +177,8 @@ export interface SimState {
   swimmers: Swimmers[];
   /** Shark incidents so far. */
   incidents: number;
+  /** Achievement ids in the order they were earned. */
+  achievements: string[];
   trade: TradeState;
   /** Tourists in town (they come and go with the ship). */
   tourists: number;
@@ -213,6 +215,7 @@ export function createState(seed = 1): SimState {
     wasteBacklog: 0,
     swimmers: [],
     incidents: 0,
+    achievements: [],
     trade: { nextVisit: -1, shipCycle: -1, plankOrder: 0, visits: 0 },
     tourists: 0,
     storm: { active: false, lastCycle: -99, count: 0 },

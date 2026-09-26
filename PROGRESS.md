@@ -24,10 +24,11 @@ Live status. Update after every milestone (and mid-milestone if you compact). On
 | Backlog 3 Gulls & crabs | DONE | 5638fe2 · view/wildlife.ts: gulls circle harbours with boats (2 + 1/boat, ≤ 48), crabs on seeded flat cells near town while exposed; smoke M4: gulls > 0 and crabs = 0 at high water, crabs > 0 at low · headless 165 fps |
 | Backlog 4 Roof variety | DONE | 6d7531c · pyramid / gable / hip per home, hashed from id + level; big-town smoke sees all three · headless 165 fps |
 | Backlog 5 Districts | DONE | da96ee7 · clusters of 3+ touching buildings, named from the oldest member, stats in the info panel; 3 sim tests, smoke M7 reads the panel · headless 165 fps |
-| Backlog 6 Second island | IN PROGRESS | sub-task: isle in the heightfield, locked until a harbor, ferry view |
+| Backlog 6 Second island | DONE | 56a188a · isle dome blended into the heightfield (main island's 750 land cells untouched), locked until a harbor, ferry steamer on the sea route; settleIsle scenario; 2 sim tests, smoke B6 · headless 165 fps |
+| Backlog 7 Achievements | IN PROGRESS | sub-task: sim/achievements.ts + popup |
 
 ## Current focus
-Backlog 6 Second island — sub-task: sim/isle.ts + heightfield blend. Last thing that worked: districts green (build/test/smoke, 45 tests, 165 fps).
+Backlog 7 Achievements — sub-task: sim/achievements.ts, ui popup, tests. Last thing that worked: isle green (build/test/smoke, 47 tests, 165 fps).
 
 ## Blocked
 (milestone, why, what was tried, what would unblock)
@@ -54,3 +55,4 @@ Backlog 6 Second island — sub-task: sim/isle.ts + heightfield blend. Last thin
 - 2026-09-26 11:05 · Backlog 3 · 5638fe2 · headless 165 fps
 - 2026-09-26 11:25 · Backlog 4 · 6d7531c · headless 165 fps
 - 2026-09-26 11:50 · Backlog 5 · da96ee7 · headless 165 fps
+- 2026-09-26 12:30 · Backlog 6 · 56a188a · headless 165 fps

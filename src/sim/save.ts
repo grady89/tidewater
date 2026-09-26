@@ -10,6 +10,7 @@ export function serialize(state: SimState): string {
 export function deserialize(json: string): SimState {
   const s = JSON.parse(json) as SimState;
   if (s.version !== 2) throw new Error(`unsupported save version ${String(s.version)}`);
+  s.achievements ??= []; // saves from before backlog 7
   return s;
 }
 

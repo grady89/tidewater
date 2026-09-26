@@ -2,6 +2,8 @@
 import { describe, expect, it } from "vitest";
 import { HIGH_WATER_MARK, LOW_WATER_MARK, SPRING_HI, SPRING_LO, STILT_LENGTH, TIDE_HI, TIDE_LO, TIDE_PERIOD } from "../src/config";
 import { BEACH_MAX_HEIGHT, BOAT_COST, BOAT_MIN_RANGE, BOAT_RANGE, BUILDINGS, CAP_BASE, DRAWDOWN_LEVEL, DRAWDOWN_SECONDS, FIRE_BURN_SECONDS, FIRE_IGNITE_THRESHOLD, FISH_CAP, HAPPY, INJURY_NATURAL_CYCLES, LEVEL_UP_HAPPINESS, MAX_LEVEL, OYSTER_POLLUTION_KILL, PLANK_ORDER_SIZE, STARTING_MONEY, TRADE_EVERY, TRADE_EVERY_LIGHTHOUSE, TREATMENT_RADIUS, TREE_REGROW_CYCLES, WAREHOUSE_CAP } from "../src/sim/balance";
+import { ACHIEVEMENTS, checkAchievements } from "../src/sim/achievements";
+import { deserialize, serialize } from "../src/sim/save";
 import { DISTRICT_MIN, districtName, districtOf, districts } from "../src/sim/districts";
 import { ISLE } from "../src/sim/isle";
 import { startCell } from "../src/sim/start";
@@ -790,6 +792,38 @@ describe("second island (backlog 6)", () => {
     expect(isle.huts.every(h => h.reached)).toBe(true);
     const round = new Grid(JSON.parse(JSON.stringify(state)) as SimState);
     expect(round.isleOpen()).toBe(true);
+  });
+});
+
+describe("achievements (backlog 7)", () => {
+  it("a fresh town has none; the first boat and the first catch come in order, once", () => {
+    const { state, grid } = newGame(1);
+    expect(state.achievements).toEqual([]);
+    expect(checkAchievements(state, grid)).toEqual([]);
+    const { state: s, grid: g } = town();
+    expect(checkAchievements(s, g)).toEqual(["firstBoat"]);
+    expect(checkAchievements(s, g)).toEqual([]);
+    advanceCycles(s, g, 4); // the boats' first landing settles on the third peak
+    checkAchievements(s, g); // the peak tick need not be one of the once-a-second checks
+    expect(s.achievements.slice(0, 2)).toEqual(["firstBoat", "firstCatch"]);
+    expect(s.log.some(m => m.startsWith("★ First boat"))).toBe(true);
+    expect(new Set(s.achievements).size).toBe(s.achievements.length);
+  });
+  it("a big town earns fifty residents and the isle; a save keeps the list and an old save gets an empty one", () => {
+    const { state, grid, town: t } = town();
+    bigTown(state, grid);
+    state.resources.money += 5000; state.resources.planks += 200;
+    placeHarbor(state, grid, t.pier.cells[0]);
+    settleIsle(state, grid);
+    advanceCycles(state, grid, 3);
+    checkAchievements(state, grid);
+    expect(state.achievements).toContain("fifty");
+    expect(state.achievements).toContain("isle");
+    expect(deserialize(serialize(state)).achievements).toEqual(state.achievements);
+    const old = JSON.parse(serialize(state)) as Partial<SimState>;
+    delete old.achievements;
+    expect(deserialize(JSON.stringify(old)).achievements).toEqual([]);
+    for (const a of ACHIEVEMENTS) expect(a.title.length).toBeGreaterThan(0);
   });
 });
 

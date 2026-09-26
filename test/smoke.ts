@@ -47,6 +47,15 @@ try {
   console.log("M2 built:", JSON.stringify(built));
   assert(built.pier && built.boats === 2 && built.huts === 3 && built.market && built.walkways >= 2, "starter town placed");
   assert(built.money >= 0, "starter town affordable");
+  // Backlog 7: the first boat pops an achievement within a second of sim time.
+  const b7 = await page.evaluate(() => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    api.tickSeconds(1);
+    const el = document.getElementById("achievement")!;
+    return { earned: api.sim.achievements.slice(), shown: api.view.achievementsShown(), visible: !el.hidden, text: el.innerText.replace(/\s+/g, " ") };
+  });
+  console.log("B7 achievement:", JSON.stringify(b7));
+  assert(b7.earned.includes("firstBoat") && b7.shown.includes("firstBoat") && b7.visible && /First boat/.test(b7.text), "first-boat popup shown");
 
   const ran = await page.evaluate(() => {
     const api = (window as unknown as { __tidewater: Api }).__tidewater;
@@ -518,6 +527,9 @@ try {
   console.log("M12 big town:", JSON.stringify(m12));
   // Backlog 4: the homes of a big town wear all three roof shapes.
   assert(m12.roofs.pyramid > 0 && m12.roofs.gable > 0 && m12.roofs.hipped > 0, "three roof shapes among the homes");
+  // Backlog 7: a town of 230 has earned its fifty and its hundred.
+  const m12Ach = await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.sim.achievements.slice());
+  assert(m12Ach.includes("fifty") && m12Ach.includes("hundred"), "big town achievements: " + m12Ach.join(","));
   assert(m12.buildings >= 300, "300 buildings placed");
   assert(m12.boats >= 30, "30 boats in the ledger");
   assert(m12.walkers >= 200, "200 walkers on the streets");

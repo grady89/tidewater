@@ -18,6 +18,7 @@ import { Hud } from "./ui/hud";
 import { InfoPanel } from "./ui/infoPanel";
 import { SaveMenu } from "./ui/saveMenu";
 import { Speed, SpeedControls } from "./ui/speed";
+import { AchievementPopup } from "./ui/achievements";
 import { Tutorial } from "./ui/tutorial";
 import { Audio } from "./view/audio";
 import { Boats } from "./view/boats";
@@ -92,6 +93,8 @@ const placement = new Placement(scene, camera, grid, canvas);
 const hud = new Hud(document.getElementById("hud")!, document.getElementById("resources")!, document.getElementById("notes")!, grid, tool => placement.setTool(tool), kind => overlays.show(kind), () => orderPlanks(state));
 const info = new InfoPanel(document.getElementById("info")!, grid);
 const tutorial = new Tutorial(document.getElementById("tutorial")!);
+const achievements = new AchievementPopup(document.getElementById("achievement")!);
+achievements.adopt(state);
 placement.onSelect = b => info.select(b);
 
 /** Swap the whole ledger (load, new town) and let every view rebuild from it. */
@@ -101,6 +104,7 @@ function adopt(next: SimState): void {
   views.clear();
   walkers.clear();
   info.select(null);
+  achievements.adopt(state);
   syncView();
 }
 function newTown(): void {
@@ -172,6 +176,7 @@ function syncView(): void {
   hud.update({ tool: placement.tool, blocker: placement.blocker, fate: placement.fate, state });
   info.update(state);
   tutorial.update(state);
+  achievements.update(state, viewTime);
   speedControls.update(speed, audio.muted, water.reflections);
   audio.sync(state, stormMix);
 }
@@ -287,6 +292,7 @@ const api = {
     crabs: () => wildlife.crabCount,
     ferry: () => ferry.pose,
     isleOpen: () => grid.isleOpen(),
+    achievementsShown: () => achievements.shown.slice(),
     /** How many homes wear each roof shape. */
     roofs: () => {
       const out: Record<string, number> = { pyramid: 0, gable: 0, hipped: 0 };

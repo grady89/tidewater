@@ -404,6 +404,16 @@ Decisions and findings that CLAUDE.md does not cover. Newest at the bottom of ea
   huts alongside); the smoke asserts the lock, the unlock, the settlement and a running ferry, and shoots
   `shots/b6-isle.png`.
 
+### Backlog 7 achievements
+- Nine milestones in `sim/achievements.ts` (first boat, first catch, first trade, fifty and a hundred residents,
+  a level-3 home, a storm weathered, a lighthouse, the first building on the isle), each a predicate over the
+  ledger. `checkAchievements` runs once a second of sim time from `tick`; a new one is pushed onto
+  `state.achievements` (so the order is the order won and a save keeps it) and logged with a ★.
+- The save version stays 2: `deserialize` fills a missing `achievements` with `[]` for saves from before this.
+- The popup (`ui/achievements.ts`, `#achievement`) shows the newest id for 6 s of view time; adopting a loaded
+  town marks its list as seen so nothing replays. Scripted jumps (`advance`) push view time past the 6 s, which is
+  why the smoke checks the popup right after a one-second tick.
+
 ### Chunk merge (the M12 perf pass, done for the mirror)
 - `view/buildingViews.ts` now merges every building in an 8×8-cell chunk into one mesh (`chunk:i,j`), rebuilt
   when any building in the chunk appears, leaves or changes its mesh signature. 300 buildings → 15 chunk meshes;

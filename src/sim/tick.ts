@@ -1,5 +1,6 @@
 // One fixed-timestep step of the ledger. Frame rate never enters here.
 import { HIGH_WATER_MARK, LOW_WATER_MARK, SIM_TICK, TIDE_PERIOD } from "../config";
+import { checkAchievements } from "./achievements";
 import { settleCycle, shiftEnd, shiftStart } from "./economy";
 import { rollStorm, rollTsunami, tickTsunami } from "./events";
 import { tickFire } from "./fire";
@@ -39,6 +40,7 @@ export function tick(state: SimState, grid: Grid, dt = SIM_TICK): void {
     rollStorm(state, grid);
     rollTsunami(state, grid);
   }
+  if (state.tick % 20 === 0) checkAchievements(state, grid);
 }
 
 /** Advance in fixed ticks until `cycles` more high tides have passed (so the peak tick is always included). */
