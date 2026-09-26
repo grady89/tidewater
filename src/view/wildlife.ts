@@ -12,8 +12,10 @@ import { mergeFlat, tint } from "../world/flatMesh";
 const GULLS_PER_HARBOUR = 2;
 const GULLS_PER_BOAT = 1;
 const MAX_GULLS = 48;
-const CRAB_SITES = 64;
+const CRAB_SITES = 22;
 const CRAB_REACH = 4;
+/** A crab sits still for most of each bout, then scuttles sideways to a new spot within its cell. */
+const CRAB_BOUT = 3.2, CRAB_MOVE = 0.35;
 
 interface CrabSite { x: number; z: number; h: number; phase: number }
 
@@ -112,9 +114,18 @@ export class Wildlife {
       const exposed = (s.h - level) / 0.08; // pops up over the first 8 cm of exposure
       if (exposed <= 0) continue;
       const sc = Math.min(1, exposed);
-      const scuttle = 0.18 * Math.sin(viewTime * 2.2 + s.phase);
-      const pos = new Vector3(s.x + scuttle * Math.cos(s.phase), s.h, s.z + scuttle * Math.sin(s.phase));
-      Matrix.Compose(new Vector3(sc, sc, sc), Quaternion.FromEulerAngles(0, s.phase, 0), pos).copyToArray(this.crabMatrices, n++ * 16);
+      // Bouts: each one has a seeded resting spot; the crab darts from the last spot to this one in the first
+      // CRAB_MOVE seconds of the bout and then sits. Facing is sideways to the dart, as crabs walk.
+      const t = viewTime / CRAB_BOUT + s.phase;
+      const bout = Math.floor(t);
+      const u = Math.min(1, ((t - bout) * CRAB_BOUT) / CRAB_MOVE);
+      const spot = (k: number) => { const h = Math.sin(k * 12.9898 + s.phase * 78.233) * 43758.5453; const a = (h - Math.floor(h)) * 6.283; return { x: 0.3 * Math.cos(a), z: 0.3 * Math.sin(a) }; };
+      const from = spot(bout - 1), to = spot(bout);
+      const e = u * u * (3 - 2 * u);
+      const ox = from.x + (to.x - from.x) * e, oz = from.z + (to.z - from.z) * e;
+      const yaw = Math.atan2(to.x - from.x, to.z - from.z);
+      const pos = new Vector3(s.x + ox, s.h, s.z + oz);
+      Matrix.Compose(new Vector3(sc, sc, sc), Quaternion.FromEulerAngles(0, yaw, 0), pos).copyToArray(this.crabMatrices, n++ * 16);
     }
     this.crabCount = n;
     if (n === 0) { this.crabs.setEnabled(false); return; }

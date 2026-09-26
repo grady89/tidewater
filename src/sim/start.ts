@@ -28,6 +28,23 @@ export function startCell(grid: Grid): Cell {
   return best!;
 }
 
+/** Where the first pier should go: the deep cell that takes one, nearest the town's homes (or the start cell). */
+export function suggestPier(grid: Grid): Cell | null {
+  const homes = Object.values(grid.state.buildings).filter(b => b.kind === "hut" || b.kind === "house").map(b => b.cells[0]);
+  const near = homes.length ? homes : [startCell(grid)];
+  let best: Cell | null = null, bd = Infinity;
+  for (let i = -32; i < 32; i++) for (let j = -32; j < 32; j++) {
+    const c = { i, j };
+    if (grid.classAt(c) !== "deep" || grid.onIsle([c])) continue;
+    const fp = grid.footprint("pier", c);
+    if (!fp || !grid.canPlace("pier", fp)) continue;
+    let d = Infinity;
+    for (const h of near) d = Math.min(d, Math.hypot(i - h.i, j - h.j));
+    if (d < bd) { bd = d; best = c; }
+  }
+  return best;
+}
+
 export function seedTown(state: SimState, grid: Grid): void {
   const c = startCell(grid);
   if (grid.canPlace("hut", [c])) grid.place("hut", [c]);

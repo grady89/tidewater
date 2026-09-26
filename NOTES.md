@@ -439,6 +439,39 @@ Decisions and findings that CLAUDE.md does not cover. Newest at the bottom of ea
 - Smoke now clicks the Homes tab, checks no HUD button extends past the panel, and drives the camera with real
   wheel/drag/key events (zoom keeps the point under the cursor within 1.5 units, right-drag removes nothing).
 
+### Placement rework (second hands-on feedback: seams, topography, docks, crabs, a stuck start)
+What other builders do and what was taken from each:
+- **Autotiled roads** (SimCity, Banished, Anno): a road tile's mesh depends on its neighbours, so a street is one
+  surface. `view/buildings.ts › streetDeck`: a walkway's slab runs to the cell edge on every side that meets a
+  deck (the neighbour does the same, so the seam vanishes), a low kerb closes open sides, and `meshSignature`
+  carries the join key so placing a piece rebuilds its neighbours' chunk too.
+- **Terrain conforming** (Cities: Skylines flattens under buildings and grades roads; Timberborn steps in
+  levels): a stilt town has a cleaner answer — level runs. `grid.floorFor` for "stilts" pieces rises to the
+  highest neighbouring deck within `WALKWAY_SNAP` (0.4) so a street laid over uneven flats stays flat, never
+  drops below the cell's own stilt height (that would flood it), and where a neighbour is higher than the snap a
+  two-step stair is drawn up to it. Raising a deck only ever improves its flood fate.
+- **Drag to lay roads** (all of them): click-drag with a walkway, raised walkway, breakwater, net or sea wall
+  draws an L-shaped run (longer axis first, ≤ 40 cells); the ghost shows each cell green or grey, the hint prices
+  the run, release lays it in order so each deck meets the last. The camera's left-drag grab is off while a line
+  tool is selected (`cameraControl.leftDrag`) — CS keeps panning on the middle button for the same reason.
+- **"Needs road access"** (CS greys the building and says so): the deep dock now requires touching a pier or a
+  raised walkway at placement (`needsLink`), with the reason in the ghost hint, because a dock dropped in open
+  water was unreachable and the player couldn't tell why. Raised walkways were already the bridge piece (class
+  flatOrDeep); the catalog now says so.
+- **Connectivity preview** (CS's "not connected" icon): a placeable piece that touches nothing on the network
+  shows an amber caution ("Not joined to the town yet…") rather than being refused — a street can be started
+  from either end.
+- **Demolish refund** (CS, Anno): right-click removal returns `REMOVE_REFUND` (50 %) of the money cost. This is
+  the way out of the soft-lock the first playtest hit: 500$ spent on walkways and homes with no pier means no
+  fish, no food, no residents and no income. `Tutorial.stuck` also says exactly that when there is no pier and
+  less than a pier's price.
+- **Highlighted first site** (the brief's "pier suggestion highlighted"): `sim/start.ts › suggestPier` picks the
+  deep cell that takes a pier nearest the homes; `view/marker.ts` pulses a ring there until any harbour exists.
+- Crabs: 22 sites instead of 64, and they now sit still and dart sideways in short bouts (`CRAB_BOUT` 3.2 s,
+  `CRAB_MOVE` 0.35 s) between seeded resting spots, facing across their dart, instead of sliding in circles.
+- Why people weren't coming in that playtest: immigration needs a home *reached* from a pier (walkway path to a
+  pier with a boat) and food in stock; the seed money is 500$ and it had all gone on unconnected pieces.
+
 ### Chunk merge (the M12 perf pass, done for the mirror)
 - `view/buildingViews.ts` now merges every building in an 8×8-cell chunk into one mesh (`chunk:i,j`), rebuilt
   when any building in the chunk appears, leaves or changes its mesh signature. 300 buildings → 15 chunk meshes;

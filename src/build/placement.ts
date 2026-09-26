@@ -1,9 +1,9 @@
 // Pointer interaction: hover picks a cell, a ghost previews the footprint (tinted by placement validity and, for
 // low decks, by which tides will flood it), click places (and pays), clicking an existing building inspects it,
 // right-click removes. Placement writes to the sim through the Grid; meshes appear when the view syncs.
-import { ArcRotateCamera, Color3, Matrix, Mesh, MeshBuilder, Scene, StandardMaterial } from "@babylonjs/core";
+import { ArcRotateCamera, Color3, Matrix, Mesh, MeshBuilder, Quaternion, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
 import { BuildingKind, BUILDINGS, PlacementClass } from "../sim/balance";
-import { boatPurchaseBlocker, buyBoat, canAfford, tryPlace } from "../sim/economy";
+import { boatPurchaseBlocker, buyBoat, canAfford, removeBuilding, tryPlace } from "../sim/economy";
 import { Grid, HALF, worldToCell } from "../sim/grid";
 import { terrainHeight } from "../sim/heightfield";
 import { addLantern, lanternBlocker } from "../sim/services";
@@ -14,6 +14,22 @@ export type Tool = BuildingKind | "boat" | "lanternPost";
 export type Fate = "safe" | "spring" | "always";
 
 const CLICK_SLOP_PX = 5;
+/** Per-cell pieces that are laid in runs: drag from one cell to another and the whole line goes down. */
+const LINE_TOOLS: ReadonlySet<Tool> = new Set<Tool>(["walkway", "raisedWalkway", "breakwater", "sharkNet", "seaWall"]);
+const MAX_LINE = 40;
+
+/** The cells from `a` to `b` as an L: first along the longer axis, then the other. Both ends included. */
+export function linePath(a: Cell, b: Cell): Cell[] {
+  const out: Cell[] = [];
+  const di = b.i - a.i, dj = b.j - a.j;
+  const iFirst = Math.abs(di) >= Math.abs(dj);
+  let i = a.i, j = a.j;
+  out.push({ i, j });
+  const stepI = () => { while (i !== b.i) { i += Math.sign(di); out.push({ i, j }); } };
+  const stepJ = () => { while (j !== b.j) { j += Math.sign(dj); out.push({ i, j }); } };
+  if (iFirst) { stepI(); stepJ(); } else { stepJ(); stepI(); }
+  return out.slice(0, MAX_LINE);
+}
 
 export class Placement {
   tool: Tool = "walkway";
@@ -22,11 +38,21 @@ export class Placement {
   blocker: string | null = null;
   /** Which tides would flood the hovered footprint, when it can be placed. */
   fate: Fate = "safe";
+  /** A non-blocking caution about the hovered footprint (it can go there, but won't be connected). */
+  warn: string | null = null;
+  /** The run being dragged out with a line tool: how many cells would be laid and what they cost. */
+  line: { count: number; cost: number } | null = null;
   /** Called when the player clicks an existing building. */
   onSelect: (b: Building | null) => void = () => {};
   private readonly ghost: Mesh;
+  private readonly lineGhosts: { ok: Mesh; bad: Mesh };
   private readonly mats: Record<"ok" | "spring" | "always" | "bad", StandardMaterial>;
   private down: { x: number; y: number; button: number } | null = null;
+  private lineStart: Cell | null = null;
+  private linePath: Cell[] = [];
+
+  /** Line tools draw with the left button, so the camera must not grab the ground with it. */
+  get dragsLine(): boolean { return LINE_TOOLS.has(this.tool); }
 
   constructor(private readonly scene: Scene, private readonly camera: ArcRotateCamera, private readonly grid: Grid, canvas: HTMLCanvasElement) {
     this.ghost = MeshBuilder.CreateBox("ghost", { size: 1 }, scene);
@@ -40,14 +66,28 @@ export class Placement {
       bad: this.ghostMaterial("ghostBad", "#8d8a83"),
     };
     this.ghost.material = this.mats.ok;
+    const lineGhost = (name: string, mat: StandardMaterial) => {
+      const m = MeshBuilder.CreateBox(name, { size: 1 }, scene);
+      m.scaling.y = 0.06; m.isPickable = false; m.material = mat; m.setEnabled(false);
+      return m;
+    };
+    this.lineGhosts = { ok: lineGhost("ghostLineOk", this.mats.ok), bad: lineGhost("ghostLineBad", this.mats.bad) };
 
     canvas.addEventListener("pointermove", () => this.refresh());
     canvas.addEventListener("pointerleave", () => { this.hover = null; this.ghost.setEnabled(false); });
-    canvas.addEventListener("pointerdown", e => { this.down = { x: e.clientX, y: e.clientY, button: e.button }; });
+    canvas.addEventListener("pointerdown", e => {
+      this.down = { x: e.clientX, y: e.clientY, button: e.button };
+      if (e.button === 0 && this.dragsLine && this.hover) this.lineStart = this.hover;
+    });
     canvas.addEventListener("pointerup", e => {
       const d = this.down;
       this.down = null;
-      if (!d || d.button !== e.button || Math.hypot(e.clientX - d.x, e.clientY - d.y) > CLICK_SLOP_PX) return;
+      const start = this.lineStart;
+      this.lineStart = null;
+      if (!d || d.button !== e.button) { this.refresh(); return; }
+      const moved = Math.hypot(e.clientX - d.x, e.clientY - d.y) > CLICK_SLOP_PX;
+      if (e.button === 0 && start && this.linePath.length > 1) { this.placeLine(); return; }
+      if (moved) { this.refresh(); return; }
       if (e.button === 0) this.click();
       else if (e.button === 2) this.remove();
     });
@@ -115,38 +155,91 @@ export class Placement {
     return this.evaluate(anchor).blocker;
   }
 
-  /** Footprint, blocker and flood fate for placing the current tool at `anchor`. */
-  private evaluate(anchor: Cell): { cells: Cell[]; blocker: string | null; fate: Fate; y: number } {
+  /** Footprint, blocker, caution and flood fate for placing the current tool at `anchor`. */
+  private evaluate(anchor: Cell): { cells: Cell[]; blocker: string | null; warn: string | null; fate: Fate; y: number } {
     const state = this.grid.state;
     if (this.tool === "boat") {
       const b = this.grid.buildingAt(anchor);
-      return { cells: b && (BUILDINGS[b.kind].slots ?? 0) > 0 ? b.cells : [anchor], blocker: boatPurchaseBlocker(state, b), fate: "safe", y: b?.floorY ?? 1 };
+      return { cells: b && (BUILDINGS[b.kind].slots ?? 0) > 0 ? b.cells : [anchor], blocker: boatPurchaseBlocker(state, b), warn: null, fate: "safe", y: b?.floorY ?? 1 };
     }
     if (this.tool === "lanternPost") {
       const b = this.grid.buildingAt(anchor);
-      return { cells: [anchor], blocker: lanternBlocker(state, this.grid, anchor), fate: "safe", y: b?.floorY ?? 1 };
+      return { cells: [anchor], blocker: lanternBlocker(state, this.grid, anchor), warn: null, fate: "safe", y: b?.floorY ?? 1 };
     }
     const kind = this.tool;
     const def = BUILDINGS[kind];
     const cells = this.grid.footprint(kind, anchor);
-    if (!cells) return { cells: [anchor], blocker: def.cls === "edge" ? "Needs deep water against the shore" : "Off the map", fate: "safe", y: this.pickY() };
+    if (!cells) return { cells: [anchor], blocker: def.cls === "edge" ? "Needs deep water against the shore" : "Off the map", warn: null, fate: "safe", y: this.pickY() };
     const y = this.grid.floorFor(kind, cells);
-    if (!this.grid.classOk(def.cls, cells)) return { cells, blocker: classHint(def.cls), fate: "safe", y };
-    if (!this.grid.terrainOk(kind, cells)) return { cells, blocker: `Needs ground between ${def.terrain!.min} and ${def.terrain!.max} m`, fate: "safe", y };
-    if (cells.some(c => this.grid.buildingAt(c))) return { cells, blocker: "Occupied", fate: "safe", y };
-    if (this.grid.onIsle(cells) && !this.grid.isleOpen()) return { cells, blocker: "Across the water: a harbor's ferry opens the isle", fate: "safe", y };
-    if (def.needsWalkway && !this.grid.touchesWalkway(cells)) return { cells, blocker: "Must touch a walkway on the flats", fate: "safe", y };
-    if (def.requires && !this.grid.has(def.requires)) return { cells, blocker: `Requires a ${BUILDINGS[def.requires].name.toLowerCase()}`, fate: "safe", y };
-    if (def.touches && !this.grid.touchesKind(cells, def.touches)) return { cells, blocker: `Must touch the ${BUILDINGS[def.touches].name.toLowerCase()}`, fate: "safe", y };
-    if (!canAfford(state, def.cost)) return { cells, blocker: `Costs ${costLabel(kind)}`, fate: "safe", y };
-    return { cells, blocker: null, fate: floodFate(y), y };
+    const no = (blocker: string) => ({ cells, blocker, warn: null, fate: "safe" as Fate, y });
+    if (!this.grid.classOk(def.cls, cells)) return no(classHint(def.cls));
+    if (!this.grid.terrainOk(kind, cells)) return no(`Needs ground between ${def.terrain!.min} and ${def.terrain!.max} m`);
+    if (cells.some(c => this.grid.buildingAt(c))) return no("Occupied");
+    if (this.grid.onIsle(cells) && !this.grid.isleOpen()) return no("Across the water: a harbor's ferry opens the isle");
+    if (def.needsWalkway && !this.grid.touchesWalkway(cells)) return no("Must touch a walkway on the flats");
+    if (def.needsLink && !this.grid.touchesLink(cells)) return no("Must touch a pier or a raised walkway (they bridge deep water)");
+    if (def.requires && !this.grid.has(def.requires)) return no(`Requires a ${BUILDINGS[def.requires].name.toLowerCase()}`);
+    if (def.touches && !this.grid.touchesKind(cells, def.touches)) return no(`Must touch the ${BUILDINGS[def.touches].name.toLowerCase()}`);
+    if (!canAfford(state, def.cost)) return no(`Costs ${costLabel(kind)}`);
+    // Placeable. Caution when nothing it touches is on the network: it would stand idle until a street reaches it.
+    let warn: string | null = null;
+    if (def.network !== "root" && !cells.some(c => this.grid.neighbors(c).some(n => { const b = this.grid.buildingAt(n); return !!b && (b.reached || BUILDINGS[b.kind].network === "root"); }))) {
+      warn = def.network === "link" ? "Not joined to the town yet: streets need a pier at one end" : "No street touches it: nobody can reach it";
+    }
+    return { cells, blocker: null, warn, fate: floodFate(y), y };
+  }
+
+  /** The cells of the run being dragged, with what each would cost; blocked cells are skipped, not fatal. */
+  private evaluateLine(): { cells: Cell[]; ok: boolean[]; cost: number } {
+    const kind = this.tool as BuildingKind;
+    const cost = BUILDINGS[kind].cost.money;
+    const ok = this.linePath.map(c => {
+      const cells = this.grid.footprint(kind, c);
+      return !!cells && this.grid.classOk(BUILDINGS[kind].cls, cells) && !this.grid.buildingAt(c) && (!this.grid.onIsle(cells) || this.grid.isleOpen());
+    });
+    return { cells: this.linePath, ok, cost: ok.filter(Boolean).length * cost };
+  }
+
+  /** Lay the dragged run in order, so each deck meets the one before; stop when the money runs out. */
+  private placeLine(): void {
+    const kind = this.tool as BuildingKind;
+    for (const c of this.linePath) tryPlace(this.grid.state, this.grid, kind, c);
+    this.linePath = [];
+    this.line = null;
+    this.onSelect(null);
+    this.refresh();
+  }
+
+  private showLine(): void {
+    const { cells, ok, cost } = this.evaluateLine();
+    this.line = { count: ok.filter(Boolean).length, cost };
+    const okM: number[] = [], badM: number[] = [];
+    cells.forEach((c, k) => {
+      const y = ok[k] ? this.grid.floorFor(this.tool as BuildingKind, [c]) : this.pickY();
+      Matrix.Compose(new Vector3(0.96, 1, 0.96), Quaternion.Identity(), new Vector3(c.i + 0.5, y, c.j + 0.5)).copyToArray(ok[k] ? okM : badM, (ok[k] ? okM : badM).length);
+    });
+    for (const [mesh, m] of [[this.lineGhosts.ok, okM], [this.lineGhosts.bad, badM]] as [Mesh, number[]][]) {
+      if (!m.length) { mesh.setEnabled(false); continue; }
+      mesh.thinInstanceSetBuffer("matrix", new Float32Array(m), 16, false);
+      mesh.setEnabled(true);
+    }
+    this.ghost.setEnabled(false);
   }
 
   refresh(): void {
     this.hover = this.pickCell();
-    if (!this.hover) { this.ghost.setEnabled(false); this.blocker = null; return; }
-    const { cells, blocker, fate, y } = this.evaluate(this.hover);
+    if (this.lineStart && this.hover) {
+      this.linePath = linePath(this.lineStart, this.hover);
+      this.showLine();
+      this.blocker = null; this.warn = null;
+      return;
+    }
+    this.lineGhosts.ok.setEnabled(false); this.lineGhosts.bad.setEnabled(false);
+    this.line = null;
+    if (!this.hover) { this.ghost.setEnabled(false); this.blocker = null; this.warn = null; return; }
+    const { cells, blocker, warn, fate, y } = this.evaluate(this.hover);
     this.blocker = blocker;
+    this.warn = warn;
     this.fate = fate;
     const is = cells.map(c => c.i), js = cells.map(c => c.j);
     const minI = Math.min(...is), maxI = Math.max(...is), minJ = Math.min(...js), maxJ = Math.max(...js);
@@ -187,7 +280,7 @@ export class Placement {
     if (!at) return;
     const b = this.grid.buildingAt(at);
     if (!b) return;
-    this.grid.remove(b);
+    removeBuilding(this.grid.state, this.grid, b);
     this.onSelect(null);
     this.refresh();
   }

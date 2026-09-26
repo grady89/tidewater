@@ -1,6 +1,7 @@
 // A five-step tutorial and the empty-state hints, told through one persistent line above the notifications.
 // Progress lives in localStorage (it's UI state, not ledger state); each step clears itself when the town has done
 // the thing. Read-only over the sim.
+import { BUILDINGS } from "../sim/balance";
 import { population, SimState } from "../sim/state";
 
 const KEY = "tidewater.tutorial";
@@ -51,9 +52,17 @@ export class Tutorial {
     return "";
   }
 
+  /** A town with no pier and no money for one has nothing to earn with: say how to get out. */
+  static stuck(state: SimState): string | null {
+    const bs = Object.values(state.buildings);
+    if (bs.some(b => b.kind === "pier" || b.kind === "dock" || b.kind === "harbor")) return null;
+    if (state.resources.money >= BUILDINGS.pier.cost.money) return null;
+    return `Stuck: no pier and not enough for one (${BUILDINGS.pier.cost.money}$). Right-click a building to remove it — half its cost comes back.`;
+  }
+
   update(state: SimState): void {
     while (this.step < STEPS.length && STEPS[this.step].done(state)) { this.step++; this.persist(); }
-    const text = this.step < STEPS.length ? STEPS[this.step].text + "  (click to skip)" : this.hint(state);
+    const text = Tutorial.stuck(state) ?? (this.step < STEPS.length ? STEPS[this.step].text + "  (click to skip)" : this.hint(state));
     if (this.el.textContent !== text) this.el.textContent = text;
     this.el.hidden = text === "";
   }

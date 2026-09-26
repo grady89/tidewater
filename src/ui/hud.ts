@@ -13,6 +13,8 @@ import { OverlayKind, OVERLAYS } from "../view/overlays";
 export interface HudState {
   tool: Tool;
   blocker: string | null;
+  warn: string | null;
+  line: { count: number; cost: number } | null;
   fate: Fate;
   state: SimState;
 }
@@ -33,11 +35,13 @@ function costOf(kind: BuildingKind): string {
   return parts.join("+");
 }
 
-const FATE_TEXT: Record<Fate, string> = {
-  safe: "Click to place · right-click to remove · drag to orbit",
+const FATE_TEXT: Record<Fate | "line", string> = {
+  safe: "Click to place · right-click to remove (half the cost comes back)",
+  line: "Click to place, or drag to lay a run · right-click to remove",
   spring: "Floods at spring tides",
   always: "Floods every high tide",
 };
+const LINE_TOOL_HINT: ReadonlySet<Tool> = new Set<Tool>(["walkway", "raisedWalkway", "breakwater", "sharkNet", "seaWall"]);
 
 const RESOURCES = ["money", "fish", "shellfish", "smoked", "timber", "planks", "population", "tourists", "happiness"];
 
@@ -250,9 +254,11 @@ export class Hud {
     this.tideEvent.textContent = ts === "drawdown" ? "The sea is pulling back" : ts === "wave" ? "A wave is coming in" : ts === "settle" ? "The water returns" : state.storm.active ? "Storm: the boats stay in" : "";
     this.tideEvent.classList.toggle("now", ts !== null || state.storm.active);
 
-    this.hint.textContent = s.blocker ?? FATE_TEXT[s.fate];
+    const lineText = s.line ? `${s.line.count} × ${TOOLS.find(t => t.tool === s.tool)?.label.toLowerCase() ?? s.tool} · ${s.line.cost}$ — release to lay them` : null;
+    const fateText = s.fate !== "safe" ? FATE_TEXT[s.fate] : null;
+    this.hint.textContent = s.blocker ?? lineText ?? s.warn ?? fateText ?? (LINE_TOOL_HINT.has(s.tool) ? FATE_TEXT.line : FATE_TEXT.safe);
     this.hint.classList.toggle("blocked", s.blocker !== null);
-    this.hint.classList.toggle("warn", s.blocker === null && s.fate !== "safe");
+    this.hint.classList.toggle("warn", s.blocker === null && !s.line && (s.warn !== null || s.fate !== "safe"));
 
     if (state.last.cycle !== this.lastCycle) {
       this.lastCycle = state.last.cycle;

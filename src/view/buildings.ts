@@ -3,7 +3,7 @@
 import { Axis, Color3, Mesh, MeshBuilder, Scene, Space, StandardMaterial, Vector3, VertexBuffer } from "@babylonjs/core";
 import { STILT_SINK } from "../config";
 import { BUILDINGS } from "../sim/balance";
-import { cellCenter } from "../sim/grid";
+import { cellCenter, DIRS, Grid } from "../sim/grid";
 import { terrainHeight } from "../sim/heightfield";
 import { Building, Cell } from "../sim/state";
 import { mergeFlat, tint } from "../world/flatMesh";
@@ -169,10 +169,51 @@ function lanternPost(scene: Scene, parts: Mesh[], x: number, z: number, F: numbe
   return lantern(scene, x + 0.36, z + 0.36, F + 0.02);
 }
 
-function walkway(scene: Scene, b: Building): BuildingMeshes {
+/** What a walkway meets on each side: nothing, a deck at its own height, or a deck `dh` higher (a step up). */
+export type Join = { side: Cell; kind: "open" | "flush" | "step"; dh: number };
+export function deckJoins(b: Building, grid: Grid): Join[] {
+  const c = b.cells[0];
+  return DIRS.map(d => {
+    const n = grid.buildingAt({ i: c.i + d.i, j: c.j + d.j });
+    if (!n) return { side: d, kind: "open" as const, dh: 0 };
+    const dh = n.floorY - b.floorY;
+    if (dh > 0.1 && dh <= 0.8) return { side: d, kind: "step" as const, dh };
+    return { side: d, kind: "flush" as const, dh: 0 };
+  });
+}
+function joinKey(b: Building, grid: Grid): string {
+  return deckJoins(b, grid).map(j => j.kind === "open" ? "-" : j.kind === "flush" ? "=" : `s${Math.round(j.dh * 10)}`).join("");
+}
+
+/**
+ * The deck of a one-cell street piece: the slab runs to the cell edge wherever a neighbour deck meets it (so a
+ * street reads as one surface), a low kerb closes the open sides, and a short stair climbs to a higher neighbour.
+ */
+function streetDeck(scene: Scene, parts: Mesh[], b: Building, grid: Grid, x: number, z: number, F: number): void {
+  parts.push(box(scene, 0.9, 0.07, 0.9, x, F - 0.035, z, PALETTE.planks));
+  for (const j of deckJoins(b, grid)) {
+    const ax = j.side.i, az = j.side.j; // unit vector toward the side
+    if (j.kind === "open") {
+      parts.push(box(scene, ax ? 0.06 : 0.96, 0.05, az ? 0.06 : 0.96, x + ax * 0.45, F + 0.005, z + az * 0.45, PALETTE.wood));
+      continue;
+    }
+    // Fill out to the edge (0.45 → 0.5); the neighbour fills its own half, so the seam vanishes.
+    parts.push(box(scene, ax ? 0.12 : 0.9, 0.07, az ? 0.12 : 0.9, x + ax * 0.45, F - 0.035, z + az * 0.45, PALETTE.planks));
+    if (j.kind === "step") {
+      const n = 2;
+      for (let k = 1; k <= n; k++) {
+        const rise = (j.dh * k) / (n + 1), inset = 0.5 - 0.12 * k;
+        parts.push(box(scene, ax ? 0.12 : 0.6, 0.06, az ? 0.12 : 0.6, x + ax * inset, F + rise, z + az * inset, PALETTE.wood));
+      }
+    }
+  }
+}
+
+function walkway(scene: Scene, b: Building, grid: Grid): BuildingMeshes {
   const { x, z } = cellCenter(b.cells[0]);
   const F = b.floorY;
-  const parts: Mesh[] = [box(scene, 0.96, 0.07, 0.96, x, F - 0.035, z, PALETTE.planks)];
+  const parts: Mesh[] = [];
+  streetDeck(scene, parts, b, grid, x, z, F);
   parts.push(stilt(scene, x - 0.3, z - 0.3, F - 0.07, 0.09, 5));
   parts.push(stilt(scene, x + 0.3, z + 0.3, F - 0.07, 0.09, 5));
   const lamp = b.lantern ? lanternPost(scene, parts, x, z, F) : undefined;
@@ -218,10 +259,11 @@ function market(scene: Scene, b: Building): BuildingMeshes {
   return { root: mergeFlat("market", parts, scene) };
 }
 
-function raisedWalkway(scene: Scene, b: Building): BuildingMeshes {
+function raisedWalkway(scene: Scene, b: Building, grid: Grid): BuildingMeshes {
   const { x, z } = cellCenter(b.cells[0]);
   const F = b.floorY;
-  const parts: Mesh[] = [box(scene, 0.96, 0.07, 0.96, x, F - 0.035, z, PALETTE.planks)];
+  const parts: Mesh[] = [];
+  streetDeck(scene, parts, b, grid, x, z, F);
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) parts.push(stilt(scene, x + sx * 0.36, z + sz * 0.36, F - 0.07, 0.1, 5));
   // Cross-brace so the tall stilts read as a trestle.
   parts.push(box(scene, 0.8, 0.05, 0.05, x, F - 0.45, z - 0.36, PALETTE.wood));
@@ -631,12 +673,14 @@ function treatmentPlant(scene: Scene, b: Building): BuildingMeshes {
   return { root: mergeFlat("treatmentPlant", parts, scene) };
 }
 
-export function createBuildingMeshes(scene: Scene, b: Building): BuildingMeshes {
-  return applyDamage(scene, b, buildMeshes(scene, b));
+export function createBuildingMeshes(scene: Scene, b: Building, grid: Grid): BuildingMeshes {
+  return applyDamage(scene, b, buildMeshes(scene, b, grid));
 }
 
-function buildMeshes(scene: Scene, b: Building): BuildingMeshes {
+function buildMeshes(scene: Scene, b: Building, grid: Grid): BuildingMeshes {
   switch (b.kind) {
+    case "walkway": return walkway(scene, b, grid);
+    case "raisedWalkway": return raisedWalkway(scene, b, grid);
     case "fireWatch": return fireWatch(scene, b);
     case "breakwater": return breakwater(scene, b);
     case "seaWall": return seaWall(scene, b);
@@ -656,8 +700,6 @@ function buildMeshes(scene: Scene, b: Building): BuildingMeshes {
     case "hut": return home(scene, b, 0.66, 0.62);
     case "house": return home(scene, b, 0.8, 0.9);
     case "tallHouse": return home(scene, b, 0.8, 1.5);
-    case "walkway": return walkway(scene, b);
-    case "raisedWalkway": return raisedWalkway(scene, b);
     case "pier": return pier(scene, b);
     case "dock": return dock(scene, b);
     case "shipyard": return shipyard(scene, b);
@@ -676,9 +718,11 @@ export function footprintOf(kind: Building["kind"]): { w: number; d: number } {
   return { w: BUILDINGS[kind].w, d: BUILDINGS[kind].d };
 }
 
-/** Everything about a building that changes its mesh; the view rebuilds when this changes. */
-export function meshSignature(b: Building): string {
-  return `${b.kind}:${b.level}:${b.lantern ? 1 : 0}:${b.damaged ? 1 : 0}`;
+/** Everything about a building that changes its mesh; the view rebuilds when this changes. Street pieces also
+ *  depend on what stands beside them. */
+export function meshSignature(b: Building, grid: Grid): string {
+  const joins = b.kind === "walkway" || b.kind === "raisedWalkway" ? ":" + joinKey(b, grid) : "";
+  return `${b.kind}:${b.level}:${b.lantern ? 1 : 0}:${b.damaged ? 1 : 0}${joins}`;
 }
 
 /** Whether the building's lantern should glow: homes need residents, everything else just a connection. */

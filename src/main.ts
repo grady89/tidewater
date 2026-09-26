@@ -1,5 +1,5 @@
 // Bootstrap: engine, scene, the ledger, the fixed-timestep loop, and the dev/test console API.
-import { ArcRotateCamera, Color4, DefaultRenderingPipeline, Engine, Scene, Vector3 } from "@babylonjs/core";
+import { ArcRotateCamera, Color4, DefaultRenderingPipeline, Engine, Matrix, Scene, Vector3 } from "@babylonjs/core";
 import { CameraControl } from "./build/cameraControl";
 import { Placement, Tool } from "./build/placement";
 import { SIM_TICK, TIDE_PERIOD } from "./config";
@@ -26,6 +26,7 @@ import { roofShape } from "./view/buildings";
 import { BuildingViews } from "./view/buildingViews";
 import { Effects } from "./view/effects";
 import { Ferry } from "./view/ferry";
+import { PierMarker } from "./view/marker";
 import { OverlayKind, Overlays } from "./view/overlays";
 import { Ship } from "./view/ship";
 import { Trees } from "./view/trees";
@@ -78,7 +79,7 @@ if (loaded) { state = loaded; grid = new Grid(state); }
 else ({ state, grid } = newGame(SEED));
 
 // ---------- the view ----------
-const views = new BuildingViews(scene);
+const views = new BuildingViews(scene, grid);
 const boats = new Boats(scene, grid);
 const walkers = new Walkers(scene, grid);
 const trees = new Trees(scene);
@@ -87,6 +88,7 @@ const effects = new Effects(scene);
 const ship = new Ship(scene, grid);
 const wildlife = new Wildlife(scene, grid);
 const ferry = new Ferry(scene, grid);
+const pierMarker = new PierMarker(scene, grid);
 const placement = new Placement(scene, camera, grid, canvas);
 const hud = new Hud(document.getElementById("hud")!, document.getElementById("resources")!, document.getElementById("notes")!, grid, tool => placement.setTool(tool), kind => overlays.show(kind), () => orderPlanks(state));
 const info = new InfoPanel(document.getElementById("info")!, grid);
@@ -172,10 +174,12 @@ function syncView(): void {
   ship.sync(state, viewTime);
   wildlife.sync(state, viewTime);
   ferry.sync(state, viewTime);
+  pierMarker.sync(state, viewTime);
   cameraControl.setWaterLevel(state.tide.level);
   terrain.update(camera.position, state.tide.level, state.tide.wetLevel);
   water.update(viewTime, camera.position, state.tide.level);
-  hud.update({ tool: placement.tool, blocker: placement.blocker, fate: placement.fate, state });
+  cameraControl.leftDrag = !placement.dragsLine;
+  hud.update({ tool: placement.tool, blocker: placement.blocker, warn: placement.warn, line: placement.line, fate: placement.fate, state });
   info.update(state);
   tutorial.update(state);
   achievements.update(state, viewTime);
@@ -273,6 +277,14 @@ const api = {
   frameAt(x: number, z: number, radius = 16) {
     cameraControl.jumpTo(x, z, radius, -0.8, 0.95);
   },
+  /** The screen position (client pixels) of a world point at height `y`, for pointer-driven checks. Placement
+   *  picks against the tool's deck height, so pass that to land on a cell. */
+  screenOf(x: number, z: number, y = 0.6) {
+    const s = Vector3.Project(new Vector3(x, y, z), Matrix.Identity(), scene.getTransformMatrix(), camera.viewport.toGlobal(engine.getRenderWidth(), engine.getRenderHeight()));
+    const k = engine.getHardwareScalingLevel();
+    const r = canvas.getBoundingClientRect();
+    return { x: s.x * k + r.left, y: s.y * k + r.top };
+  },
   /** The ground point under a screen position (client pixels), for camera checks. */
   groundAt(clientX: number, clientY: number) {
     const g = cameraControl.groundAt(clientX, clientY);
@@ -300,6 +312,8 @@ const api = {
     achievementsShown: () => achievements.shown.slice(),
     camera: () => cameraControl.pose,
     category: () => hud.category,
+    pierMarker: () => pierMarker.cell,
+    hint: () => document.querySelector("#hud .hint")?.textContent ?? "",
     /** How many homes wear each roof shape. */
     roofs: () => {
       const out: Record<string, number> = { pyramid: 0, gable: 0, hipped: 0 };
@@ -349,6 +363,8 @@ const api = {
   save,
   load,
   newTown,
+  /** The ledger as JSON (what a save slot would hold). */
+  saveJson: () => serialize(state),
   /** Open or close the town menu. */
   menu: (open: boolean) => menu.toggle(open),
   /** Stress test: extra walkers in the view only. Returns how many were added. */

@@ -1,19 +1,19 @@
 // Sim-only unit checks. Nothing here may pull in Babylon; the hygiene test enforces that for src/sim/**.
 import { describe, expect, it } from "vitest";
-import { HIGH_WATER_MARK, LOW_WATER_MARK, SPRING_HI, SPRING_LO, STILT_LENGTH, TIDE_HI, TIDE_LO, TIDE_PERIOD } from "../src/config";
-import { BEACH_MAX_HEIGHT, BOAT_COST, BOAT_MIN_RANGE, BOAT_RANGE, BUILDINGS, CAP_BASE, DRAWDOWN_LEVEL, DRAWDOWN_SECONDS, FIRE_BURN_SECONDS, FIRE_IGNITE_THRESHOLD, FISH_CAP, HAPPY, INJURY_NATURAL_CYCLES, LEVEL_UP_HAPPINESS, MAX_LEVEL, OYSTER_POLLUTION_KILL, PLANK_ORDER_SIZE, STARTING_MONEY, TRADE_EVERY, TRADE_EVERY_LIGHTHOUSE, TREATMENT_RADIUS, TREE_REGROW_CYCLES, WAREHOUSE_CAP } from "../src/sim/balance";
+import { HIGH_WATER_MARK, LOW_WATER_MARK, SPRING_HI, SPRING_LO, STILT_LENGTH, TIDE_HI, TIDE_LO, TIDE_PERIOD, WALKWAY_SNAP } from "../src/config";
+import { BEACH_MAX_HEIGHT, BOAT_COST, BOAT_MIN_RANGE, BOAT_RANGE, BUILDINGS, CAP_BASE, DRAWDOWN_LEVEL, DRAWDOWN_SECONDS, FIRE_BURN_SECONDS, FIRE_IGNITE_THRESHOLD, FISH_CAP, HAPPY, INJURY_NATURAL_CYCLES, LEVEL_UP_HAPPINESS, MAX_LEVEL, OYSTER_POLLUTION_KILL, PLANK_ORDER_SIZE, REMOVE_REFUND, STARTING_MONEY, TRADE_EVERY, TRADE_EVERY_LIGHTHOUSE, TREATMENT_RADIUS, TREE_REGROW_CYCLES, WAREHOUSE_CAP } from "../src/sim/balance";
 import { ACHIEVEMENTS, checkAchievements } from "../src/sim/achievements";
 import { deserialize, serialize } from "../src/sim/save";
 import { DISTRICT_MIN, districtName, districtOf, districts } from "../src/sim/districts";
 import { ISLE } from "../src/sim/isle";
-import { startCell } from "../src/sim/start";
+import { startCell, suggestPier } from "../src/sim/start";
 import { TREE_SITES } from "../src/sim/trees";
 import { sheltered, shielded, startStorm, startTsunami, waveDirection } from "../src/sim/events";
 import { ignite } from "../src/sim/fire";
 import { addLantern, coverageAt, lanternBlocker } from "../src/sim/services";
 import { injuredCount } from "../src/sim/sharks";
 import { orderPlanks } from "../src/sim/trade";
-import { addCapped, boatPurchaseBlocker, buyBoat, capFor, totalBoats, tryPlace } from "../src/sim/economy";
+import { addCapped, boatPurchaseBlocker, buyBoat, capFor, removeBuilding, totalBoats, tryPlace } from "../src/sim/economy";
 import { buildFlow, maxOf, meanHeight, stepDrift, zeros } from "../src/sim/fields";
 import { cellIndex, Grid } from "../src/sim/grid";
 import { updateNetwork } from "../src/sim/network";
@@ -839,13 +839,79 @@ describe("achievements (backlog 7)", () => {
   });
 });
 
+describe("placement (streets, docks, refunds)", () => {
+  it("a stilt walkway rises to meet a neighbouring deck within WALKWAY_SNAP, not beyond, never below its stilts", () => {
+    const { grid } = newGame(1);
+    // Two free flat cells side by side, away from the start hut.
+    let a: Cell | null = null;
+    for (let i = -30; i < 30 && !a; i++) for (let j = -30; j < 30; j++) {
+      const c = { i, j }, n = { i: i + 1, j };
+      if (grid.classAt(c) === "flat" && grid.classAt(n) === "flat" && !grid.buildingAt(c) && !grid.buildingAt(n) && !grid.touchesLink([c]) && !grid.touchesLink([n])) { a = c; break; }
+    }
+    expect(a).not.toBeNull();
+    const n = { i: a!.i + 1, j: a!.j };
+    const base = grid.heightAt(n) + STILT_LENGTH;
+    const high = grid.place("walkway", [a!]);
+    high.floorY = base + WALKWAY_SNAP - 0.05;
+    expect(grid.floorFor("walkway", [n])).toBeCloseTo(high.floorY, 6);
+    high.floorY = base + WALKWAY_SNAP + 0.05;
+    expect(grid.floorFor("walkway", [n])).toBeCloseTo(base, 6);
+    high.floorY = base - 0.2;
+    expect(grid.floorFor("walkway", [n])).toBeCloseTo(base, 6);
+  });
+  it("a deep dock must touch a pier or raised walkway; a raised walkway bridges deep water to it", () => {
+    const { state, grid, town: t } = town();
+    state.resources.money += 2000; state.resources.planks += 100;
+    // Deep cells two out from the pier's seaward end: nothing links there yet.
+    const tip = t.pier.cells[t.pier.cells.length - 1], root = t.pier.cells[0];
+    const dir = { i: tip.i - root.i, j: tip.j - root.j };
+    const far = { i: tip.i + dir.i * 2, j: tip.j + dir.j * 2 };
+    if (grid.classAt(far) === "deep" && grid.footprint("dock", far) && grid.classOk("deep", grid.footprint("dock", far)!)) {
+      expect(grid.touchesLink(grid.footprint("dock", far)!)).toBe(false);
+      expect(tryPlace(state, grid, "dock", far)).toBeNull();
+      const bridge = tryPlace(state, grid, "raisedWalkway", { i: tip.i + dir.i, j: tip.j + dir.j });
+      expect(bridge).not.toBeNull();
+      expect(tryPlace(state, grid, "dock", far)).not.toBeNull();
+    }
+    // And the plain case: a dock alongside the pier itself.
+    let dock = null;
+    for (const pc of t.pier.cells) for (const n of grid.neighbors(pc)) {
+      for (let di = 0; di < 2 && !dock; di++) for (let dj = 0; dj < 2 && !dock; dj++) dock = tryPlace(state, grid, "dock", { i: n.i - di, j: n.j - dj });
+      if (dock) break;
+    }
+    expect(dock).not.toBeNull();
+  });
+  it("removing a building refunds half its money cost", () => {
+    const { state, grid, town: t } = town();
+    const before = state.resources.money;
+    const hut = t.huts[0];
+    const refund = removeBuilding(state, grid, hut);
+    expect(refund).toBe(Math.round(BUILDINGS.hut.cost.money * REMOVE_REFUND));
+    expect(state.resources.money).toBeCloseTo(before + refund, 6);
+    expect(state.buildings[hut.id]).toBeUndefined();
+    expect(grid.buildingAt(hut.cells[0])).toBeNull();
+  });
+  it("suggests a pier site next to the start hut on a fresh town and none once a pier stands", () => {
+    const { state, grid } = newGame(1);
+    const s = suggestPier(grid);
+    expect(s).not.toBeNull();
+    const fp = grid.footprint("pier", s!)!;
+    expect(grid.canPlace("pier", fp)).toBe(true);
+    const hut = Object.values(state.buildings)[0];
+    expect(Math.hypot(s!.i - hut.cells[0].i, s!.j - hut.cells[0].j)).toBeLessThan(12);
+  });
+});
+
 describe("tide splits the economy (M3)", () => {
   it("standard walkways stand STILT_LENGTH above their cell; low ones flood at spring high, not at ordinary high", () => {
     const { state, grid, town: t } = town();
     const cell = flatCellWithHeight(grid, 0.12, 0.33, t.pier.cells[0]);
     expect(cell).not.toBeNull();
     const w = grid.place("walkway", [cell!]);
-    expect(w.floorY).toBeCloseTo(grid.heightAt(cell!) + STILT_LENGTH, 6);
+    const base = grid.heightAt(cell!) + STILT_LENGTH;
+    expect(w.floorY).toBeGreaterThanOrEqual(base - 1e-6); // may rise to meet a neighbouring deck
+    if (!grid.neighbors(cell!).some(n => grid.buildingAt(n))) expect(w.floorY).toBeCloseTo(base, 6);
+    w.floorY = base;
     expect(floodFate(w.floorY)).toBe("spring");
     state.tide.override = TIDE_HI; tick(state, grid);
     expect(w.cut).toBe(false);

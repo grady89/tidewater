@@ -27,8 +27,10 @@ milestone and drops screenshots in `shots/`.
 | Home | the Home key frames the town |
 | Pick a building | the tabs in the panel (Tab cycles them), or the number keys shown on the buttons |
 | Place | click a cell — the ghost is green when it fits, amber if spring tides will flood it, red if every high tide will, grey when it can't go there (the line under the palette says why) |
+| Lay a run | with a walkway, raised walkway, breakwater, net or sea wall selected, drag from one cell to another; the hint prices the run |
 | Inspect | click any building; Esc closes the panel |
-| Remove | right-click |
+| Remove | right-click — half the money comes back |
+| First pier | the gold ring on the water shows where it fits; docks need a pier or raised walkway alongside |
 | Buy a boat | pick **Boat** (Sea tab) and click a pier or dock |
 | Lantern post | pick **Lantern post** (Streets tab) and click a walkway |
 | Order planks | the button in the panel once you have a harbor; the trade ship brings them |

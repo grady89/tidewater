@@ -100,6 +100,61 @@ try {
   assert(Math.abs(keyed.yaw - turned.pose.yaw) > 0.2 && Math.hypot(keyed.x - turned.pose.x, keyed.z - turned.pose.z) > 1, "Q turns and W pans");
   await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.frameTown());
 
+  // Placement: drag a run of raised walkways with the left button (the camera must not pan), the hint prices the
+  // run while dragging, the street's decks meet, and removing one refunds half.
+  const runStart = await page.evaluate(() => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    api.grant(500);
+    api.frameTown(18);
+    api.place("raisedWalkway", -99, -99); // just selects the tool (off the map places nothing)
+    // A free cell beside the street with three free non-high cells in a row beyond it (raised walkways take
+    // flats and deep water alike).
+    const grid = api.grid;
+    for (let i = -30; i < 30; i++) for (let j = -30; j < 30; j++) {
+      const c = { i, j };
+      if (grid.classAt(c) === "high" || grid.buildingAt(c) || !grid.touchesLink([c])) continue;
+      for (const d of [{ i: 1, j: 0 }, { i: -1, j: 0 }, { i: 0, j: 1 }, { i: 0, j: -1 }]) {
+        const ok = [1, 2, 3].every(k => { const q = { i: i + d.i * k, j: j + d.j * k }; return grid.classAt(q) !== "high" && !grid.buildingAt(q); });
+        if (ok) return { c, end: { i: i + d.i * 3, j: j + d.j * 3 }, n: Object.keys(api.sim.buildings).length, money: api.sim.resources.money, cam: api.view.camera() };
+      }
+    }
+    return null;
+  });
+  assert(runStart, "a free row beside the street to drag along");
+  // Raised walkways pick against their own deck height (1.2), so project the cells at that height.
+  const toScreen = async (i: number, j: number) => page.evaluate(([i, j]) => (window as unknown as { __tidewater: Api }).__tidewater.screenOf(i + 0.5, j + 0.5, 1.2), [i, j] as [number, number]);
+  const a = await toScreen(runStart.c.i, runStart.c.j), b = await toScreen(runStart.end.i, runStart.end.j);
+  await page.mouse.move(a.x, a.y);
+  await page.waitForTimeout(100);
+  await page.mouse.down({ button: "left" });
+  await page.mouse.move(b.x, b.y, { steps: 8 });
+  await page.waitForTimeout(100);
+  const dragging = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { line: api.placement.line, hint: api.view.hint(), cam: api.view.camera() }; });
+  await page.mouse.up({ button: "left" });
+  await page.waitForTimeout(200);
+  const laid = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { n: Object.keys(api.sim.buildings).length, money: api.sim.resources.money, cam: api.view.camera() }; });
+  console.log("Placement drag:", JSON.stringify({ runStart: runStart.c, dragging, laid: { n: laid.n - runStart.n, spent: runStart.money - laid.money } }));
+  assert(dragging.line && dragging.line.count >= 3 && /release to lay/.test(dragging.hint), "the hint prices the run while dragging: " + dragging.hint);
+  assert(laid.n - runStart.n >= 3, "the drag laid at least three pieces");
+  assert(Math.abs(laid.cam.x - runStart.cam.x) < 0.01 && Math.abs(laid.cam.z - runStart.cam.z) < 0.01, "left-drag with a street tool doesn't pan the camera");
+  const refund = await page.evaluate(([i, j]) => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    const before = api.sim.resources.money;
+    api.remove(i, j);
+    return api.sim.resources.money - before;
+  }, [runStart.end.i, runStart.end.j] as [number, number]);
+  assert(refund === 6, "removing a raised walkway refunds 6$ (half of 12)");
+  // The pier suggestion on a fresh town; then back to the starter town for the rest of M2.
+  const marker = await page.evaluate(() => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    const town = api.saveJson();
+    api.newTown(); api.tickSeconds(0.2);
+    const marker = api.view.pierMarker();
+    api.load(town);
+    return { marker, n: Object.keys(api.sim.buildings).length };
+  });
+  assert(marker.marker !== null && marker.n === laid.n - 1, "a fresh town shows the pier suggestion; the starter town came back");
+
   const ran = await page.evaluate(() => {
     const api = (window as unknown as { __tidewater: Api }).__tidewater;
     api.advance(4);

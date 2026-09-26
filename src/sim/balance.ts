@@ -37,6 +37,8 @@ export interface BuildingDef {
   terrain?: { min: number; max: number };
   /** Must touch a flat cell that carries a walkway (lumber camps on the hill). */
   needsWalkway?: boolean;
+  /** Must touch a pier, dock, harbor or walkway (docks: crew walk in over a pier or a raised walkway). */
+  needsLink?: boolean;
   /** At least one of this kind must exist first. */
   requires?: BuildingKind;
   cost: Cost;
@@ -63,9 +65,9 @@ export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
   house: { name: "House", category: "Homes", w: 1, d: 1, cls: "flat", cost: { money: 80 }, workers: 0, residents: 4, upkeep: 1, floor: 1.0, network: "leaf", desc: "4 residents" },
   tallHouse: { name: "Tall house", category: "Homes", w: 1, d: 1, cls: "flat", requires: "sawmill", cost: { money: 140, planks: 10 }, workers: 0, residents: 6, upkeep: 1.5, floor: 1.0, network: "leaf", desc: "6 residents; needs a sawmill" },
   walkway: { name: "Walkway", category: "Streets", w: 1, d: 1, cls: "flat", cost: { money: 5 }, workers: 0, residents: 0, upkeep: 0, floor: "stilts", network: "link", desc: "Stilts; floods on low ground" },
-  raisedWalkway: { name: "Raised walkway", category: "Streets", w: 1, d: 1, cls: "flatOrDeep", cost: { money: 12 }, workers: 0, residents: 0, upkeep: 0, floor: RAISED_FLOOR, network: "link", desc: "Never floods; crosses shallows" },
+  raisedWalkway: { name: "Raised walkway", category: "Streets", w: 1, d: 1, cls: "flatOrDeep", cost: { money: 12 }, workers: 0, residents: 0, upkeep: 0, floor: RAISED_FLOOR, network: "link", desc: "Never floods; bridges deep water out to a dock" },
   pier: { name: "Pier", category: "Sea", w: 1, d: 2, cls: "edge", cost: { money: 60 }, workers: 0, residents: 0, upkeep: 2, floor: 1.0, network: "root", slots: 2, desc: "2 boats; sail at high water only" },
-  dock: { name: "Deep dock", category: "Sea", w: 2, d: 2, cls: "deep", cost: { money: 150, planks: 20 }, workers: 0, residents: 0, upkeep: 4, floor: 1.0, network: "root", slots: 4, desc: "4 boats; sail on every tide" },
+  dock: { name: "Deep dock", category: "Sea", w: 2, d: 2, cls: "deep", needsLink: true, cost: { money: 150, planks: 20 }, workers: 0, residents: 0, upkeep: 4, floor: 1.0, network: "root", slots: 4, desc: "4 boats; sail on every tide; reach it by pier or raised walkway" },
   shipyard: { name: "Shipyard", category: "Sea", w: 3, d: 2, cls: "edge", cost: { money: 300, planks: 40 }, workers: 5, residents: 0, upkeep: 4, floor: 1.0, network: "leaf", desc: "Builds a boat from planks" },
   market: { name: "Fish market", category: "Production", w: 2, d: 2, cls: "flat", cost: { money: 120 }, workers: 3, residents: 0, upkeep: 3, floor: 1.0, network: "link", desc: "Sells fish each cycle" },
   oysterBed: { name: "Oyster bed", category: "Production", w: 1, d: 1, cls: "flat", terrain: { min: 0.0, max: 0.45 }, cost: { money: 30 }, workers: 2, residents: 0, upkeep: 0.5, floor: "stilts", network: "leaf", desc: "Shellfish at low water" },
@@ -92,6 +94,9 @@ export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
   breakwater: { name: "Breakwater", category: "Sea", w: 1, d: 1, cls: "deep", cost: { money: 60, planks: 4 }, workers: 0, residents: 0, upkeep: 0.2, floor: 1.0, network: "leaf", desc: "Per cell; shelters harbours within 6 from storms and blocks the wave" },
   seaWall: { name: "Sea wall", category: "Sea", w: 1, d: 1, cls: "flat", cost: { money: 25, timber: 3 }, workers: 0, residents: 0, upkeep: 0.1, floor: "ground", network: "leaf", desc: "Per cell on the flats; shields what stands behind it from the wave" },
 };
+
+/** Share of a building's money cost returned when the player removes it (planks and timber are not returned). */
+export const REMOVE_REFUND = 0.5;
 
 // Storms
 export const STORM_FIRST_CYCLE = 6;

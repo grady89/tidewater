@@ -12,6 +12,7 @@ import {
 } from "./balance";
 import { at } from "./fields";
 import { active, damageNear, fireSources, repairDamage, rollIgnitions } from "./fire";
+import { REMOVE_REFUND } from "./balance";
 import { Grid } from "./grid";
 import { depleteGround, fishAt, pollutionAt, routeWaste, settleFields } from "./pollution";
 import { chooseGround } from "./sea";
@@ -47,6 +48,14 @@ export function tryPlace(state: SimState, grid: Grid, kind: BuildingKind, anchor
   const b = grid.place(kind, cells);
   if (firstHarbor) notify(state, "The ferry runs: the isle across the water is open to build on");
   return b;
+}
+
+/** Remove a building and refund part of its price, as city builders do, so a bad start can be undone. */
+export function removeBuilding(state: SimState, grid: Grid, b: Building): number {
+  const refund = Math.round(BUILDINGS[b.kind].cost.money * REMOVE_REFUND);
+  grid.remove(b);
+  state.resources.money += refund;
+  return refund;
 }
 
 export function totalBoats(state: SimState): number {

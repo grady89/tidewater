@@ -3,6 +3,7 @@
 // damage). Lanterns are two thin-instanced spheres (lit, dark) refreshed when the lit set changes. Called every
 // frame; read-only over the sim.
 import { Color3, Matrix, Mesh, MeshBuilder, Scene } from "@babylonjs/core";
+import { Grid } from "../sim/grid";
 import { Building, SimState } from "../sim/state";
 import { mergeFlat } from "../world/flatMesh";
 import { createBuildingMeshes, lanternMaterials, lanternOn, meshSignature, PALETTE } from "./buildings";
@@ -28,7 +29,7 @@ export class BuildingViews {
   private readonly dark: Mesh;
   private lanternSig = "";
 
-  constructor(private readonly scene: Scene) {
+  constructor(private readonly scene: Scene, private readonly grid: Grid) {
     const mats = lanternMaterials(scene);
     this.lit = MeshBuilder.CreateSphere("lantern", { diameter: 0.14, segments: 5 }, scene);
     this.lit.material = mats.lit;
@@ -52,7 +53,7 @@ export class BuildingViews {
       const key = chunkKey(b);
       let g = groups.get(key);
       if (!g) { g = { sig: [], buildings: [] }; groups.set(key, g); }
-      g.sig.push(`${b.id}=${meshSignature(b)}`);
+      g.sig.push(`${b.id}=${meshSignature(b, this.grid)}`);
       g.buildings.push(b);
     }
     for (const [key, c] of this.chunks) {
@@ -99,7 +100,7 @@ export class BuildingViews {
     const lanterns: Chunk["lanterns"] = new Map();
     const roots: Mesh[] = [];
     for (const b of buildings) {
-      const m = createBuildingMeshes(this.scene, b);
+      const m = createBuildingMeshes(this.scene, b, this.grid);
       roots.push(m.root);
       if (m.lantern) {
         const p = m.lantern.position;

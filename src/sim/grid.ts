@@ -1,6 +1,6 @@
 // Cell model over the terrain, occupancy index, and placement rules. Buildings live in SimState; the Grid is the
 // spatial index over them (rebuilt from state on load) plus the fixed terrain classification.
-import { SIZE, STILT_LENGTH, TIDE_HI, TIDE_LO } from "../config";
+import { SIZE, STILT_LENGTH, TIDE_HI, TIDE_LO, WALKWAY_SNAP } from "../config";
 import { BEACH_MAX_HEIGHT, BuildingKind, BUILDINGS, PlacementClass } from "./balance";
 import { terrainHeight } from "./heightfield";
 import { isleCell } from "./isle";
@@ -147,6 +147,14 @@ export class Grid {
   }
 
   /** Does some cell touch a flat cell carrying a walkway? (Lumber camps must be served from the flats.) */
+  /** Does the footprint touch a pier, dock, harbor or walkway — something crew can walk in over? */
+  touchesLink(cells: Cell[]): boolean {
+    return cells.some(c => this.neighbors(c).some(n => {
+      const b = this.buildingAt(n);
+      return !!b && BUILDINGS[b.kind].network !== "leaf" && !cells.some(x => x.i === n.i && x.j === n.j);
+    }));
+  }
+
   touchesWalkway(cells: Cell[]): boolean {
     return cells.some(c => this.neighbors(c).some(n => {
       const b = this.buildingAt(n);
@@ -168,7 +176,8 @@ export class Grid {
   canPlace(kind: BuildingKind, cells: Cell[]): boolean {
     const def = BUILDINGS[kind];
     return this.classOk(def.cls, cells) && this.terrainOk(kind, cells) && cells.every(c => !this.buildingAt(c))
-      && (!def.needsWalkway || this.touchesWalkway(cells)) && (!def.requires || this.has(def.requires))
+      && (!def.needsWalkway || this.touchesWalkway(cells)) && (!def.needsLink || this.touchesLink(cells))
+      && (!def.requires || this.has(def.requires))
       && (!def.touches || this.touchesKind(cells, def.touches))
       && (!this.onIsle(cells) || this.isleOpen());
   }
@@ -185,7 +194,17 @@ export class Grid {
     if (typeof f === "number") return f;
     let h = -Infinity;
     for (const c of cells) h = Math.max(h, this.heightAt(c));
-    return f === "stilts" ? h + STILT_LENGTH : Math.max(1.0, h + 0.05);
+    if (f !== "stilts") return Math.max(1.0, h + 0.05);
+    // Stilt decks meet their neighbours: rise to the highest adjacent deck within WALKWAY_SNAP so streets run
+    // level over uneven flats, never sink below the cell's own stilt height.
+    const base = h + STILT_LENGTH;
+    let floor = base;
+    for (const c of cells) for (const n of this.neighbors(c)) {
+      const b = this.buildingAt(n);
+      if (!b || cells.some(x => x.i === n.i && x.j === n.j)) continue;
+      if (b.floorY > floor && b.floorY <= base + WALKWAY_SNAP) floor = b.floorY;
+    }
+    return floor;
   }
 
   place(kind: BuildingKind, cells: Cell[]): Building {

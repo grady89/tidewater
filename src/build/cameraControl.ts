@@ -47,6 +47,8 @@ export class CameraControl {
   private readonly rect: () => DOMRect;
   /** Set to frame the town on Home. */
   onHome: () => void = () => {};
+  /** Whether the left button grabs the ground; off while a tool draws lines with it. */
+  leftDrag = true;
 
   constructor(private readonly camera: ArcRotateCamera, canvas: HTMLCanvasElement, private readonly scene: Scene) {
     camera.inputs.clear();
@@ -59,7 +61,7 @@ export class CameraControl {
     this.rect = () => canvas.getBoundingClientRect();
 
     canvas.addEventListener("pointerdown", e => {
-      if (e.button > 2) return;
+      if (e.button > 2 || (e.button === 0 && !this.leftDrag)) return;
       this.drag = { button: e.button, x: e.clientX, y: e.clientY, ground: this.groundAt(e.clientX, e.clientY) };
       canvas.setPointerCapture(e.pointerId);
       if (e.button === 1) e.preventDefault();
