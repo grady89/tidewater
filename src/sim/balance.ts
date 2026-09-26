@@ -8,7 +8,8 @@ export type BuildingKind =
   | "market" | "oysterBed" | "clamCamp" | "lumberCamp" | "sawmill" | "smokehouse" | "netLoft" | "warehouse"
   | "outfall" | "treatmentPlant" | "well" | "bathhouse" | "tavern" | "shrine" | "marketSquare"
   | "clinic" | "lifeguard" | "sharkNet"
-  | "harbor" | "inn" | "lighthouse" | "fireWatch";
+  | "harbor" | "inn" | "lighthouse" | "fireWatch"
+  | "breakwater" | "seaWall";
 
 /** Service coverage layers; each building that provides one writes its staffed fraction within `radius`. */
 export type ServiceKind = "water" | "leisure" | "night" | "treatment" | "lifeguard" | "firewatch";
@@ -88,7 +89,30 @@ export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
   inn: { name: "Inn", category: "Leisure", w: 2, d: 2, cls: "flat", cost: { money: 250, planks: 20 }, workers: 2, residents: 0, upkeep: 2, floor: 1.0, network: "leaf", desc: "Tourists off the trade ship stay and spend" },
   lighthouse: { name: "Lighthouse", category: "Sea", w: 1, d: 1, cls: "highOrEdge", cost: { money: 400 }, workers: 0, residents: 0, upkeep: 2, floor: "ground", network: "leaf", desc: "Boats ride out storms; the trade ship calls every 2 tides" },
   fireWatch: { name: "Fire watch", category: "Services", w: 1, d: 1, cls: "flatOrHigh", cost: { money: 120 }, workers: 2, residents: 0, upkeep: 1.5, floor: "ground", network: "leaf", service: { kind: "firewatch", radius: 8 }, desc: "Damps fire risk and puts out fires within 8" },
+  breakwater: { name: "Breakwater", category: "Sea", w: 1, d: 1, cls: "deep", cost: { money: 60, planks: 4 }, workers: 0, residents: 0, upkeep: 0.2, floor: 1.0, network: "leaf", desc: "Per cell; shelters harbours within 6 from storms and blocks the wave" },
+  seaWall: { name: "Sea wall", category: "Sea", w: 1, d: 1, cls: "flat", cost: { money: 25, timber: 3 }, workers: 0, residents: 0, upkeep: 0.1, floor: "ground", network: "leaf", desc: "Per cell on the flats; shields what stands behind it from the wave" },
 };
+
+// Storms
+export const STORM_FIRST_CYCLE = 6;
+export const STORM_CHANCE = 0.12;
+export const STORM_LOSS_CHANCE = 0.5;
+/** Harbours with a breakwater within this many cells are sheltered. */
+export const SHELTER_RADIUS = 6;
+export const STORM_WAVE_AMP = 3;
+
+// Tsunami
+export const TSUNAMI_FIRST_CYCLE = 20;
+export const TSUNAMI_CHANCE = 0.05;
+export const TSUNAMI_COOLDOWN = 12;
+export const DRAWDOWN_SECONDS = 20;
+export const DRAWDOWN_LEVEL = -1.2;
+export const WAVE_HEIGHT = 1.4;
+export const WAVE_SPEED = 10;
+export const WAVE_WIDTH = 3;
+export const WAVE_SETTLE_SECONDS = 6;
+/** A wall or breakwater this far along the wave axis in front of a cell shields it. */
+export const SHIELD_RANGE = 12;
 
 // Fire (risk field units per cell; steady state ≈ emission / (120 × (decay + 4 × diffuse)) per cell: a lone
 // smokehouse settles near 0.8, two side by side pass 1, three reach ~1.5)

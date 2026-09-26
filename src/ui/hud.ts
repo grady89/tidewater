@@ -55,6 +55,7 @@ export class Hud {
   private readonly tideSub: HTMLElement;
   private readonly tideSpring: HTMLElement;
   private readonly tideShip: HTMLElement;
+  private readonly tideEvent: HTMLElement;
   private readonly hint: HTMLElement;
   private readonly ledgerLabel: HTMLElement;
   private readonly ledgerValue: HTMLElement;
@@ -87,6 +88,7 @@ export class Hud {
           <div class="tide-sub"></div>
           <div class="tide-spring"></div>
           <div class="tide-ship"></div>
+          <div class="tide-event"></div>
         </div>
       </div>
       <div class="tabs"></div>
@@ -138,6 +140,7 @@ export class Hud {
     this.tideSub = root.querySelector<HTMLElement>(".tide-sub")!;
     this.tideSpring = root.querySelector<HTMLElement>(".tide-spring")!;
     this.tideShip = root.querySelector<HTMLElement>(".tide-ship")!;
+    this.tideEvent = root.querySelector<HTMLElement>(".tide-event")!;
     this.hint = root.querySelector<HTMLElement>(".hint")!;
     this.ledgerLabel = root.querySelector<HTMLElement>(".score label")!;
     this.ledgerValue = root.querySelector<HTMLElement>(".score-value")!;
@@ -236,6 +239,9 @@ export class Hud {
     this.tideShip.textContent = toShip < 0 ? "" : toShip === 0 ? "Trade ship in port" : `Trade ship in ${toShip} high tide${toShip > 1 ? "s" : ""}`;
     this.tradeStatus.textContent = state.trade.plankOrder > 0 ? `${state.trade.plankOrder} planks on order` : "";
     this.orderButton.hidden = toShip < 0;
+    const ts = state.tsunami.stage;
+    this.tideEvent.textContent = ts === "drawdown" ? "The sea is pulling back" : ts === "wave" ? "A wave is coming in" : ts === "settle" ? "The water returns" : state.storm.active ? "Storm: the boats stay in" : "";
+    this.tideEvent.classList.toggle("now", ts !== null || state.storm.active);
 
     this.hint.textContent = s.blocker ?? FATE_TEXT[s.fate];
     this.hint.classList.toggle("blocked", s.blocker !== null);

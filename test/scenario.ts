@@ -2,6 +2,7 @@
 // through the Vite dev server). Sim-only: no Babylon.
 import { BuildingKind, BUILDINGS, SWIM_RADIUS } from "../src/sim/balance";
 import { buyBoat, tryPlace } from "../src/sim/economy";
+import { sheltered } from "../src/sim/events";
 import { Grid } from "../src/sim/grid";
 import { Building, buildingList, Cell, SimState } from "../src/sim/state";
 import { floodFate } from "../src/sim/tide";
@@ -174,6 +175,27 @@ export function pierByBeach(state: SimState, grid: Grid): { pier: Building; beac
   if (!pier) return null;
   pier.boats = BUILDINGS.pier.slots ?? 2; // the shipyard would fill it in time; the ledger takes it directly here
   return { pier, beach: best.beach };
+}
+
+/**
+ * One breakwater two or three cells off every pier, dock and harbor: enough to count as shelter from storms and
+ * the wave without walling the boats in (the sea BFS can't pass built cells).
+ */
+export function shelterHarbours(state: SimState, grid: Grid): number {
+  let laid = 0;
+  for (const h of buildingList(state).filter(b => (BUILDINGS[b.kind].slots ?? 0) > 0)) {
+    if (sheltered(grid, h)) continue;
+    let done = false;
+    for (let r = 2; r <= 3 && !done; r++) for (const c of h.cells) {
+      for (let di = -r; di <= r && !done; di++) for (let dj = -r; dj <= r && !done; dj++) {
+        if (Math.max(Math.abs(di), Math.abs(dj)) !== r) continue;
+        const n = { i: c.i + di, j: c.j + dj };
+        if (grid.classAt(n) === "deep" && !grid.buildingAt(n) && tryPlace(state, grid, "breakwater", n)) { laid++; done = true; }
+      }
+      if (done) break;
+    }
+  }
+  return laid;
 }
 
 /** The harbor: 3×3 of water deeper than 1.5, nearest `near`. */

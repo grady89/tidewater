@@ -1,6 +1,7 @@
 // One fixed-timestep step of the ledger. Frame rate never enters here.
 import { HIGH_WATER_MARK, LOW_WATER_MARK, SIM_TICK, TIDE_PERIOD } from "../config";
 import { settleCycle, shiftEnd, shiftStart } from "./economy";
+import { rollStorm, rollTsunami, tickTsunami } from "./events";
 import { tickFire } from "./fire";
 import { Grid } from "./grid";
 import { updateNetwork } from "./network";
@@ -18,9 +19,10 @@ export function tick(state: SimState, grid: Grid, dt = SIM_TICK): void {
   state.tick++;
   tickTide(state.tide, dt);
   updateNetwork(state, grid, state.tide.level);
+  tickTsunami(state, grid, dt);
   tickPollution(state, grid, dt);
   tickSharks(state, grid, dt, state.sharkEmitters);
-  tickFire(state, grid, dt);
+  tickFire(state, grid, dt, state.storm.active);
 
   const phase = phaseFor(state.tide.level);
   if (phase !== state.phase) {
@@ -28,12 +30,14 @@ export function tick(state: SimState, grid: Grid, dt = SIM_TICK): void {
     state.phase = phase;
     if (prev !== "slack") shiftEnd(state, grid, prev);
     if (prev === "high") { rollIncidents(state, grid); state.swimmers = []; }
-    if (phase !== "slack") shiftStart(state, grid, phase);
-    if (phase === "high") updateSwimmers(state, grid);
+    if (phase !== "slack" && !state.storm.active && !state.tsunami.stage) shiftStart(state, grid, phase);
+    if (phase === "high" && !state.storm.active) updateSwimmers(state, grid);
   }
   if (state.tide.peaked) {
     if (isSpringCycle(state.tide.cycle)) notify(state, "Spring tide: the water runs higher and lower than usual");
     settleCycle(state, grid);
+    rollStorm(state, grid);
+    rollTsunami(state, grid);
   }
 }
 

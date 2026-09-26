@@ -102,7 +102,7 @@ try {
   await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.setTide(null));
 
   // M4: boats out at high water, moored (and heeled) at low water; walkers at shift change; ≥ 60 fps.
-  const m4setup = await page.evaluate(() => {
+  const m4setup = await page.evaluate(async () => {
     type Cell = { i: number; j: number };
     const api = (window as unknown as { __tidewater: Api }).__tidewater;
     const grid = api.grid;
@@ -125,6 +125,10 @@ try {
     }
     if (p2) p2.boats = 2;
     if (dock) dock.boats = 2;
+    const url4 = "/test/scenario.ts";
+    const sc4 = (await import(url4)) as typeof import("./scenario");
+    api.grant(0, 200);
+    sc4.shelterHarbours(s, grid); // storms mustn't sink the boats we're about to count
     // Grow the street with raised walkways (they never flood) and hang houses off them, then let immigration run,
     // so there are hands for every boat after the pier and market fill.
     api.grant(1500);
@@ -152,6 +156,7 @@ try {
 
   const high = await page.evaluate(() => {
     const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    while (api.sim.storm.active) api.advance(1); // boats stay in through a storm; measure a fair-weather tide
     api.advanceTo(0.65); // slack water on the rise, so the view sees the coming shift change
     api.advanceTo(0.8);  // just inside high water: the shift has changed
     const walkersAtShift = api.view.walkers();
@@ -197,6 +202,7 @@ try {
     sc.growStreet(s, grid, 6);
     sc.placeByWalkway(s, grid, "house", 6);
     sc.placeSecondPier(s, grid, town.pier.cells[0]); // a berth for the boat to come
+    sc.shelterHarbours(s, grid);
     const treesBefore = camp ? (await import("/src/sim/trees.ts" as string) as typeof import("../src/sim/trees")).grownTreesNear(s, camp.cells) : -1;
     const boatsBefore = (Object.values(s.buildings) as any[]).reduce((n, b) => n + b.boats, 0);
     let yard = null, launched = -1;
@@ -291,6 +297,7 @@ try {
     sc.placeByWalkway(s, grid, "house", 6);
     const site = sc.pierByBeach(s, grid); // a busy pier beside the swimming beach
     if (!site) throw new Error("no pier site by a beach");
+    sc.shelterHarbours(s, grid);
     api.setOverlay("shark");
     let firstIncident = -1, maxSwimmers = 0, fins = 0;
     for (let c = 1; c <= 12; c++) {
@@ -398,6 +405,64 @@ try {
   await page.waitForTimeout(300);
   await page.screenshot({ path: "shots/m10-repaired.png" });
   await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.setOverlay(null));
+
+  // M11: a storm darkens the sky and triples the swell; the tsunami pulls the water back, then a wave comes in.
+  await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.newTown());
+  const m11 = await page.evaluate(async () => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    const url = "/test/scenario.ts";
+    const sc = (await import(url)) as typeof import("./scenario");
+    const s = api.sim, grid = api.grid;
+    const town = sc.starterTown(s, grid);
+    api.grant(3000, 100, 100);
+    sc.growStreet(s, grid, 6);
+    sc.placeByWalkway(s, grid, "house", 4);
+    api.advance(2);
+    api.forceStorm();
+    api.tickSeconds(8);
+    api.frameTown(30);
+    return { storm: s.storm.active, mix: api.view.stormMix(), boats: town.pier.boats, log: s.log.slice(-2) };
+  });
+  console.log("M11 storm:", JSON.stringify(m11));
+  assert(m11.storm && m11.mix > 0.5, "storm is blowing and the sky has darkened");
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: "shots/m11-storm.png" });
+  const m11t = await page.evaluate(() => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    const s = api.sim;
+    api.advance(1); // the storm blows through
+    api.forceTsunami();
+    api.tickSeconds(19);
+    return { stage: s.tsunami.stage, level: s.tide.level, storm: s.storm.active };
+  });
+  console.log("M11 drawdown:", JSON.stringify(m11t));
+  assert(m11t.stage === "drawdown" && m11t.level < -1.0 && !m11t.storm, "the sea has pulled back");
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: "shots/m11-drawdown.png" });
+  const m11w = await page.evaluate(() => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    const s = api.sim;
+    api.tickSeconds(4);
+    // Run the front to the town's edge, then look at it.
+    let guard = 0;
+    while (s.tsunami.stage === "wave" && s.tsunami.front < -6 && guard++ < 200) api.tickSeconds(0.5);
+    return { stage: s.tsunami.stage, front: s.tsunami.front, struck: s.tsunami.struck.length };
+  });
+  console.log("M11 wave:", JSON.stringify(m11w));
+  assert(m11w.stage === "wave", "the wave is sweeping in");
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: "shots/m11-wave.png" });
+  const m11d = await page.evaluate(() => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    const s = api.sim;
+    let guard = 0;
+    while (s.tsunami.stage && guard++ < 400) api.tickSeconds(1);
+    let damaged = 0; for (const b of Object.values(s.buildings) as any[]) if (b.damaged) damaged++;
+    return { stage: s.tsunami.stage, damaged, override: s.tide.override, log: s.log.filter((m: string) => /wave|sea/.test(m)).slice(-3) };
+  });
+  console.log("M11 after:", JSON.stringify(m11d));
+  assert(m11d.stage === null && m11d.override === null, "the water came back");
+  assert(m11d.damaged > 0, "the wave damaged the flats");
 
   // M1: save, reload the page, every building is back and the clock kept its place.
   const before = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; api.save(); return { n: Object.keys(api.sim.buildings).length, cycle: api.sim.tide.cycle, money: api.sim.resources.money }; });

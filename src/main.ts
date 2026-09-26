@@ -2,6 +2,8 @@
 import { ArcRotateCamera, Color4, DefaultRenderingPipeline, Engine, Scene, Vector3 } from "@babylonjs/core";
 import { Placement, Tool } from "./build/placement";
 import { SIM_TICK, TIDE_PERIOD } from "./config";
+import { STORM_WAVE_AMP, WAVE_HEIGHT, WAVE_WIDTH } from "./sim/balance";
+import { startStorm, startTsunami } from "./sim/events";
 import { ignite } from "./sim/fire";
 import { Grid } from "./sim/grid";
 import { AUTOSAVE_KEY, deserialize, serialize } from "./sim/save";
@@ -96,13 +98,25 @@ let speed = 1;
 let acc = 0;
 let viewTime = 0;
 
+/** Storm weather eases in and out over a few seconds rather than snapping with the cycle. */
+let stormMix = 0;
+let lastFrameTime = 0;
+
 /** Everything the view derives from the ledger for one frame. */
 function syncView(): void {
-  const light = computeLighting(duskAt(state.time));
+  const frameDt = Math.max(0, Math.min(10, viewTime - lastFrameTime)); // scripted jumps settle in one sync
+  lastFrameTime = viewTime;
+  const target = state.storm.active ? 1 : 0;
+  stormMix += (target - stormMix) * Math.min(1, frameDt / 3);
+  // A storm drags the light toward the study's dusk palette; the tsunami crest rides the water shader.
+  const light = computeLighting(Math.max(duskAt(state.time), stormMix * 0.95));
   lights.apply(light);
   terrain.setLighting(light);
   water.setLighting(light);
   sky.setLighting(light);
+  water.setSwell(1 + (STORM_WAVE_AMP - 1) * stormMix);
+  const ts = state.tsunami;
+  water.setCrest(ts.dir, ts.stage === "wave" ? ts.front : -999, ts.stage === "wave" ? WAVE_HEIGHT : 0, WAVE_WIDTH);
   views.sync(state, light.lamp);
   trees.sync(state);
   overlays.sync(state);
@@ -207,6 +221,7 @@ const api = {
     ship: () => ship.pose,
     burning: () => effects.burning,
     dusk: () => duskAt(state.time),
+    stormMix: () => stormMix,
   },
   orderPlanks() {
     return orderPlanks(state);
@@ -215,6 +230,15 @@ const api = {
   ignite(i: number, j: number) {
     const b = grid.buildingAt({ i, j });
     if (b) ignite(state, b);
+  },
+  /** Force the weather: a storm through this cycle, or the tsunami sequence now. */
+  forceStorm() {
+    startStorm(state, grid);
+    syncView();
+  },
+  forceTsunami() {
+    startTsunami(state, grid);
+    syncView();
   },
   /** Tick the ledger for `seconds` of game time (for effects that live between shifts). */
   tickSeconds(seconds: number) {

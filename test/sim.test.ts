@@ -1,7 +1,8 @@
 // Sim-only unit checks. Nothing here may pull in Babylon; the hygiene test enforces that for src/sim/**.
 import { describe, expect, it } from "vitest";
 import { HIGH_WATER_MARK, LOW_WATER_MARK, SPRING_HI, SPRING_LO, STILT_LENGTH, TIDE_HI, TIDE_LO, TIDE_PERIOD } from "../src/config";
-import { BEACH_MAX_HEIGHT, BOAT_COST, BOAT_MIN_RANGE, BOAT_RANGE, BUILDINGS, CAP_BASE, FIRE_BURN_SECONDS, FIRE_IGNITE_THRESHOLD, FISH_CAP, HAPPY, INJURY_NATURAL_CYCLES, LEVEL_UP_HAPPINESS, MAX_LEVEL, OYSTER_POLLUTION_KILL, PLANK_ORDER_SIZE, STARTING_MONEY, TRADE_EVERY, TRADE_EVERY_LIGHTHOUSE, TREATMENT_RADIUS, TREE_REGROW_CYCLES, WAREHOUSE_CAP } from "../src/sim/balance";
+import { BEACH_MAX_HEIGHT, BOAT_COST, BOAT_MIN_RANGE, BOAT_RANGE, BUILDINGS, CAP_BASE, DRAWDOWN_LEVEL, DRAWDOWN_SECONDS, FIRE_BURN_SECONDS, FIRE_IGNITE_THRESHOLD, FISH_CAP, HAPPY, INJURY_NATURAL_CYCLES, LEVEL_UP_HAPPINESS, MAX_LEVEL, OYSTER_POLLUTION_KILL, PLANK_ORDER_SIZE, STARTING_MONEY, TRADE_EVERY, TRADE_EVERY_LIGHTHOUSE, TREATMENT_RADIUS, TREE_REGROW_CYCLES, WAREHOUSE_CAP } from "../src/sim/balance";
+import { sheltered, shielded, startStorm, startTsunami, waveDirection } from "../src/sim/events";
 import { ignite } from "../src/sim/fire";
 import { addLantern, coverageAt, lanternBlocker } from "../src/sim/services";
 import { injuredCount } from "../src/sim/sharks";
@@ -18,7 +19,7 @@ import { advanceCycles, tick } from "../src/sim/tick";
 import { floodFate, isRising, phaseProgress, tickTide, tideNormalized } from "../src/sim/tide";
 import { grownTreesNear } from "../src/sim/trees";
 import { assignWorkers } from "../src/sim/workers";
-import { beachesNear, growStreet, pierByBeach, placeByWalkway, placeEdge, placeHarbor, placeLumberCamp, placeSecondPier, placeShipyard, reachHill, starterTown } from "./scenario";
+import { beachesNear, growStreet, pierByBeach, placeByWalkway, placeEdge, placeHarbor, placeLumberCamp, placeSecondPier, placeShipyard, reachHill, shelterHarbours, starterTown } from "./scenario";
 
 const simSources = import.meta.glob("../src/sim/**/*.ts", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
 
@@ -239,6 +240,7 @@ describe("production chain (M5)", () => {
     expect(growStreet(state, grid, 6)).toBeGreaterThan(0);
     expect(placeByWalkway(state, grid, "house", 6).length).toBeGreaterThanOrEqual(4);
     expect(placeSecondPier(state, grid, t.pier.cells[0])).not.toBeNull(); // a berth for the boat to come
+    shelterHarbours(state, grid); // storms mustn't sink the count we're watching
     const treesBefore = grownTreesNear(state, camp!.cells);
     expect(treesBefore).toBeGreaterThan(0);
 
@@ -412,6 +414,7 @@ describe("beaches and sharks (M8)", () => {
       expect(beaches.length).toBeGreaterThan(0);
       const site = pierByBeach(state, grid);
       expect(site).not.toBeNull();
+      shelterHarbours(state, grid);
       if (protect) {
         let nets = 0;
         for (const b of beaches) for (const n of grid.neighbors(b)) {
@@ -583,6 +586,80 @@ describe("fire (M10)", () => {
     expect(houses[0].fire).toBe(0);
     expect(houses[0].damaged).toBe(true);
     expect(state.fires).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("storms and the tsunami (M11)", () => {
+  it("a forced storm takes boats from an unsheltered pier and none from one behind a breakwater", () => {
+    const run = (shelter: boolean) => {
+      const { state, grid, town: t } = town(5);
+      state.resources.money += 3000; state.resources.planks += 100;
+      t.pier.boats = 2;
+      const dock = placeEdge(state, grid, "pier", t.pier.cells[0], 3)!;
+      dock.boats = 2;
+      if (shelter) {
+        let walls = 0;
+        for (const h of [t.pier, dock]) for (const c of h.cells) for (const n of grid.neighbors(c)) {
+          if (grid.classAt(n) === "deep" && !grid.buildingAt(n) && tryPlace(state, grid, "breakwater", n)) walls++;
+        }
+        expect(walls).toBeGreaterThan(0);
+        expect(sheltered(grid, t.pier) && sheltered(grid, dock)).toBe(true);
+      }
+      startStorm(state, grid);
+      return { boats: t.pier.boats + dock.boats, active: state.storm.active };
+    };
+    const open = run(false);
+    expect(open.active).toBe(true);
+    expect(open.boats).toBeLessThan(4);
+    const safe = run(true);
+    expect(safe.boats).toBe(4);
+  });
+
+  it("boats stay in and rain kills fire risk while a storm blows", () => {
+    const { state, grid, town: t } = town();
+    advanceCycles(state, grid, 2);
+    state.fields.fire[0] = 5;
+    startStorm(state, grid);
+    tick(state, grid);
+    expect(maxOf(state.fields.fire)).toBe(0);
+    let sailed = false;
+    for (let k = 0; k < TIDE_PERIOD * 20; k++) { tick(state, grid); if (state.storm.active && t.pier.atSea) sailed = true; if (!state.storm.active) break; }
+    expect(sailed).toBe(false);
+    expect(state.storm.active).toBe(false); // it blew through by the next peak
+  });
+
+  it("a forced tsunami draws the water down, then damages unshielded flats buildings and spares those behind a sea wall", () => {
+    const { state, grid, town: t } = town(3);
+    state.resources.money += 3000; state.resources.timber += 100;
+    growStreet(state, grid, 6);
+    const homes = placeByWalkway(state, grid, "house", 4);
+    expect(homes.length).toBeGreaterThanOrEqual(2);
+    const dir = waveDirection(grid);
+    // Wall off one house: a sea wall on a free flat cell in front of it along the wave axis.
+    let guarded: Building | null = null, wall: Building | null = null;
+    for (const home of homes) {
+      for (let s = 1; s <= 8 && !wall; s++) {
+        const c = { i: Math.floor(home.cells[0].i + 0.5 - dir.x * s), j: Math.floor(home.cells[0].j + 0.5 - dir.z * s) };
+        if (grid.classAt(c) === "flat" && !grid.buildingAt(c)) wall = tryPlace(state, grid, "seaWall", c);
+      }
+      if (wall) { guarded = home; break; }
+    }
+    expect(wall).not.toBeNull();
+    expect(shielded(grid, dir, guarded!.cells[0])).toBe(true);
+    const exposed = homes.filter(h => h !== guarded && !h.cells.some(c => shielded(grid, dir, c)));
+    expect(exposed.length).toBeGreaterThan(0);
+
+    startTsunami(state, grid);
+    expect(state.tsunami.stage).toBe("drawdown");
+    for (let k = 0; k < DRAWDOWN_SECONDS * 20 + 2; k++) tick(state, grid);
+    expect(state.tsunami.stage).toBe("wave");
+    expect(state.tide.level).toBeCloseTo(DRAWDOWN_LEVEL, 1);
+    for (let k = 0; k < 40 * 20; k++) { tick(state, grid); if (!state.tsunami.stage) break; }
+    expect(state.tsunami.stage).toBeNull();
+    expect(state.tide.override).toBeNull();
+    expect(guarded!.damaged).toBe(false);
+    for (const h of exposed) expect(h.damaged).toBe(true);
+    expect(t.pier.boats).toBe(0); // unsheltered boats are gone
   });
 });
 

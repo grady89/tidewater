@@ -529,6 +529,35 @@ function applyDamage(scene: Scene, b: Building, m: BuildingMeshes): BuildingMesh
   return m;
 }
 
+function breakwater(scene: Scene, b: Building): BuildingMeshes {
+  const { x, z } = cellCenter(b.cells[0]);
+  const parts: Mesh[] = [];
+  // A heap of rock rising just above the ordinary high tide, sitting on the seabed.
+  const bed = terrainHeight(x, z);
+  const top = 0.9;
+  parts.push(box(scene, 0.95, top - bed, 0.95, x, (top + bed) / 2, z, "#8d8a83"));
+  for (const [dx, dz, s] of [[-0.25, -0.2, 0.42], [0.25, 0.15, 0.36], [0, 0.3, 0.3], [0.1, -0.3, 0.28]] as [number, number, number][]) {
+    const rock = MeshBuilder.CreateCylinder("rock", { diameterTop: s * 0.4, diameterBottom: s, height: s * 0.7, tessellation: 5 }, scene);
+    rock.position.set(x + dx, top + s * 0.3, z + dz);
+    rock.rotation.y = dx * 7;
+    parts.push(tint(rock, "#8d8a83"));
+  }
+  return { root: mergeFlat("breakwater", parts, scene) };
+}
+
+function seaWall(scene: Scene, b: Building): BuildingMeshes {
+  const { x, z } = cellCenter(b.cells[0]);
+  const F = b.floorY;
+  const parts: Mesh[] = [];
+  // A timber-faced earth wall the height of a house floor and a bit.
+  const bed = terrainHeight(x, z);
+  parts.push(box(scene, 0.98, 1.5 - bed, 0.98, x, (1.5 + bed) / 2, z, "#b9a377"));
+  parts.push(box(scene, 1.0, 0.12, 1.0, x, 1.5 + 0.06, z, PALETTE.planks));
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) parts.push(box(scene, 0.1, 1.6 - bed, 0.1, x + sx * 0.44, (1.6 + bed) / 2, z + sz * 0.44, PALETTE.wood));
+  void F;
+  return { root: mergeFlat("seaWall", parts, scene) };
+}
+
 function outfall(scene: Scene, b: Building): BuildingMeshes {
   const { x, z } = cellCenter(b.cells[0]);
   const F = b.floorY;
@@ -568,6 +597,8 @@ export function createBuildingMeshes(scene: Scene, b: Building): BuildingMeshes 
 function buildMeshes(scene: Scene, b: Building): BuildingMeshes {
   switch (b.kind) {
     case "fireWatch": return fireWatch(scene, b);
+    case "breakwater": return breakwater(scene, b);
+    case "seaWall": return seaWall(scene, b);
     case "outfall": return outfall(scene, b);
     case "treatmentPlant": return treatmentPlant(scene, b);
     case "clinic": return clinic(scene, b);

@@ -108,6 +108,32 @@ export interface CycleStats {
   trade: number;
 }
 
+export interface StormState {
+  /** A storm blows through the current cycle. */
+  active: boolean;
+  /** Cycle of the last storm, so two never follow each other. */
+  lastCycle: number;
+  /** Storms weathered. */
+  count: number;
+}
+
+export type TsunamiStage = "drawdown" | "wave" | "settle";
+
+export interface TsunamiState {
+  stage: TsunamiStage | null;
+  /** Seconds into the stage. */
+  t: number;
+  /** Unit vector the wave travels along (from the deep side toward land). */
+  dir: { x: number; z: number };
+  /** The wave front's position along `dir`, in world units from the map centre. */
+  front: number;
+  /** Cycle of the last tsunami. */
+  lastCycle: number;
+  /** Buildings already struck by this wave. */
+  struck: number[];
+  count: number;
+}
+
 export interface TradeState {
   /** Cycle whose high water the ship next calls on; -1 until a harbor exists. */
   nextVisit: number;
@@ -154,6 +180,8 @@ export interface SimState {
   trade: TradeState;
   /** Tourists in town (they come and go with the ship). */
   tourists: number;
+  storm: StormState;
+  tsunami: TsunamiState;
   /** Town happiness 0..1, averaged over occupied houses (1 when empty). */
   happiness: number;
   /** Last completed cycle's ledger, for the HUD. */
@@ -187,6 +215,8 @@ export function createState(seed = 1): SimState {
     incidents: 0,
     trade: { nextVisit: -1, shipCycle: -1, plankOrder: 0, visits: 0 },
     tourists: 0,
+    storm: { active: false, lastCycle: -99, count: 0 },
+    tsunami: { stage: null, t: 0, dir: { x: 0, z: 1 }, front: 0, lastCycle: -99, struck: [], count: 0 },
     happiness: 1,
     last: { cycle: 0, fishCaught: 0, fishSold: 0, shellfishSold: 0, income: 0, expenses: 0, immigrants: 0, tourism: 0, trade: 0 },
     log: [],

@@ -1,4 +1,7 @@
-// Ported verbatim from reference/tidewater-study.html (waterVS / waterFS).
+// Ported from reference/tidewater-study.html (waterVS / waterFS). The fragment shader is verbatim; the vertex
+// shader keeps the study's wave math and adds uniforms only: `waveAmp` scales the swell (storms), and
+// `waveDir/waveFront/waveHeight/waveWidth` add a travelling crest (the tsunami). With waveAmp = 1 and
+// waveHeight = 0 the displacement is exactly the study's.
 // The only substitution is ${SIZE}, which the reference also interpolated from its SIZE constant.
 import { COMMON } from "./common";
 import { SIZE } from "../src/config";
@@ -7,10 +10,14 @@ export const waterVS = `
     precision highp float;
     attribute vec3 position;
     uniform mat4 world; uniform mat4 worldViewProjection; uniform float time;
+    uniform float waveAmp; uniform vec2 waveDir; uniform float waveFront; uniform float waveHeight; uniform float waveWidth;
     varying vec3 vW;
     void main(){
       vec4 w = world*vec4(position,1.0);
       float y = 0.045*sin(w.x*0.9 + time*1.1) + 0.035*sin((w.x*0.6 + w.z*0.8)*1.3 - time*0.9) + 0.025*sin(w.z*1.7 + time*1.6);
+      y *= waveAmp;
+      float crest = (dot(w.xz, waveDir) - waveFront) / max(waveWidth, 0.001);
+      y += waveHeight * exp(-crest*crest);
       w.y += y; vW = w.xyz;
       gl_Position = worldViewProjection*vec4(position.x, position.y + y, position.z, 1.0);
     }

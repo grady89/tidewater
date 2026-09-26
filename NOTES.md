@@ -283,6 +283,27 @@ Decisions and findings that CLAUDE.md does not cover. Newest at the bottom of ea
   merged mesh). Flames are self-lit cones and smoke is grey spheres, both thin instances over burning buildings.
 - `__tidewater.ignite(i, j)` and `tickSeconds(s)` exist so a scenario can watch a fire between shifts.
 
+### M11 storms and the tsunami
+- **Water shader uniforms only.** `shaders/water.ts` keeps the study's wave line and adds `waveAmp` (multiplies
+  the swell; 1 = the study) and a travelling Gaussian crest `waveHeight · exp(−((w·waveDir − waveFront)/waveWidth)²)`
+  (height 0 = off). The fragment shader is untouched. `world/water.ts` exposes `setSwell` and `setCrest`.
+- **Storm** (`sim/events.ts`): rolled at settlement after cycle 6, 12 % a cycle, never in consecutive cycles; lasts
+  until the next peak. Boats don't sail, swimmers stay home, rain zeroes the fire field every tick, and at the
+  storm's start each boat at an unsheltered pier/dock is lost with 50 % (a reached lighthouse saves them all).
+  Shelter = a breakwater within 6 cells. The view eases a `stormMix` over 3 s: light blends toward the study's dusk
+  palette and the swell triples.
+- **Tsunami**: rolled after cycle 20, 5 % a cycle, 12-cycle cooldown. Drawdown: 20 s of `tide.override` ramping to
+  −1.2 (boats heel on the mud through the existing mooring code). Wave: a front sweeps along the wave axis at 10
+  u/s; every building it passes whose floor is under 1.4 and which has no sea wall or breakwater within 12 cells in
+  front of it along the axis is damaged, and unsheltered boats are lost. Then 6 s of settling back to the clock's
+  level. The wave axis points at the deepest map-edge cell.
+- **Sea wall placement is "flat", not "shore".** The brief's shore class (flat cell touching high ground) is the
+  landward edge of the flats; a wall there protects nothing on the flats. On the flats it is the line you build
+  along the seaward edge, which is what "shields flats behind it" needs.
+- Storms are the reason scripted towns now call `shelterHarbours` (breakwaters around every harbour) before
+  counting boats, and skip a storm cycle before measuring sailings: two M4/M5 checks silently depended on calm
+  weather. Forced events: `__tidewater.forceStorm()`, `forceTsunami()`.
+
 ## Findings on the v1 questions
 
 (placement and connectivity exist now; play a few cycles and write answers here)
