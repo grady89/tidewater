@@ -13,15 +13,15 @@ Live status. Update after every milestone (and mid-milestone if you compact). On
 | M6 Pollution | DONE | f5b3039 · fields.ts (decay/diffuse/tide-advect), waste → outfall emitters, treatment plant, oyster die-off (bed beside an outfall dies in 3 cycles; survives with a plant), fish density + richest-ground boats + depletion/regen, overlay mesh + toggle; 25 sim tests, shots/m6.png · headless 165 fps |
 | M7 Happiness & services | DONE | 9aa1dcb · HAPPY formula w/ coverage layers (water/leisure/night/treatment…), well/bathhouse/tavern/shrine/market square, lantern posts on walkways, homes level 1→3 (+capacity, roof/chimney), info panel on click, accumulating waste backlog; 28 sim tests, shots/m7.png · headless 165 fps |
 | M8 Beaches & sharks | DONE | 52adce6 · derived beaches, daytime swimmers at high water, shark-risk field (markets/docks, nets absorb), seeded incidents → injuries/shock, clinic + lifeguard + nets, fins + swimmers in the view, Sharks overlay; unguarded beach by a busy pier: incident by cycle 7 / with nets+lifeguard 0; 31 sim tests, shots/m8.png · headless 165 fps |
-| M9 Trade & tourism | IN PROGRESS | sub-task: sim (harbor, trade ship schedule, plank orders, inn + tourists, lighthouse) |
-| M10 Fire | TODO | |
+| M9 Trade & tourism | DONE | cdd020a (+ addCapped fix) · harbor (depth < −1.5), trade ship every 3 cycles (2 w/ lighthouse) buying smoked/surplus fish, plank orders, inn + tourists spending, ship view in/out along a ≥12-cell sea path; 34 sim tests, shots/m9-in.png + m9-out.png · headless 165 fps |
+| M10 Fire | IN PROGRESS | sub-task: starting (fire risk field, ignition/spread, damage + repair, fire watch, effects) |
 | M11 Storms & tsunami | TODO | |
 | M12 Camera, polish, saves | TODO | |
 | M13 Audio | TODO | |
 | M14 Ship it | TODO | |
 
 ## Current focus
-M9 Trade & tourism — sub-task: sim. Last thing that worked: M8 green (build/test/smoke, 31 tests).
+M10 Fire — sub-task: starting. Last thing that worked: M9 green (build/test/smoke, 34 tests).
 
 ## Blocked
 (milestone, why, what was tried, what would unblock)
@@ -37,3 +37,4 @@ M9 Trade & tourism — sub-task: sim. Last thing that worked: M8 green (build/te
 - 2026-09-26 04:30 · M6 · f5b3039 · headless 165 fps
 - 2026-09-26 05:20 · M7 · 9aa1dcb · headless 165 fps
 - 2026-09-26 06:05 · M8 · 52adce6 · headless 165 fps
+- 2026-09-26 06:45 · M9 · cdd020a · headless 165 fps

@@ -83,9 +83,10 @@ export function capFor(state: SimState, good: GoodKind): number {
   return CAP_BASE[good] + n * WAREHOUSE_CAP;
 }
 
+/** Add up to the cap and return what fit. A stock already over its cap (grants, a lost warehouse) is left alone. */
 export function addCapped(state: SimState, good: GoodKind, amount: number): number {
   const before = state.resources[good];
-  state.resources[good] = Math.min(capFor(state, good), before + amount);
+  state.resources[good] = Math.max(before, Math.min(capFor(state, good), before + amount));
   return state.resources[good] - before;
 }
 
