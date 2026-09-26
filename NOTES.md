@@ -340,10 +340,23 @@ Decisions and findings that CLAUDE.md does not cover. Newest at the bottom of ea
   normal for a broken edge, and mixes it into the sky the fresnel term already reflects (`reflectMix`, and the
   fresnel share rises 0.55 → 0.7). `reflectMix = 0` is bit-for-bit the study; no other line of the shader moved.
 - The toggle lives on the speed bar ("Reflections"), is remembered in localStorage, and is off by default: it is a
-  second render of the scene. Measured in the 300-building town (headless 4060, 165 fps off): 62.5 fps on at 1024²,
-  62.5 at 512² — so the cost is draw submission (311 meshes), not fill — and 99.5 with `refreshRate = 2`, which is
-  what ships (the mirror lags the camera by one frame). Walkers, lantern spheres, fins, flames and smoke are left
-  out of the mirror; the starter town stays at the cap either way. `__tidewater.setReflections(on)`.
+  second render of the scene. First measurement in the 300-building town (headless 4060, 165 fps off): 62.5 fps on
+  at 1024², 62.5 at 512² — so the cost was draw submission (311 meshes), not fill. That forced the chunk merge
+  below; with it the mirror renders every frame at the 165 fps cap. Walkers, lantern spheres, fins, flames and
+  smoke are left out of the mirror. `__tidewater.setReflections(on)`.
+
+### Chunk merge (the M12 perf pass, done for the mirror)
+- `view/buildingViews.ts` now merges every building in an 8×8-cell chunk into one mesh (`chunk:i,j`), rebuilt
+  when any building in the chunk appears, leaves or changes its mesh signature. 300 buildings → 15 chunk meshes;
+  the whole scene is ~31 meshes. A rebuild re-creates each building's primitives and merges twice (building, then
+  chunk) — tens of milliseconds for a full chunk, once per placement, not per frame.
+- To merge, everything must share the one flat material, so damage is now baked into the vertex colours (× 0.45,
+  0.42, 0.40 — the old damaged material's diffuse) instead of a material swap; the lean is still a pivot rotation,
+  baked by the merge. `damagedMaterial()` is left in place but unused.
+- Lanterns became two thin-instanced spheres, lit and dark, whose instance buffers are rebuilt only when the set
+  of lit lanterns changes (a per-frame signature string over ≤ a few hundred ids). Lantern positions are read off
+  the per-building lantern mesh at chunk build and the mesh is disposed.
+- Smoke M1 now asserts one mesh per chunk (1–64) instead of one per building; `__tidewater.view.chunks()`.
 
 ## Findings on the v1 questions
 

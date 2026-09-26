@@ -1,6 +1,6 @@
 // Mesh factories for every building kind. Each building merges to one mesh; homes add a lantern that is lit while
 // the home is reached. View only: nothing here changes a number in the sim.
-import { Color3, Mesh, MeshBuilder, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
+import { Color3, Mesh, MeshBuilder, Scene, StandardMaterial, Vector3, VertexBuffer } from "@babylonjs/core";
 import { STILT_SINK } from "../config";
 import { BUILDINGS } from "../sim/balance";
 import { cellCenter } from "../sim/grid";
@@ -518,14 +518,20 @@ export function damagedMaterial(scene: Scene): StandardMaterial {
   return m;
 }
 
-/** Damage shows as a lean and a scorched tint. */
+/** Damage shows as a lean and a scorched tint. The tint is baked into the vertex colours so a damaged building
+ *  still shares the one flat material and merges into its chunk. */
 function applyDamage(scene: Scene, b: Building, m: BuildingMeshes): BuildingMeshes {
   if (!b.damaged) return m;
+  void scene;
   const { cx, cz } = bounds(b.cells);
   m.root.setPivotPoint(new Vector3(cx, b.floorY, cz));
   m.root.rotation.z = 0.09;
   m.root.rotation.x = -0.05;
-  m.root.material = damagedMaterial(scene);
+  const colors = m.root.getVerticesData(VertexBuffer.ColorKind);
+  if (colors) {
+    for (let i = 0; i < colors.length; i += 4) { colors[i] *= 0.45; colors[i + 1] *= 0.42; colors[i + 2] *= 0.4; }
+    m.root.updateVerticesData(VertexBuffer.ColorKind, colors);
+  }
   return m;
 }
 

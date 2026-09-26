@@ -273,6 +273,7 @@ const api = {
     drawCalls: () => scene.getActiveMeshes().length,
     audio: () => ({ started: audio.started, state: audio.state, muted: audio.muted }),
     reflections: () => water.reflections,
+    chunks: () => views.chunkCount,
   },
   /** The reflections quality toggle (remembered). */
   setReflections,

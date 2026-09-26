@@ -542,14 +542,14 @@ try {
   assert(audioMuted.muted, "mute button mutes");
 
   // M1: save, reload the page, every building is back and the clock kept its place.
-  const before = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; api.save(); return { n: Object.keys(api.sim.buildings).length, cycle: api.sim.tide.cycle, money: api.sim.resources.money }; });
+  const before = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; api.save(); return { n: Object.keys(api.sim.buildings).length, cycle: api.sim.tide.cycle, money: api.sim.resources.money, chunks: api.view.chunks() }; });
   await page.reload();
   await waitReady(page);
-  const after = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; const kinds = new Set((Object.values(api.sim.buildings) as any[]).map(b => b.kind)); return { n: Object.keys(api.sim.buildings).length, cycle: api.sim.tide.cycle, money: api.sim.resources.money, meshes: api.scene.meshes.filter((m: any) => kinds.has(m.name)).length }; });
+  const after = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { n: Object.keys(api.sim.buildings).length, cycle: api.sim.tide.cycle, money: api.sim.resources.money, chunks: api.view.chunks(), meshes: api.scene.meshes.filter((m: any) => m.name.startsWith("chunk:")).length }; });
   console.log("M1:", JSON.stringify({ before, after }));
   assert(after.n === before.n && before.n >= 5, "all buildings present after reload");
   assert(after.cycle === before.cycle && after.money === before.money, "ledger restored");
-  assert(after.meshes === before.n, "view rebuilt one mesh per building");
+  assert(after.chunks === before.chunks && after.meshes === after.chunks && after.chunks > 0 && after.chunks <= 64, "view rebuilt one merged mesh per chunk");
   await page.screenshot({ path: "shots/m1.png" });
 
   // Headless fps on the real GPU, averaged over 5 s.

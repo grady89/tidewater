@@ -47,9 +47,6 @@ export function createWater(scene: Scene, heightTex: RawTexture): Water {
   // only while the toggle is on.
   const mirror = new MirrorTexture("mirror", MIRROR_SIZE, scene, false);
   mirror.renderListPredicate = (m: AbstractMesh) => !NOT_MIRRORED.has(m.name);
-  // The mirror is CPU-bound on draw submission (one call per building), so it re-renders every other frame: a
-  // one-frame lag nobody sees, for ~100 fps instead of ~62 in the 300-building town.
-  mirror.refreshRate = 2;
   mirror.mirrorPlane = Plane.FromPositionAndNormal(new Vector3(0, 0, 0), new Vector3(0, -1, 0));
   material.setTexture("reflectTex", mirror).setFloat("reflectMix", 0);
   let reflections = false;
