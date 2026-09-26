@@ -34,9 +34,38 @@ Decisions and findings that CLAUDE.md does not cover. Newest at the bottom of ea
   enough out that the water plane's edge is in view. The study has the same defect; shader left verbatim per the brief.
   Fix later by clamping `h` to `[0, 1]` (one-character change) once we decide to touch the shaders.
 
+## v1 gameplay decisions (session 2)
+
+- **Floor heights are absolute world Y** (house 1.0, walkway 0.95, pier 1.0), not terrain-relative. Terrain only
+  sets stilt length. Reasoning: walkways must be level to read as connected, and the numbers come straight from
+  the study where FLOOR was absolute. "Height derived from the cell's terrain" is taken to mean the stilts.
+- **The cut rule is dormant at the shipped constants.** High tide is +0.60 and the lowest floor is 0.95, so nothing
+  is ever cut in v1. The rule is implemented (`piece.floorY < tide.level`) and was verified by forcing the level to
+  0.97: every walkway cuts, houses and piers don't, every house goes unreached. The 0.05 gap between walkway and
+  house floors only matters if some tide exceeds 0.95 (storm tide, or a taller tide range). **Design call for the
+  user**: raise TIDE_HI, add an occasional spring tide, or accept that v1 has no survival pressure.
+- **Cell model**: cell (i, j) covers x in [i, i+1), z in [j, j+1); i, j in [-32, 32). Cells are classed by the
+  terrain height at their centre: deep (< TIDE_LO), flat (TIDE_LO..TIDE_HI), high (> TIDE_HI). Houses and walkways
+  go on flat cells only. Nothing can be built on high ground.
+- **Pier placement**: anchored on a deep cell that touches a flat cell; the second cell extends directly away from
+  that flat neighbour (seaward). No rotation control needed. A house directly adjacent to a pier counts as reached.
+- **Right-click removes a piece.** Not in the brief, but a sandbox without removal is unplayable for testing shapes.
+- **Reached feedback**: lanterns (`#ffb859`, emissive) light on reached houses. Nothing else changes visually.
+  Cut pieces get no extra visual since they are under water anyway.
+- **Score** is snapshotted on the frame the tide peaks (`TideClock.peaked`) and displayed until the next peak.
+  The clock starts at high tide, so the first score arrives 80 s in.
+- **Camera auto-rotation is off**: a drifting ghost under the cursor is unusable. Orbit + zoom only, no panning.
+- **Extra files vs the CLAUDE.md layout**: `src/build/placement.ts` (pointer handling and ghost preview),
+  `src/world/flatMesh.ts` (vertex-colour + merge helpers), `src/world/trees.ts` (kept from the decoration layer as
+  world dressing; `tempDecoration.ts` is gone).
+- **One draw call per piece.** Each piece merges its primitives into one vertex-coloured mesh sharing a single
+  white StandardMaterial. Houses add one lantern mesh. A 20-piece town is ~26 meshes.
+- **Picking** marches the camera ray against the analytic heightfield (`terrainHeight`) instead of picking the
+  57k-triangle terrain mesh; 8 bisection steps after the first hit.
+
 ## Findings on the v1 questions
 
-(none yet — placement and connectivity are next session)
+(placement and connectivity exist now; play a few cycles and write answers here)
 
 ## Performance (session 1)
 
