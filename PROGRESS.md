@@ -10,8 +10,8 @@ Live status. Update after every milestone (and mid-milestone if you compact). On
 | M3 Tide splits economy | DONE | 69e9016 · spring tide every 4th cycle (0.85/−0.55, continuous), walkways on stilts (terrain+0.5) with fate-tinted ghost, raised walkway, oyster bed, clam camp, deep dock (sails both tides), seeded start hut; 17 sim tests, smoke shots/m3.png at spring low · headless 165 fps |
 | M4 Town looks alive | DONE | c76ee7d · boats (hull+sail thin instances, sea BFS paths, phase-progress trips, heel on the mud), walkers (thin-instance figures on BFS routes at shift change, market loiterers), day/night from the study lerp with lanterns; smoke: 4 boats out at high, 4 moored at low, 9 walkers, shots/m4-*.png · headless 165 fps |
 | M5 Production chain | DONE | a83af92 · trees as a ledger field (fell/regrow, thin-instance view), lumber camp, sawmill, shipyard (boat at cycle 10 in the scripted town), warehouse caps, net loft, smokehouse, tall house w/ prereq, build menu by category with reasons; market food reserve fix · headless 165 fps |
-| M6 Pollution | IN PROGRESS | sub-task: starting (fields.ts, waste/outfall/treatment, fish density, overlays) |
-| M7 Happiness & services | TODO | |
+| M6 Pollution | DONE | f5b3039 · fields.ts (decay/diffuse/tide-advect), waste → outfall emitters, treatment plant, oyster die-off (bed beside an outfall dies in 3 cycles; survives with a plant), fish density + richest-ground boats + depletion/regen, overlay mesh + toggle; 25 sim tests, shots/m6.png · headless 165 fps |
+| M7 Happiness & services | IN PROGRESS | sub-task: sim (coverage fields, happiness formula, leveling, lantern posts, service catalog) |
 | M8 Beaches & sharks | TODO | |
 | M9 Trade & tourism | TODO | |
 | M10 Fire | TODO | |
@@ -21,7 +21,7 @@ Live status. Update after every milestone (and mid-milestone if you compact). On
 | M14 Ship it | TODO | |
 
 ## Current focus
-M6 Pollution — sub-task: starting. Last thing that worked: M5 green (build/test/smoke, 22 tests). Note: palette [hidden] CSS fix pending visual check in the M6 smoke.
+M7 Happiness & services — sub-task: sim (coverage fields, happiness, leveling, lanterns). Last thing that worked: M6 green (build/test/smoke, 25 tests); palette category CSS verified in shots/m6.png.
 
 ## Blocked
 (milestone, why, what was tried, what would unblock)
@@ -34,3 +34,4 @@ M6 Pollution — sub-task: starting. Last thing that worked: M5 green (build/tes
 - 2026-09-26 02:48 · M3 · 69e9016 · headless 165 fps
 - 2026-09-26 03:15 · M4 · c76ee7d · headless 165 fps
 - 2026-09-26 03:55 · M5 · a83af92 · headless 165 fps
+- 2026-09-26 04:30 · M6 · f5b3039 · headless 165 fps

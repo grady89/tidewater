@@ -1,7 +1,7 @@
 // The UI: resource bar, build menu by category, tide clock, last-cycle ledger, notifications. Plain DOM over the
 // canvas, read-only over the sim.
 import { Fate, Tool } from "../build/placement";
-import { BOAT_COST, BUILDING_KINDS, BuildingKind, BUILDINGS, CATEGORIES, Category } from "../sim/balance";
+import { BOAT_COST, BUILDING_KINDS, BuildingKind, BUILDINGS, CATEGORIES, Category, LANTERN_COST } from "../sim/balance";
 import { canAfford } from "../sim/economy";
 import { Grid } from "../sim/grid";
 import { population, SimState } from "../sim/state";
@@ -20,6 +20,7 @@ interface ToolDef { tool: Tool; label: string; category: Category; cost: string 
 const TOOLS: ToolDef[] = [
   ...BUILDING_KINDS.map(kind => ({ tool: kind as Tool, label: BUILDINGS[kind].name, category: BUILDINGS[kind].category, cost: costOf(kind) })),
   { tool: "boat", label: "Boat", category: "Sea", cost: `${BOAT_COST}$` },
+  { tool: "lanternPost", label: "Lantern post", category: "Streets", cost: `${LANTERN_COST}$` },
 ];
 const KEYS = "123456789";
 
@@ -171,6 +172,7 @@ export class Hud {
   /** Why a tool is greyed, or null. */
   private lock(state: SimState, tool: Tool): string | null {
     if (tool === "boat") return state.resources.money >= BOAT_COST ? null : "no money";
+    if (tool === "lanternPost") return state.resources.money >= LANTERN_COST ? null : "no money";
     const def = BUILDINGS[tool];
     if (def.requires && !this.grid.has(def.requires)) return `needs ${BUILDINGS[def.requires].name.toLowerCase()}`;
     if (!canAfford(state, def.cost)) {

@@ -1,7 +1,8 @@
 // Sim-only unit checks. Nothing here may pull in Babylon; the hygiene test enforces that for src/sim/**.
 import { describe, expect, it } from "vitest";
 import { HIGH_WATER_MARK, LOW_WATER_MARK, SPRING_HI, SPRING_LO, STILT_LENGTH, TIDE_HI, TIDE_LO, TIDE_PERIOD } from "../src/config";
-import { BOAT_COST, BOAT_MIN_RANGE, BOAT_RANGE, BUILDINGS, CAP_BASE, FISH_CAP, OYSTER_POLLUTION_KILL, STARTING_MONEY, TREATMENT_RADIUS, TREE_REGROW_CYCLES, WAREHOUSE_CAP } from "../src/sim/balance";
+import { BOAT_COST, BOAT_MIN_RANGE, BOAT_RANGE, BUILDINGS, CAP_BASE, FISH_CAP, HAPPY, LEVEL_UP_HAPPINESS, MAX_LEVEL, OYSTER_POLLUTION_KILL, STARTING_MONEY, TREATMENT_RADIUS, TREE_REGROW_CYCLES, WAREHOUSE_CAP } from "../src/sim/balance";
+import { addLantern, coverageAt, lanternBlocker } from "../src/sim/services";
 import { addCapped, boatPurchaseBlocker, buyBoat, capFor, totalBoats, tryPlace } from "../src/sim/economy";
 import { buildFlow, maxOf, meanHeight, stepDrift, zeros } from "../src/sim/fields";
 import { cellIndex, Grid } from "../src/sim/grid";
@@ -203,7 +204,8 @@ describe("production chain (M5)", () => {
     state.resources.fish = 95;
     expect(addCapped(state, "fish", 20)).toBe(5);
     expect(state.resources.fish).toBe(CAP_BASE.fish);
-    state.resources.money += 500;
+    state.resources.money += 600;
+    growStreet(state, grid, 4);
     expect(placeByWalkway(state, grid, "warehouse", 1).length).toBe(1);
     expect(capFor(state, "fish")).toBe(CAP_BASE.fish + WAREHOUSE_CAP);
     expect(addCapped(state, "fish", 20)).toBe(20);
@@ -321,13 +323,63 @@ describe("pollution and fish (M6)", () => {
     const { state, grid, town: t } = town();
     advanceCycles(state, grid, 4);
     expect(t.pier.ground).not.toBeNull();
-    // Boats move to the richest ground each trip, so look at the thinnest deep cell rather than the current one.
-    const thinnest = () => { let m = FISH_CAP; for (let k = 0; k < state.fields.fish.length; k++) if (grid.deep[k] && state.fields.fish[k] < m) m = state.fields.fish[k]; return m; };
-    const fished = thinnest();
+    // Boats move to the richest ground each trip, so look at the thinnest clean deep cell (the outfall's plume
+    // lowers the cap of the cells it reaches, which is a different mechanism).
+    let k0 = -1, fished = FISH_CAP;
+    for (let k = 0; k < state.fields.fish.length; k++) if (grid.deep[k] && state.fields.pollution[k] < 0.01 && state.fields.fish[k] < fished) { fished = state.fields.fish[k]; k0 = k; }
+    expect(k0).toBeGreaterThanOrEqual(0);
     expect(fished).toBeLessThan(FISH_CAP - 0.1);
     t.pier.boats = 0;
     advanceCycles(state, grid, 6);
-    expect(thinnest()).toBeGreaterThan(fished + 0.1);
+    expect(state.fields.fish[k0]).toBeGreaterThan(fished + 0.05);
+  });
+});
+
+describe("happiness, services, leveling (M7)", () => {
+  /** Starter town with every service a home can want. */
+  function servedTown() {
+    const { state, grid, town: t } = town();
+    state.resources.money += 2000;
+    growStreet(state, grid, 4);
+    const well = placeByWalkway(state, grid, "well", 1)[0];
+    const shrine = placeByWalkway(state, grid, "shrine", 1)[0];
+    expect(well && shrine).toBeTruthy();
+    let lanterns = 0;
+    for (const w of buildingList(state).filter(b => b.kind === "walkway" || b.kind === "raisedWalkway")) if (addLantern(state, grid, w.cells[0])) lanterns++;
+    expect(lanterns).toBeGreaterThan(0);
+    return { state, grid, t, well };
+  }
+
+  it("a home with every coverage reaches level 3 within 8 cycles", () => {
+    const { state, grid, t } = servedTown();
+    advanceCycles(state, grid, 8);
+    const levels = t.huts.map(h => h.level);
+    expect(Math.max(...levels)).toBe(MAX_LEVEL);
+    const best = t.huts.find(h => h.level === MAX_LEVEL)!;
+    expect(grid.capacityOf(best)).toBe(BUILDINGS.hut.residents + MAX_LEVEL - 1);
+    expect(best.happiness).toBeGreaterThanOrEqual(LEVEL_UP_HAPPINESS);
+    expect(state.log.some(m => /level 3/.test(m))).toBe(true);
+  });
+
+  it("removing the well drops happiness", () => {
+    const { state, grid, well } = servedTown();
+    advanceCycles(state, grid, 4);
+    const before = state.happiness;
+    expect(before).toBeGreaterThan(0.8);
+    grid.remove(well);
+    advanceCycles(state, grid, 1);
+    expect(state.happiness).toBeLessThan(before - HAPPY.water * 0.9);
+  });
+
+  it("lantern posts stand only on walkways and light the night layer", () => {
+    const { state, grid, town: t } = town();
+    state.resources.money += 100;
+    expect(lanternBlocker(state, grid, t.huts[0].cells[0])).not.toBeNull();
+    const w = buildingList(state).find(b => b.kind === "walkway" || b.kind === "raisedWalkway")!;
+    expect(addLantern(state, grid, w.cells[0])).toBe(true);
+    expect(addLantern(state, grid, w.cells[0])).toBe(false);
+    advanceCycles(state, grid, 1);
+    expect(coverageAt(state, "night", w.cells[0])).toBe(1);
   });
 });
 
@@ -383,21 +435,12 @@ describe("tide splits the economy (M3)", () => {
   });
 
   it("oyster beds produce shellfish only when a low-water shift ends", () => {
-    const { state, grid, town: t } = town();
-    state.resources.money += 200;
+    const { state, grid } = town();
+    state.resources.money += 400;
     advanceCycles(state, grid, 2);
-    // Put the bed on the flats next to a walkway, in the oyster window, and make sure it is the only job in town.
-    let bed = null;
-    for (const w of buildingList(state).filter(b => b.kind === "walkway")) {
-      for (const n of grid.neighbors(w.cells[0])) { bed = tryPlace(state, grid, "oysterBed", n); if (bed) break; }
-      if (bed) break;
-    }
-    if (!bed) {
-      // No window cell touches the town: lay a walkway to the nearest one.
-      const cell = flatCellWithHeight(grid, 0.05, 0.4, t.pier.cells[0])!;
-      for (const n of grid.neighbors(cell)) if (grid.classAt(n) === "flat" && !grid.buildingAt(n)) { grid.place("walkway", [n]); break; }
-      bed = grid.place("oysterBed", [cell]);
-    }
+    // Put the bed on the flats next to the street, in the oyster window; grow the street toward the water if needed.
+    let bed: Building | null = placeByWalkway(state, grid, "oysterBed", 1)[0] ?? null;
+    for (let k = 0; k < 8 && !bed; k++) { growStreet(state, grid, 1); bed = placeByWalkway(state, grid, "oysterBed", 1)[0] ?? null; }
     expect(bed).not.toBeNull();
     for (const b of buildingList(state)) if (b.kind === "pier") b.boats = 0;
     advanceCycles(state, grid, 1);

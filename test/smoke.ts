@@ -78,21 +78,16 @@ try {
   assert(!cut.reached && cut.sold === 0, "sales stop when the market is cut off");
 
   // M3: low-water producers and a raised walkway go in; the 4th cycle is a spring tide.
-  const m3 = await page.evaluate(() => {
+  const m3 = await page.evaluate(async () => {
     const api = (window as unknown as { __tidewater: Api }).__tidewater;
-    api.grant(400, 20);
-    const grid = api.grid;
-    const placeByWalkway = (kind: string): boolean => {
-      for (const w of (Object.values(api.sim.buildings) as any[]).filter(b => b.kind === "walkway" || b.kind === "raisedWalkway")) {
-        for (const n of grid.neighbors(w.cells[0])) {
-          for (let di = 0; di < 2; di++) for (let dj = 0; dj < 2; dj++) if (api.place(kind, n.i - di, n.j - dj)) return true;
-        }
-      }
-      return false;
-    };
-    const oyster = placeByWalkway("oysterBed");
-    const clam = placeByWalkway("clamCamp");
-    const raised = placeByWalkway("raisedWalkway");
+    const url = "/test/scenario.ts";
+    const sc = (await import(url)) as typeof import("./scenario");
+    api.grant(600, 20);
+    const s = api.sim, grid = api.grid;
+    sc.growStreet(s, grid, 6);
+    const oyster = sc.placeByWalkway(s, grid, "oysterBed", 1).length === 1;
+    const clam = sc.placeByWalkway(s, grid, "clamCamp", 1).length === 1;
+    const raised = sc.placeByWalkway(s, grid, "raisedWalkway", 1).length === 1;
     api.advance((4 - (api.sim.tide.cycle % 4)) % 4 || 4); // to the next spring peak
     const springText = document.querySelector(".tide-spring")?.textContent ?? "";
     return { oyster, clam, raised, cycle: api.sim.tide.cycle, level: api.sim.tide.level, springText, log: api.sim.log.slice(-2) };
@@ -252,6 +247,36 @@ try {
   await page.waitForTimeout(400);
   await page.screenshot({ path: "shots/m6.png" });
   await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.setOverlay(null));
+
+  // M7: services and lanterns lift a home to level 3; the info panel shows it.
+  await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.newTown());
+  const m7 = await page.evaluate(async () => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    const url = "/test/scenario.ts";
+    const sc = (await import(url)) as typeof import("./scenario");
+    const s = api.sim, grid = api.grid;
+    const town = sc.starterTown(s, grid);
+    api.grant(2000);
+    sc.growStreet(s, grid, 4);
+    const well = sc.placeByWalkway(s, grid, "well", 1).length;
+    const shrine = sc.placeByWalkway(s, grid, "shrine", 1).length;
+    const tavern = sc.placeByWalkway(s, grid, "tavern", 1).length;
+    let lanterns = 0;
+    for (const w of (Object.values(s.buildings) as any[]).filter(b => b.kind === "walkway" || b.kind === "raisedWalkway")) if (api.place("lanternPost", w.cells[0].i, w.cells[0].j)) lanterns++;
+    api.advance(8);
+    const best = town.huts.slice().sort((a, b) => b.level - a.level)[0];
+    api.select(best.cells[0].i, best.cells[0].j);
+    api.frameAt(best.cells[0].i + 0.5, best.cells[0].j + 0.5, 14);
+    const panel = document.getElementById("info")!;
+    return { well, shrine, tavern, lanterns, level: best.level, happiness: s.happiness, panelShown: !panel.hidden, panelText: panel.innerText.replace(/\s+/g, " ").slice(0, 160) };
+  });
+  console.log("M7:", JSON.stringify(m7));
+  assert(m7.well && m7.shrine && m7.lanterns > 0, "services placed");
+  assert(m7.level === 3, "a home reached level 3 within 8 cycles");
+  assert(m7.panelShown && /level 3/.test(m7.panelText), "info panel shows the levelled home");
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: "shots/m7.png" });
+  await page.keyboard.press("Escape");
 
   // M1: save, reload the page, every building is back and the clock kept its place.
   const before = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; api.save(); return { n: Object.keys(api.sim.buildings).length, cycle: api.sim.tide.cycle, money: api.sim.resources.money }; });

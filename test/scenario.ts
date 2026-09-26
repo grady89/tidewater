@@ -1,6 +1,6 @@
 // Scripted towns shared by the unit tests and the smoke scenario (which imports this module into the page
 // through the Vite dev server). Sim-only: no Babylon.
-import { BuildingKind } from "../src/sim/balance";
+import { BuildingKind, BUILDINGS } from "../src/sim/balance";
 import { buyBoat, tryPlace } from "../src/sim/economy";
 import { Grid } from "../src/sim/grid";
 import { Building, buildingList, Cell, SimState } from "../src/sim/state";
@@ -64,15 +64,17 @@ export function growStreet(state: SimState, grid: Grid, n: number): number {
   return laid;
 }
 
-/** Place up to `count` of `kind` where the footprint touches a walkway (standard or raised). */
+/** Place up to `count` of `kind` where the footprint covers a cell next to a walkway (standard or raised). */
 export function placeByWalkway(state: SimState, grid: Grid, kind: BuildingKind, count = 1): Building[] {
   const out: Building[] = [];
+  const { w, d } = BUILDINGS[kind];
   const walkways = buildingList(state).filter(b => b.kind === "walkway" || b.kind === "raisedWalkway");
-  for (const w of walkways) {
+  for (const wk of walkways) {
     if (out.length >= count) break;
-    for (const n of grid.neighbors(w.cells[0])) {
+    for (const n of grid.neighbors(wk.cells[0])) {
       if (out.length >= count) break;
-      for (let di = 0; di < 2 && out.length < count; di++) for (let dj = 0; dj < 2 && out.length < count; dj++) {
+      // Every anchor whose footprint would cover the neighbour cell.
+      for (let di = 0; di < w && out.length < count; di++) for (let dj = 0; dj < d && out.length < count; dj++) {
         const b = tryPlace(state, grid, kind, { i: n.i - di, j: n.j - dj });
         if (b) { out.push(b); break; }
       }
@@ -123,32 +125,28 @@ export function placeLumberCamp(state: SimState, grid: Grid, streetEnd: Cell): B
   return null;
 }
 
-/** Another pier (a berth for shipyard boats), on the nearest free shore site to `near`. */
-export function placeSecondPier(state: SimState, grid: Grid, near: Cell): Building | null {
+/** An edge-class building (pier, outfall, shipyard) on the nearest free shore site at least `minDist` from `near`. */
+export function placeEdge(state: SimState, grid: Grid, kind: BuildingKind, near: Cell, minDist = 0): Building | null {
   let best: Cell | null = null, bd = Infinity;
   for (let i = -32; i < 32; i++) for (let j = -32; j < 32; j++) {
     const c = { i, j };
     if (grid.classAt(c) !== "deep") continue;
-    const fp = grid.footprint("pier", c);
-    if (!fp || !grid.canPlace("pier", fp)) continue;
+    const fp = grid.footprint(kind, c);
+    if (!fp || !grid.canPlace(kind, fp)) continue;
     const d = dist(c, near);
-    if (d >= 2 && d < bd) { bd = d; best = c; }
+    if (d >= minDist && d < bd) { bd = d; best = c; }
   }
-  return best ? tryPlace(state, grid, "pier", best) : null;
+  return best ? tryPlace(state, grid, kind, best) : null;
+}
+
+/** Another pier (a berth for shipyard boats), on the nearest free shore site to `near`. */
+export function placeSecondPier(state: SimState, grid: Grid, near: Cell): Building | null {
+  return placeEdge(state, grid, "pier", near, 2);
 }
 
 /** Deep cells against the shore that take a shipyard, nearest the street. */
 export function placeShipyard(state: SimState, grid: Grid, near: Cell): Building | null {
-  let best: Cell | null = null, bd = Infinity;
-  for (let i = -32; i < 32; i++) for (let j = -32; j < 32; j++) {
-    const c = { i, j };
-    if (grid.classAt(c) !== "deep") continue;
-    const fp = grid.footprint("shipyard", c);
-    if (!fp || !grid.canPlace("shipyard", fp)) continue;
-    const d = dist(c, near);
-    if (d < bd) { bd = d; best = c; }
-  }
-  return best ? tryPlace(state, grid, "shipyard", best) : null;
+  return placeEdge(state, grid, "shipyard", near);
 }
 
 /**
@@ -166,5 +164,7 @@ export function starterTown(state: SimState, grid: Grid): { pier: Building; huts
   const walkways = layWalkways(state, grid, site, hut0.cells[0]);
   const huts = [hut0, ...placeByWalkway(state, grid, "hut", 2)];
   const market = placeByWalkway(state, grid, "market", 1)[0] ?? null;
+  // The change from the 500$ buys the outfall, so waste doesn't pile up while the town grows.
+  placeEdge(state, grid, "outfall", site, 3);
   return { pier, huts, market, walkways };
 }

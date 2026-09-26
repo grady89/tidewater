@@ -129,10 +129,22 @@ export class Grid {
     return false;
   }
 
+  /** Does some cell touch a building of `kind`? */
+  touchesKind(cells: Cell[], kind: BuildingKind): boolean {
+    return cells.some(c => this.neighbors(c).some(n => this.buildingAt(n)?.kind === kind));
+  }
+
   canPlace(kind: BuildingKind, cells: Cell[]): boolean {
     const def = BUILDINGS[kind];
     return this.classOk(def.cls, cells) && this.terrainOk(kind, cells) && cells.every(c => !this.buildingAt(c))
-      && (!def.needsWalkway || this.touchesWalkway(cells)) && (!def.requires || this.has(def.requires));
+      && (!def.needsWalkway || this.touchesWalkway(cells)) && (!def.requires || this.has(def.requires))
+      && (!def.touches || this.touchesKind(cells, def.touches));
+  }
+
+  /** Home capacity: the catalog's residents plus one per level above the first. */
+  capacityOf(b: Building): number {
+    const base = BUILDINGS[b.kind].residents;
+    return base > 0 ? base + (b.level - 1) : 0;
   }
 
   /** Deck height a building of `kind` gets on these cells. */
@@ -149,6 +161,7 @@ export class Grid {
     const b: Building = {
       id: s.nextId++, kind, cells, floorY: this.floorFor(kind, cells), cut: false, reached: false,
       workers: 0, residents: 0, boats: 0, atSea: false, ground: null, output: 0, happiness: 1, progress: 0, stress: 0,
+      level: 1, streak: 0, lantern: false,
     };
     for (const c of cells) this.occupancy[cellIndex(c.i, c.j)] = b;
     s.buildings[b.id] = b;

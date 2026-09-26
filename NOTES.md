@@ -198,6 +198,32 @@ Decisions and findings that CLAUDE.md does not cover. Newest at the bottom of ea
 - Overlays are one 4096-quad mesh with per-vertex colour+alpha, refreshed every 6th frame while shown; quads
   sit at max(terrain + 0.08, 0.95) so deep water shows the layer above the surface. `__tidewater.setOverlay`.
 
+### M7 happiness, services, leveling
+- **Happiness** (`balance.HAPPY`): base 0.10 + fed 0.30 + jobs 0.30 + water 0.10 + leisure 0.12 + night 0.08, minus
+  pollution at home (÷ 8, up to 0.5), minus the waste backlog penalty, minus injury/damage terms that M8/M10 will
+  feed. A fed, employed home with no services sits at 0.7; fed but idle at 0.4 — so immigration (≥ 0.5) stops when
+  there is no work, which is the intended brake.
+- **Waste backlog accumulates.** With no outfall, each cycle's untreated waste piles up and costs 0.003 per unit
+  (cap 0.3); an outfall drains 30 units a cycle on top of the current waste. The first version applied a flat
+  −0.25 the moment a town existed, which held the starter town below the immigration bar forever. The scripted
+  starter town now spends its last 40$ on an outfall.
+- **Coverage fields**: one layer per `ServiceKind` (water, leisure, night, treatment, lifeguard, firewatch),
+  rebuilt at every settlement from `BUILDINGS[kind].service` (radius, staffed fraction) and lantern posts (radius
+  3). The treatment plant's coverage replaced the ad-hoc radius check in waste routing. Taverns pour 2 smoked
+  goods a cycle; dry, they give half coverage.
+- **Leveling**: a home at happiness ≥ 0.8 for 3 consecutive settlements grows a level (max 3): +1 resident of
+  capacity per level (`grid.capacityOf`), a taller body, a window box at 2, a chimney and the blue-grey roof at 3.
+  The view rebuilds a building's mesh when its `meshSignature` (kind, level, lantern) changes.
+- **Lantern posts** are a flag on a walkway (`building.lantern`), placed with the "Lantern post" tool (8$) rather
+  than occupying a cell. They light the night layer and glow at dusk like house lanterns.
+- Market squares are links (walkers loiter there) and must touch the fish market (`touches` in the catalog).
+- **Click to inspect**: a left click on an occupied cell that can't take the current tool opens the info panel
+  (`ui/infoPanel.ts`): status line, residents/capacity, workers, boats, last output, coverage at home. Escape
+  closes it. `__tidewater.select(i, j)` does the same for scripts.
+- Scenario bug worth knowing: `placeByWalkway` used to try anchors offset by up to one cell regardless of
+  footprint, so 1×1 buildings could land one cell *off* the street and stay unreached. It now bounds the offsets
+  by the kind's footprint; scripts that need room call `growStreet` first.
+
 ## Findings on the v1 questions
 
 (placement and connectivity exist now; play a few cycles and write answers here)

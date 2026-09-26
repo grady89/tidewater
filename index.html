@@ -84,6 +84,15 @@
       .palette button.unaffordable { opacity: 0.45; }
       .palette button.unaffordable .cost { color: var(--bad); }
 
+      #info { position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); width: 260px; padding: 12px 16px 14px; display: grid; gap: 8px; }
+      #info[hidden] { display: none; }
+      .info-head { display: flex; justify-content: space-between; align-items: center; }
+      .info-head h2 { font: 400 20px/1 "Instrument Serif", Georgia, serif; margin: 0; }
+      .info-head .close { font: 16px/1 system-ui; color: var(--ink-dim); background: transparent; border: 0; cursor: pointer; }
+      .info-body { display: grid; gap: 4px; }
+      .info-body .row { display: flex; justify-content: space-between; font-size: 12px; }
+      .info-body .row span { font-variant-numeric: tabular-nums; }
+      .info-body .desc { margin: 4px 0 0; font-size: 11px; color: var(--ink-dim); }
       .overlays { display: flex; gap: 4px; align-items: center; }
       .overlays label { margin-right: 4px; }
       .overlays button {
@@ -102,6 +111,7 @@
     <canvas id="c"></canvas>
     <div id="resources" class="glass"></div>
     <div id="notes"></div>
+    <div id="info" class="glass" hidden></div>
     <div id="hud" class="glass"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

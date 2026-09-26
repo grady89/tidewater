@@ -4,14 +4,17 @@
 import { SPRING_LO } from "../config";
 import {
   BOAT_BASE_FISH, BOAT_COST, BUILDINGS, BuildingKind, CAP_BASE, CLAM_PER_CELL, CLAM_RADIUS, Cost, FOOD_PER_CYCLE,
-  FOOD_RESERVE_CYCLES, GoodKind, IMMIGRANTS_PER_CYCLE, IMMIGRATION_HAPPINESS, LUMBER_TREES_PER_CYCLE, MARKET_SELL_PER_CYCLE,
-  NET_LOFT_BONUS, NET_LOFT_RADIUS, OYSTER_YIELD, POLLUTION_HAPPY_SCALE, PRICE_FISH, PRICE_SHELLFISH, PURCHASABLE_BOATS,
-  SAWMILL_RATE, SHIPYARD_BOAT_COST, SHIPYARD_CYCLES, SMOKEHOUSE_RATE, SPRING_LOW_BONUS, TAX_PER_RESIDENT,
-  TIMBER_PER_TREE, WAREHOUSE_CAP, WASTE_BACKLOG_PENALTY,
+  FOOD_RESERVE_CYCLES, GoodKind, HAPPY, IMMIGRANTS_PER_CYCLE, IMMIGRATION_HAPPINESS, LEVEL_UP_CYCLES, LEVEL_UP_HAPPINESS,
+  LUMBER_TREES_PER_CYCLE, MARKET_SELL_PER_CYCLE, MAX_LEVEL, NET_LOFT_BONUS, NET_LOFT_RADIUS, OYSTER_YIELD,
+  POLLUTION_HAPPY_SCALE, PRICE_FISH, PRICE_SHELLFISH, PURCHASABLE_BOATS, SAWMILL_RATE, SHIPYARD_BOAT_COST,
+  SHIPYARD_CYCLES, SMOKEHOUSE_RATE, SPRING_LOW_BONUS, TAX_PER_RESIDENT, TIMBER_PER_TREE, WAREHOUSE_CAP,
+  WASTE_BACKLOG_PENALTY_MAX, WASTE_BACKLOG_PENALTY_PER_UNIT,
 } from "./balance";
+import { at } from "./fields";
 import { Grid } from "./grid";
 import { depleteGround, fishAt, pollutionAt, routeWaste, settleFields } from "./pollution";
 import { chooseGround } from "./sea";
+import { announceLevel, rebuildCoverage } from "./services";
 import { Building, buildingList, Cell, notify, Phase, SimState } from "./state";
 import { fellTrees, regrowTrees } from "./trees";
 import { assignWorkers, employed, staffing } from "./workers";
@@ -182,6 +185,17 @@ function dist(a: Building, b: Building): number {
   return Math.hypot(a.cells[0].i - b.cells[0].i, a.cells[0].j - b.cells[0].j);
 }
 
+/** The happiness formula (balance.HAPPY). Injury and damage terms arrive with M8 and M10. */
+export function homeHappiness(state: SimState, home: Building, fed: number, jobs: number): number {
+  const c = home.cells[0];
+  const cov = state.fields.coverage;
+  const foul = Math.min(1, pollutionAt(state, c) / POLLUTION_HAPPY_SCALE);
+  const backlog = Math.min(WASTE_BACKLOG_PENALTY_MAX, state.wasteBacklog * WASTE_BACKLOG_PENALTY_PER_UNIT);
+  const h = HAPPY.base + HAPPY.fed * fed + HAPPY.jobs * jobs + HAPPY.water * at(cov.water, c) + HAPPY.leisure * at(cov.leisure, c)
+    + HAPPY.night * at(cov.night, c) - HAPPY.pollution * foul - backlog;
+  return Math.max(0, Math.min(1, h));
+}
+
 /** The cycle settlement, run once at every high-tide peak. */
 export function settleCycle(state: SimState, grid: Grid): void {
   const r = state.resources;
@@ -189,22 +203,24 @@ export function settleCycle(state: SimState, grid: Grid): void {
   const buildings = buildingList(state).sort((a, b) => a.id - b.id);
 
   assignWorkers(state, grid);
+  rebuildCoverage(state);
 
   // Residents eat first, pay tax, and judge their lot.
   let pop = 0, happySum = 0, houses = 0;
   for (const b of buildings) {
     if (BUILDINGS[b.kind].residents === 0) continue;
-    if (b.residents === 0) { b.happiness = 1; continue; }
+    if (b.residents === 0) { b.happiness = 1; b.streak = 0; continue; }
     pop += b.residents;
     const need = b.residents * FOOD_PER_CYCLE;
     let ate = Math.min(r.fish, need); r.fish -= ate;
     const more = Math.min(r.shellfish, need - ate); r.shellfish -= more; ate += more;
     const fed = need > 0 ? ate / need : 1;
     const jobs = b.reached ? employed(state, b) / b.residents : 0;
-    const foul = Math.min(1, pollutionAt(state, b.cells[0]) / POLLUTION_HAPPY_SCALE);
-    const backlog = state.wasteBacklog > 0 ? WASTE_BACKLOG_PENALTY : 0;
-    b.happiness = Math.max(0, Math.min(1, 0.5 * fed + 0.5 * jobs - foul - backlog));
+    b.happiness = homeHappiness(state, b, fed, jobs);
     happySum += b.happiness; houses++;
+    // Growth: a run of good cycles adds a storey.
+    if (b.happiness >= LEVEL_UP_HAPPINESS) b.streak++; else b.streak = 0;
+    if (b.streak >= LEVEL_UP_CYCLES && b.level < MAX_LEVEL) { b.level++; b.streak = 0; announceLevel(state, b); }
   }
   state.happiness = houses ? happySum / houses : 1;
   stats.income += pop * TAX_PER_RESIDENT;
@@ -238,7 +254,7 @@ export function settleCycle(state: SimState, grid: Grid): void {
     let budget = IMMIGRANTS_PER_CYCLE;
     for (const b of buildings) {
       if (budget <= 0) break;
-      const cap = BUILDINGS[b.kind].residents;
+      const cap = grid.capacityOf(b);
       if (cap === 0 || !b.reached || b.cut || b.residents >= cap) continue;
       const n = Math.min(budget, cap - b.residents);
       b.residents += n; budget -= n; stats.immigrants += n;

@@ -24,6 +24,8 @@ interface Loiterer {
   centre: Vector3;
   seed: number;
   color: Color4;
+  /** 1 for adults, smaller for kids. */
+  scale: number;
 }
 
 export class Walkers {
@@ -138,11 +140,16 @@ export class Walkers {
   private refreshLoiterers(state: SimState): void {
     this.loiterers = [];
     for (const b of Object.values(state.buildings)) {
-      if (b.kind !== "market" || !b.reached || b.cut || b.workers === 0) continue;
       const is = b.cells.map(c => c.i), js = b.cells.map(c => c.j);
       const cx = (Math.min(...is) + Math.max(...is) + 1) / 2, cz = (Math.min(...js) + Math.max(...js) + 1) / 2;
-      for (let k = 0; k < LOITERERS_PER_MARKET; k++) {
-        this.loiterers.push({ centre: new Vector3(cx, b.floorY, cz), seed: b.id * 7 + k, color: Color4.FromHexString(COLORS[(b.id + k) % COLORS.length]) });
+      if ((b.kind === "market" || b.kind === "marketSquare") && b.reached && !b.cut && (b.kind === "marketSquare" || b.workers > 0)) {
+        for (let k = 0; k < LOITERERS_PER_MARKET; k++) {
+          this.loiterers.push({ centre: new Vector3(cx, b.floorY, cz), seed: b.id * 7 + k, color: Color4.FromHexString(COLORS[(b.id + k) % COLORS.length]), scale: 1 });
+        }
+      }
+      // Kids play around homes that have grown.
+      if (BUILDINGS[b.kind].residents > 0 && b.level >= 2 && b.residents > 0 && b.reached) {
+        this.loiterers.push({ centre: new Vector3(cx, b.floorY, cz), seed: b.id * 11, color: Color4.FromHexString(COLORS[(b.id + 3) % COLORS.length]), scale: 0.6 });
       }
     }
   }
@@ -165,7 +172,8 @@ export class Walkers {
     if (this.matrices.length !== n * 16) { this.matrices = new Float32Array(n * 16); this.colors = new Float32Array(n * 4); }
     const scale = new Vector3(1, 1, 1);
     let k = 0;
-    const put = (pos: Vector3, yaw: number, color: Color4) => {
+    const put = (pos: Vector3, yaw: number, color: Color4, s = 1) => {
+      scale.set(s, s, s);
       Matrix.Compose(scale, Quaternion.FromEulerAngles(0, yaw, 0), pos).copyToArray(this.matrices, k * 16);
       this.colors[k * 4] = color.r; this.colors[k * 4 + 1] = color.g; this.colors[k * 4 + 2] = color.b; this.colors[k * 4 + 3] = 1;
       k++;
@@ -181,9 +189,10 @@ export class Walkers {
       put(pos, Math.atan2(b.x - a.x, b.z - a.z), w.color);
     }
     for (const l of this.loiterers) {
-      const t = viewTime * 0.35 + l.seed;
-      const pos = new Vector3(l.centre.x + Math.cos(t) * 0.55, l.centre.y, l.centre.z + Math.sin(t * 0.7) * 0.55);
-      put(pos, t + Math.PI / 2, l.color);
+      const t = viewTime * (l.scale < 1 ? 0.8 : 0.35) + l.seed;
+      const r = l.scale < 1 ? 0.7 : 0.55;
+      const pos = new Vector3(l.centre.x + Math.cos(t) * r, l.centre.y, l.centre.z + Math.sin(t * 0.7) * r);
+      put(pos, t + Math.PI / 2, l.color, l.scale);
     }
     if (n === 0) { this.mesh.setEnabled(false); return; }
     this.mesh.setEnabled(true);

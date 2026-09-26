@@ -1,8 +1,14 @@
 // The ledger. Everything the game knows is in one plain JSON-serializable object; the view only reads it.
 import { TIDE_HI } from "../config";
-import { BuildingKind, FISH_CAP, ResourceKind, STARTING_FISH, STARTING_MONEY } from "./balance";
+import { BuildingKind, FISH_CAP, ResourceKind, SERVICE_KINDS, ServiceKind, STARTING_FISH, STARTING_MONEY } from "./balance";
 import { filled, zeros } from "./fields";
 import { initialTrees } from "./trees";
+
+export function emptyCoverage(): Record<ServiceKind, number[]> {
+  const out = {} as Record<ServiceKind, number[]>;
+  for (const k of SERVICE_KINDS) out[k] = zeros();
+  return out;
+}
 
 export type { BuildingKind } from "./balance";
 
@@ -38,6 +44,12 @@ export interface Building {
   progress: number;
   /** Consecutive cycles in foul water (oyster beds). */
   stress: number;
+  /** Homes grow from 1 to MAX_LEVEL. */
+  level: number;
+  /** Consecutive happy cycles toward the next level (homes). */
+  streak: number;
+  /** A lantern post stands on this walkway. */
+  lantern: boolean;
 }
 
 export interface Emitter { k: number; rate: number }
@@ -47,6 +59,8 @@ export interface Fields {
   pollution: number[];
   /** Fish density per deep cell, 0..FISH_CAP. */
   fish: number[];
+  /** Service coverage 0..1 per cell, one layer per ServiceKind; rebuilt at every settlement. */
+  coverage: Record<ServiceKind, number[]>;
 }
 
 export interface TideState {
@@ -119,7 +133,7 @@ export function createState(seed = 1): SimState {
     nextId: 1,
     assignments: [],
     trees: initialTrees(),
-    fields: { pollution: zeros(), fish: filled(FISH_CAP) },
+    fields: { pollution: zeros(), fish: filled(FISH_CAP), coverage: emptyCoverage() },
     emitters: [],
     wasteBacklog: 0,
     happiness: 1,

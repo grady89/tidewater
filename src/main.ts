@@ -9,6 +9,7 @@ import { SimState } from "./sim/state";
 import { advanceCycles, tick } from "./sim/tick";
 import { cycleFraction } from "./sim/tide";
 import { Hud } from "./ui/hud";
+import { InfoPanel } from "./ui/infoPanel";
 import { Boats } from "./view/boats";
 import { BuildingViews } from "./view/buildingViews";
 import { OverlayKind, Overlays } from "./view/overlays";
@@ -69,6 +70,8 @@ const trees = new Trees(scene);
 const overlays = new Overlays(scene, grid);
 const placement = new Placement(scene, camera, grid, canvas);
 const hud = new Hud(document.getElementById("hud")!, document.getElementById("resources")!, document.getElementById("notes")!, grid, tool => placement.setTool(tool), kind => overlays.show(kind));
+const info = new InfoPanel(document.getElementById("info")!, grid);
+placement.onSelect = b => info.select(b);
 
 function newTown(): void {
   try { localStorage.removeItem(AUTOSAVE_KEY); } catch { /* ignore */ }
@@ -79,6 +82,7 @@ function newTown(): void {
 }
 
 window.addEventListener("keydown", e => {
+  if (e.key === "Escape") { info.select(null); return; }
   if (hud.key(e.key)) e.preventDefault();
 });
 
@@ -101,6 +105,7 @@ function syncView(): void {
   terrain.update(camera.position, state.tide.level, state.tide.wetLevel);
   water.update(viewTime, camera.position, state.tide.level);
   hud.update({ tool: placement.tool, blocker: placement.blocker, fate: placement.fate, state });
+  info.update(state);
 }
 
 engine.runRenderLoop(() => {
@@ -133,6 +138,11 @@ const api = {
   },
   remove(i: number, j: number) {
     placement.remove({ i, j });
+  },
+  /** Open the info panel on the building at (i, j), or close it. */
+  select(i: number, j: number) {
+    info.select(grid.buildingAt({ i, j }));
+    info.update(state);
   },
   setTide(level: number | null) {
     state.tide.override = level;

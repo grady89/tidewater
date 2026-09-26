@@ -3,7 +3,7 @@ import { SIM_TICK, TIDE_PERIOD } from "../config";
 import {
   BUILDINGS, DOCK_POLLUTION, FISH_CAP, FISH_DEPLETE_PER_BOAT, FISH_FLOOR, FISH_REGEN, OYSTER_KILL_CYCLES,
   OYSTER_POLLUTION_KILL, POLLUTION_ADVECT, POLLUTION_DECAY, POLLUTION_DIFFUSE, SMOKEHOUSE_POLLUTION,
-  TREATMENT_RADIUS, WASTE_PER_RESIDENT,
+  WASTE_BACKLOG_DRAIN, WASTE_PER_RESIDENT,
 } from "./balance";
 import { at, buildFlow, CELLS, Flow, stepDrift } from "./fields";
 import { cellIndex, Grid } from "./grid";
@@ -20,18 +20,9 @@ function flowFor(grid: Grid): Flow {
 
 const TICKS_PER_CYCLE = TIDE_PERIOD / SIM_TICK;
 
-function within(cells: Cell[], c: Cell, radius: number): boolean {
-  return cells.some(x => Math.abs(x.i - c.i) <= radius && Math.abs(x.j - c.j) <= radius);
-}
-
-/** Fraction of a home's waste neutralised by reached, staffed treatment plants in range. */
+/** Fraction of a home's waste neutralised by treatment plants in range: the treatment coverage layer. */
 export function treatedFraction(state: SimState, home: Building): number {
-  let best = 0;
-  for (const p of buildingList(state)) {
-    if (p.kind !== "treatmentPlant" || !p.reached || p.cut) continue;
-    if (within(p.cells, home.cells[0], TREATMENT_RADIUS)) best = Math.max(best, staffing(p));
-  }
-  return best;
+  return at(state.fields.coverage.treatment, home.cells[0]);
 }
 
 /**
@@ -48,11 +39,13 @@ export function routeWaste(state: SimState): void {
   const outfalls = buildings.filter(b => b.kind === "outfall");
   const emitters: { k: number; rate: number }[] = [];
   if (outfalls.length) {
-    const each = untreated / outfalls.length / TICKS_PER_CYCLE;
+    // The outfalls take this cycle's waste plus a share of any backlog, which goes into the sea too.
+    const drained = Math.min(state.wasteBacklog, WASTE_BACKLOG_DRAIN);
+    state.wasteBacklog -= drained;
+    const each = (untreated + drained) / outfalls.length / TICKS_PER_CYCLE;
     for (const o of outfalls) emitters.push({ k: cellIndex(o.cells[0].i, o.cells[0].j), rate: each });
-    state.wasteBacklog = 0;
   } else {
-    state.wasteBacklog = untreated;
+    state.wasteBacklog += untreated;
   }
   for (const b of buildings) {
     if (b.kind === "smokehouse" && b.workers > 0) emitters.push({ k: cellIndex(b.cells[0].i, b.cells[0].j), rate: SMOKEHOUSE_POLLUTION * staffing(b) / TICKS_PER_CYCLE });

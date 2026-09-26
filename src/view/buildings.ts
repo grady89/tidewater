@@ -102,17 +102,36 @@ function lantern(scene: Scene, x: number, z: number, F: number): Mesh {
   return m;
 }
 
-function home(scene: Scene, b: Building, bodyW: number, bodyH: number): BuildingMeshes {
+/** Roof colour by level: any of the palette at level 1, slate at 2, the deep blue-grey at 3. */
+function roofFor(b: Building): string {
+  if (b.level >= 3) return PALETTE.roofs[3];
+  if (b.level === 2) return PALETTE.roofs[1];
+  return PALETTE.roofs[b.id % PALETTE.roofs.length];
+}
+
+function home(scene: Scene, b: Building, bodyW: number, baseH: number): BuildingMeshes {
   const { cx, cz, w, d } = bounds(b.cells);
   const F = b.floorY;
+  const bodyH = baseH + 0.18 * (b.level - 1);
   const parts: Mesh[] = [];
   deck(scene, parts, cx, cz, w, d, F);
   parts.push(box(scene, bodyW, bodyH, bodyW, cx, F + bodyH / 2, cz, PALETTE.walls[b.id % PALETTE.walls.length]));
-  parts.push(pyramid(scene, bodyW * 1.62, bodyH * 0.6, cx, F + bodyH + bodyH * 0.3, cz, PALETTE.roofs[b.id % PALETTE.roofs.length]));
+  if (b.level >= 2) parts.push(box(scene, bodyW * 0.35, 0.22, 0.06, cx, F + bodyH * 0.6, cz - bodyW / 2 - 0.02, PALETTE.wood)); // a window box
+  if (b.level >= 3) parts.push(box(scene, 0.14, 0.4, 0.14, cx + bodyW * 0.3, F + bodyH + bodyH * 0.3, cz + bodyW * 0.2, "#8d8a83")); // a chimney
+  parts.push(pyramid(scene, bodyW * 1.62, bodyH * 0.6, cx, F + bodyH + bodyH * 0.3, cz, roofFor(b)));
   const post = MeshBuilder.CreateCylinder("post", { diameter: 0.05, height: 0.7, tessellation: 5 }, scene);
   post.position.set(cx + w / 2 - 0.08, F + 0.35, cz - d / 2 + 0.08);
   parts.push(tint(post, PALETTE.wood));
   return { root: mergeFlat(b.kind, parts, scene), lantern: lantern(scene, cx + w / 2 - 0.08, cz - d / 2 + 0.08, F) };
+}
+
+/** A lantern post in the corner of a walkway cell; the lamp is a separate mesh so it can light at dusk. */
+function lanternPost(scene: Scene, parts: Mesh[], x: number, z: number, F: number): Mesh {
+  const post = MeshBuilder.CreateCylinder("post", { diameter: 0.06, height: 0.9, tessellation: 5 }, scene);
+  post.position.set(x + 0.36, F + 0.45, z + 0.36);
+  parts.push(tint(post, PALETTE.wood));
+  parts.push(box(scene, 0.16, 0.03, 0.16, x + 0.36, F + 0.9, z + 0.36, PALETTE.wood));
+  return lantern(scene, x + 0.36, z + 0.36, F + 0.02);
 }
 
 function walkway(scene: Scene, b: Building): BuildingMeshes {
@@ -121,7 +140,8 @@ function walkway(scene: Scene, b: Building): BuildingMeshes {
   const parts: Mesh[] = [box(scene, 0.96, 0.07, 0.96, x, F - 0.035, z, PALETTE.planks)];
   parts.push(stilt(scene, x - 0.3, z - 0.3, F - 0.07, 0.09, 5));
   parts.push(stilt(scene, x + 0.3, z + 0.3, F - 0.07, 0.09, 5));
-  return { root: mergeFlat("walkway", parts, scene) };
+  const lamp = b.lantern ? lanternPost(scene, parts, x, z, F) : undefined;
+  return { root: mergeFlat("walkway", parts, scene), lantern: lamp };
 }
 
 function pier(scene: Scene, b: Building): BuildingMeshes {
@@ -171,7 +191,8 @@ function raisedWalkway(scene: Scene, b: Building): BuildingMeshes {
   // Cross-brace so the tall stilts read as a trestle.
   parts.push(box(scene, 0.8, 0.05, 0.05, x, F - 0.45, z - 0.36, PALETTE.wood));
   parts.push(box(scene, 0.8, 0.05, 0.05, x, F - 0.45, z + 0.36, PALETTE.wood));
-  return { root: mergeFlat("raisedWalkway", parts, scene) };
+  const lamp = b.lantern ? lanternPost(scene, parts, x, z, F) : undefined;
+  return { root: mergeFlat("raisedWalkway", parts, scene), lantern: lamp };
 }
 
 function dock(scene: Scene, b: Building): BuildingMeshes {
@@ -307,6 +328,76 @@ function shipyard(scene: Scene, b: Building): BuildingMeshes {
   return { root: mergeFlat("shipyard", parts, scene) };
 }
 
+function well(scene: Scene, b: Building): BuildingMeshes {
+  const { x, z } = cellCenter(b.cells[0]);
+  const F = b.floorY;
+  const parts: Mesh[] = [];
+  deck(scene, parts, x, z, 1, 1, F);
+  const ring = MeshBuilder.CreateCylinder("ring", { diameter: 0.5, height: 0.4, tessellation: 8 }, scene);
+  ring.position.set(x, F + 0.2, z);
+  parts.push(tint(ring, "#8d8a83"));
+  for (const sx of [-1, 1]) parts.push(box(scene, 0.05, 0.8, 0.05, x + sx * 0.22, F + 0.4, z, PALETTE.wood));
+  parts.push(pyramid(scene, 0.8, 0.3, x, F + 0.8 + 0.15, z, PALETTE.roofs[0]));
+  return { root: mergeFlat("well", parts, scene) };
+}
+
+function bathhouse(scene: Scene, b: Building): BuildingMeshes {
+  const { cx, cz, w, d } = bounds(b.cells);
+  const F = b.floorY;
+  const parts: Mesh[] = [];
+  deck(scene, parts, cx, cz, w, d, F);
+  shed(scene, parts, cx, cz, 1.5, 0.75, 0.72, F, PALETTE.walls[2], PALETTE.roofs[3]);
+  // Steam vent and a tub out front.
+  parts.push(box(scene, 0.12, 0.3, 0.12, cx - 0.4, F + 0.75 + 0.15, cz, "#8d8a83"));
+  const tub = MeshBuilder.CreateCylinder("tub", { diameter: 0.42, height: 0.2, tessellation: 8 }, scene);
+  tub.position.set(cx + 0.55, F + 0.1, cz + 0.5);
+  parts.push(tint(tub, PALETTE.wood));
+  return { root: mergeFlat("bathhouse", parts, scene) };
+}
+
+function tavern(scene: Scene, b: Building): BuildingMeshes {
+  const { cx, cz, w, d } = bounds(b.cells);
+  const F = b.floorY;
+  const parts: Mesh[] = [];
+  deck(scene, parts, cx, cz, w, d, F);
+  shed(scene, parts, cx - 0.2, cz, 1.2, 0.95, 0.75, F, PALETTE.walls[1], PALETTE.roofs[2]);
+  // Sign post and a barrel.
+  parts.push(box(scene, 0.05, 0.9, 0.05, cx + 0.75, F + 0.45, cz - 0.3, PALETTE.wood));
+  parts.push(box(scene, 0.3, 0.2, 0.04, cx + 0.75, F + 0.8, cz - 0.3, PALETTE.roofs[0]));
+  const barrel = MeshBuilder.CreateCylinder("barrel", { diameter: 0.26, height: 0.32, tessellation: 7 }, scene);
+  barrel.position.set(cx + 0.65, F + 0.16, cz + 0.3);
+  parts.push(tint(barrel, PALETTE.wood));
+  return { root: mergeFlat("tavern", parts, scene), lantern: lantern(scene, cx + 0.75, cz - 0.3, F + 0.2) };
+}
+
+function shrine(scene: Scene, b: Building): BuildingMeshes {
+  const { x, z } = cellCenter(b.cells[0]);
+  const F = b.floorY;
+  const parts: Mesh[] = [];
+  deck(scene, parts, x, z, 1, 1, F);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) parts.push(box(scene, 0.07, 0.7, 0.07, x + sx * 0.25, F + 0.35, z + sz * 0.25, PALETTE.roofs[0]));
+  parts.push(pyramid(scene, 0.95, 0.35, x, F + 0.7 + 0.17, z, PALETTE.roofs[0]));
+  parts.push(box(scene, 0.3, 0.3, 0.3, x, F + 0.15, z, "#8d8a83"));
+  return { root: mergeFlat("shrine", parts, scene), lantern: lantern(scene, x + 0.38, z - 0.38, F) };
+}
+
+function marketSquare(scene: Scene, b: Building): BuildingMeshes {
+  const { cx, cz, w, d } = bounds(b.cells);
+  const F = b.floorY;
+  const parts: Mesh[] = [];
+  deck(scene, parts, cx, cz, w, d, F);
+  // Stalls with awnings around a little basin.
+  for (const [dx, dz, c] of [[-0.6, -0.6, 0], [0.6, -0.6, 2], [-0.6, 0.6, 3]] as [number, number, number][]) {
+    parts.push(box(scene, 0.5, 0.35, 0.4, cx + dx, F + 0.18, cz + dz, PALETTE.walls[c]));
+    parts.push(box(scene, 0.62, 0.04, 0.52, cx + dx, F + 0.5, cz + dz, PALETTE.roofs[c]));
+    for (const sx of [-1, 1]) parts.push(box(scene, 0.04, 0.5, 0.04, cx + dx + sx * 0.28, F + 0.25, cz + dz + 0.24, PALETTE.wood));
+  }
+  const basin = MeshBuilder.CreateCylinder("basin", { diameter: 0.5, height: 0.14, tessellation: 8 }, scene);
+  basin.position.set(cx + 0.5, F + 0.07, cz + 0.5);
+  parts.push(tint(basin, "#8d8a83"));
+  return { root: mergeFlat("marketSquare", parts, scene) };
+}
+
 function outfall(scene: Scene, b: Building): BuildingMeshes {
   const { x, z } = cellCenter(b.cells[0]);
   const F = b.floorY;
@@ -343,6 +434,11 @@ export function createBuildingMeshes(scene: Scene, b: Building): BuildingMeshes 
   switch (b.kind) {
     case "outfall": return outfall(scene, b);
     case "treatmentPlant": return treatmentPlant(scene, b);
+    case "well": return well(scene, b);
+    case "bathhouse": return bathhouse(scene, b);
+    case "tavern": return tavern(scene, b);
+    case "shrine": return shrine(scene, b);
+    case "marketSquare": return marketSquare(scene, b);
     case "hut": return home(scene, b, 0.66, 0.62);
     case "house": return home(scene, b, 0.8, 0.9);
     case "tallHouse": return home(scene, b, 0.8, 1.5);
@@ -364,4 +460,14 @@ export function createBuildingMeshes(scene: Scene, b: Building): BuildingMeshes 
 
 export function footprintOf(kind: Building["kind"]): { w: number; d: number } {
   return { w: BUILDINGS[kind].w, d: BUILDINGS[kind].d };
+}
+
+/** Everything about a building that changes its mesh; the view rebuilds when this changes. */
+export function meshSignature(b: Building): string {
+  return `${b.kind}:${b.level}:${b.lantern ? 1 : 0}`;
+}
+
+/** Whether the building's lantern should glow: homes need residents, everything else just a connection. */
+export function lanternOn(b: Building): boolean {
+  return b.reached && !b.cut && (BUILDINGS[b.kind].residents === 0 || b.residents > 0);
 }

@@ -6,7 +6,11 @@ export type BuildingKind =
   | "walkway" | "raisedWalkway"
   | "pier" | "dock" | "shipyard"
   | "market" | "oysterBed" | "clamCamp" | "lumberCamp" | "sawmill" | "smokehouse" | "netLoft" | "warehouse"
-  | "outfall" | "treatmentPlant";
+  | "outfall" | "treatmentPlant" | "well" | "bathhouse" | "tavern" | "shrine" | "marketSquare";
+
+/** Service coverage layers; each building that provides one writes its staffed fraction within `radius`. */
+export type ServiceKind = "water" | "leisure" | "night" | "treatment" | "lifeguard" | "firewatch";
+export const SERVICE_KINDS: ServiceKind[] = ["water", "leisure", "night", "treatment", "lifeguard", "firewatch"];
 export type Category = "Homes" | "Streets" | "Sea" | "Production" | "Services" | "Leisure";
 export const CATEGORIES: Category[] = ["Homes", "Streets", "Sea", "Production", "Services", "Leisure"];
 /**
@@ -44,6 +48,10 @@ export interface BuildingDef {
   network: "link" | "root" | "leaf";
   /** Boat slots (piers, docks). */
   slots?: number;
+  /** Service coverage this building provides, and how far. */
+  service?: { kind: ServiceKind; radius: number };
+  /** Must touch a building of this kind (market squares hug the fish market). */
+  touches?: BuildingKind;
   desc: string;
 }
 
@@ -65,8 +73,20 @@ export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
   netLoft: { name: "Net loft", category: "Production", w: 1, d: 1, cls: "flat", cost: { money: 90 }, workers: 0, residents: 0, upkeep: 0.5, floor: 1.0, network: "leaf", desc: "+15% catch for boats within 8" },
   warehouse: { name: "Warehouse", category: "Production", w: 2, d: 2, cls: "flat", cost: { money: 120 }, workers: 0, residents: 0, upkeep: 1, floor: 1.0, network: "leaf", desc: "+100 storage for every good" },
   outfall: { name: "Sewage outfall", category: "Services", w: 1, d: 1, cls: "edge", cost: { money: 40 }, workers: 0, residents: 0, upkeep: 0.5, floor: 1.0, network: "leaf", desc: "Dumps the town's waste into the sea; the tide carries it" },
-  treatmentPlant: { name: "Treatment plant", category: "Services", w: 2, d: 2, cls: "flatOrHigh", cost: { money: 350 }, workers: 4, residents: 0, upkeep: 3, floor: "ground", network: "leaf", desc: "Neutralises waste from homes within 12" },
+  treatmentPlant: { name: "Treatment plant", category: "Services", w: 2, d: 2, cls: "flatOrHigh", cost: { money: 350 }, workers: 4, residents: 0, upkeep: 3, floor: "ground", network: "leaf", service: { kind: "treatment", radius: 12 }, desc: "Neutralises waste from homes within 12" },
+  well: { name: "Well", category: "Services", w: 1, d: 1, cls: "flat", cost: { money: 50 }, workers: 0, residents: 0, upkeep: 0.5, floor: 1.0, network: "leaf", service: { kind: "water", radius: 8 }, desc: "Drinking water for homes within 8" },
+  bathhouse: { name: "Bathhouse", category: "Leisure", w: 2, d: 1, cls: "shore", cost: { money: 130 }, workers: 0, residents: 0, upkeep: 1.5, floor: 1.0, network: "leaf", service: { kind: "leisure", radius: 8 }, desc: "Leisure for homes within 8; on the shore" },
+  tavern: { name: "Tavern", category: "Leisure", w: 2, d: 1, cls: "flat", cost: { money: 150 }, workers: 2, residents: 0, upkeep: 2, floor: 1.0, network: "leaf", service: { kind: "leisure", radius: 10 }, desc: "Leisure within 10; pours smoked goods" },
+  shrine: { name: "Shrine", category: "Leisure", w: 1, d: 1, cls: "flat", cost: { money: 60 }, workers: 0, residents: 0, upkeep: 0.25, floor: 1.0, network: "leaf", service: { kind: "leisure", radius: 4 }, desc: "A little calm within 4" },
+  marketSquare: { name: "Market square", category: "Leisure", w: 2, d: 2, cls: "flat", touches: "market", cost: { money: 100 }, workers: 0, residents: 0, upkeep: 0.5, floor: 1.0, network: "link", service: { kind: "leisure", radius: 6 }, desc: "Leisure within 6; must touch the fish market" },
 };
+
+/** Lantern posts go on a walkway cell rather than taking one. */
+export const LANTERN_COST = 8;
+export const LANTERN_RADIUS = 3;
+export const TAVERN_SMOKED_PER_CYCLE = 2;
+/** Tavern coverage without smoked goods to pour. */
+export const TAVERN_DRY_FACTOR = 0.5;
 
 export const BUILDING_KINDS = Object.keys(BUILDINGS) as BuildingKind[];
 
@@ -115,6 +135,26 @@ export const FOOD_RESERVE_CYCLES = 2;
 export const IMMIGRANTS_PER_CYCLE = 4;
 export const IMMIGRATION_HAPPINESS = 0.5;
 
+/**
+ * Happiness per home, clamped to 0..1. Weights sum to 1 when everything is provided; a fed, employed home with no
+ * services sits at 0.7 (above the immigration bar), a fed but idle one at 0.4 (below it); penalties come off the top.
+ */
+export const HAPPY = {
+  base: 0.10,
+  fed: 0.30,
+  jobs: 0.30,
+  water: 0.10,
+  leisure: 0.12,
+  night: 0.08,
+  pollution: 0.5,
+  injury: 0.2,
+  damage: 0.15,
+};
+/** Homes above this for LEVEL_UP_CYCLES cycles in a row grow a level (1..3): +1 resident per level, a nicer roof. */
+export const LEVEL_UP_HAPPINESS = 0.8;
+export const LEVEL_UP_CYCLES = 3;
+export const MAX_LEVEL = 3;
+
 // Pollution (field units per cell; a small town's outfall cell settles around 1, its neighbours around 0.4)
 export const WASTE_PER_RESIDENT = 2;
 export const SMOKEHOUSE_POLLUTION = 4;
@@ -130,8 +170,11 @@ export const OYSTER_KILL_CYCLES = 2;
 export const TREATMENT_RADIUS = 12;
 /** Pollution at home that costs a full happiness point. */
 export const POLLUTION_HAPPY_SCALE = 8;
-/** Happiness lost while waste has nowhere to go. */
-export const WASTE_BACKLOG_PENALTY = 0.25;
+/** Waste with nowhere to go piles up cycle after cycle; each unit costs this much happiness, up to the cap. */
+export const WASTE_BACKLOG_PENALTY_PER_UNIT = 0.003;
+export const WASTE_BACKLOG_PENALTY_MAX = 0.3;
+/** How fast an outfall works off a backlog, in units per cycle on top of the current waste. */
+export const WASTE_BACKLOG_DRAIN = 30;
 
 // Fish density (deep cells, 0..FISH_CAP)
 export const FISH_CAP = 1;
