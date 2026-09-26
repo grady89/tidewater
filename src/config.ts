@@ -7,8 +7,11 @@ export const SIZE = 64;
 export const TIDE_LO = -0.35;
 export const TIDE_HI = 0.6;
 
-/** Seconds for one full tide cycle (low -> high -> low). */
-export const TIDE_PERIOD = 80;
+/** Game seconds for one full tide cycle (high -> low -> high). */
+export const TIDE_PERIOD = 120;
+
+/** Game seconds per simulation tick. The ledger advances in these fixed steps regardless of frame rate. */
+export const SIM_TICK = 1 / 20;
 
 /** Seed for the terrain noise. 0 reproduces the island in reference/tidewater-study.html. */
 export const TERRAIN_SEED = 0;

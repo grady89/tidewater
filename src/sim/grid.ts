@@ -1,25 +1,11 @@
-// Cell model over the terrain, occupancy, and placement rules.
+// Cell model over the terrain, occupancy index, and placement rules. Pieces live in SimState; the Grid is the
+// spatial index over them (rebuilt from state on load) plus the fixed terrain classification.
 import { HOUSE_FLOOR, PIER_FLOOR, SIZE, TIDE_HI, TIDE_LO, WALKWAY_FLOOR } from "../config";
-import { terrainHeight } from "../world/terrain";
+import { terrainHeight } from "./heightfield";
+import { Cell, Piece, PieceKind, SimState } from "./state";
 
-export type PieceKind = "house" | "walkway" | "pier";
 /** deep: always underwater. flat: the tidal flats, buildable. high: dry land above the tide. */
 export type CellClass = "deep" | "flat" | "high";
-
-export interface Cell { i: number; j: number }
-
-export interface Piece {
-  id: number;
-  kind: PieceKind;
-  /** One cell, or two for a pier (shore cell first, seaward cell second). */
-  cells: Cell[];
-  /** Top of the deck in world Y. */
-  floorY: number;
-  /** Floor is below the water this frame. Breaks connectivity; nothing is destroyed. */
-  cut: boolean;
-  /** Connected to a pier through walkways this frame. Piers are always reached unless cut. */
-  reached: boolean;
-}
 
 /** Cells span i, j in [-HALF, HALF). Cell (i, j) covers x in [i, i+1), z in [j, j+1). */
 export const HALF = SIZE / 2;
@@ -31,7 +17,7 @@ const DIRS: readonly Cell[] = [{ i: 1, j: 0 }, { i: -1, j: 0 }, { i: 0, j: 1 }, 
 export function inBounds(i: number, j: number): boolean {
   return i >= -HALF && i < HALF && j >= -HALF && j < HALF;
 }
-function index(i: number, j: number): number {
+export function cellIndex(i: number, j: number): number {
   return (i + HALF) * SIZE + (j + HALF);
 }
 export function cellCenter(c: Cell): { x: number; z: number } {
@@ -45,21 +31,31 @@ export class Grid {
   private readonly heights = new Float32Array(SIZE * SIZE);
   private readonly classes: CellClass[] = new Array(SIZE * SIZE);
   private readonly occupancy: (Piece | null)[] = new Array(SIZE * SIZE).fill(null);
-  readonly pieces = new Map<number, Piece>();
-  private nextId = 1;
 
-  constructor() {
+  constructor(public state: SimState) {
     for (let i = -HALF; i < HALF; i++) for (let j = -HALF; j < HALF; j++) {
       const h = terrainHeight(i + 0.5, j + 0.5);
-      const k = index(i, j);
+      const k = cellIndex(i, j);
       this.heights[k] = h;
       this.classes[k] = h < TIDE_LO ? "deep" : h <= TIDE_HI ? "flat" : "high";
     }
+    this.rebuild();
   }
 
-  heightAt(c: Cell): number { return this.heights[index(c.i, c.j)]; }
-  classAt(c: Cell): CellClass | null { return inBounds(c.i, c.j) ? this.classes[index(c.i, c.j)] : null; }
-  pieceAt(c: Cell): Piece | null { return inBounds(c.i, c.j) ? this.occupancy[index(c.i, c.j)] : null; }
+  /** Point the index at a (loaded) state and rebuild occupancy from its pieces. */
+  attach(state: SimState): void {
+    this.state = state;
+    this.rebuild();
+  }
+
+  private rebuild(): void {
+    this.occupancy.fill(null);
+    for (const p of Object.values(this.state.pieces)) for (const c of p.cells) this.occupancy[cellIndex(c.i, c.j)] = p;
+  }
+
+  heightAt(c: Cell): number { return this.heights[cellIndex(c.i, c.j)]; }
+  classAt(c: Cell): CellClass | null { return inBounds(c.i, c.j) ? this.classes[cellIndex(c.i, c.j)] : null; }
+  pieceAt(c: Cell): Piece | null { return inBounds(c.i, c.j) ? this.occupancy[cellIndex(c.i, c.j)] : null; }
   neighbors(c: Cell): Cell[] {
     return DIRS.map(d => ({ i: c.i + d.i, j: c.j + d.j })).filter(n => inBounds(n.i, n.j));
   }
@@ -84,14 +80,15 @@ export class Grid {
   }
 
   place(kind: PieceKind, cells: Cell[]): Piece {
-    const piece: Piece = { id: this.nextId++, kind, cells, floorY: FLOOR_Y[kind], cut: false, reached: false };
-    for (const c of cells) this.occupancy[index(c.i, c.j)] = piece;
-    this.pieces.set(piece.id, piece);
+    const s = this.state;
+    const piece: Piece = { id: s.nextPieceId++, kind, cells, floorY: FLOOR_Y[kind], cut: false, reached: false };
+    for (const c of cells) this.occupancy[cellIndex(c.i, c.j)] = piece;
+    s.pieces[piece.id] = piece;
     return piece;
   }
 
   remove(piece: Piece): void {
-    for (const c of piece.cells) this.occupancy[index(c.i, c.j)] = null;
-    this.pieces.delete(piece.id);
+    for (const c of piece.cells) this.occupancy[cellIndex(c.i, c.j)] = null;
+    delete this.state.pieces[piece.id];
   }
 }

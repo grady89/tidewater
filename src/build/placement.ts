@@ -1,7 +1,8 @@
 // Pointer interaction: hover picks a cell, a ghost previews the footprint, click places, right-click removes.
+// Placement writes to the sim through the Grid; meshes appear when the view syncs.
 import { ArcRotateCamera, Color3, Matrix, Mesh, MeshBuilder, Scene, StandardMaterial } from "@babylonjs/core";
-import { Cell, FLOOR_Y, Grid, HALF, Piece, PieceKind, worldToCell } from "./grid";
-import { createHouse, createPier, createWalkway, lanternMaterials, PieceMeshes } from "./pieces";
+import { FLOOR_Y, Grid, HALF, worldToCell } from "../sim/grid";
+import { Cell, Piece, PieceKind } from "../sim/state";
 
 const CLICK_SLOP_PX = 5;
 
@@ -11,7 +12,6 @@ export class Placement {
   private readonly ghost: Mesh;
   private readonly ghostOk: StandardMaterial;
   private readonly ghostBad: StandardMaterial;
-  private readonly meshes = new Map<number, PieceMeshes>();
   private down: { x: number; y: number; button: number } | null = null;
 
   constructor(private readonly scene: Scene, private readonly camera: ArcRotateCamera, private readonly grid: Grid, canvas: HTMLCanvasElement) {
@@ -86,7 +86,6 @@ export class Placement {
     const cells = this.grid.footprint(this.tool, anchor);
     if (!cells || !this.grid.canPlace(this.tool, cells)) return null;
     const piece = this.grid.place(this.tool, cells);
-    this.meshes.set(piece.id, this.build(piece));
     this.refresh();
     return piece;
   }
@@ -95,28 +94,7 @@ export class Placement {
     if (!at) return;
     const piece = this.grid.pieceAt(at);
     if (!piece) return;
-    const m = this.meshes.get(piece.id);
-    m?.root.dispose();
-    m?.lantern?.dispose();
-    this.meshes.delete(piece.id);
     this.grid.remove(piece);
     this.refresh();
-  }
-
-  private build(piece: Piece): PieceMeshes {
-    switch (piece.kind) {
-      case "house": return createHouse(this.scene, piece.cells[0], piece.id);
-      case "walkway": return createWalkway(this.scene, piece.cells[0]);
-      case "pier": return createPier(this.scene, piece.cells);
-    }
-  }
-
-  /** Lanterns show reachability: lit while the house is connected to a pier. */
-  syncVisuals(): void {
-    const mats = lanternMaterials(this.scene);
-    for (const [id, m] of this.meshes) {
-      if (!m.lantern) continue;
-      m.lantern.material = this.grid.pieces.get(id)!.reached ? mats.lit : mats.dark;
-    }
   }
 }

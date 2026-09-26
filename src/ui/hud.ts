@@ -1,16 +1,10 @@
-// The whole UI: build palette, tide clock, score readout. Plain DOM over the canvas.
-import { PieceKind } from "../build/grid";
-import { TideClock } from "../sim/tide";
-
-export interface Score {
-  cycle: number;
-  reached: number;
-  houses: number;
-}
+// The whole UI: build palette, tide clock, score readout. Plain DOM over the canvas, read-only over the sim.
+import { PieceKind, Score, TideState } from "../sim/state";
+import { cycleFraction, isRising, secondsToHighTide, secondsToLowTide, tideNormalized } from "../sim/tide";
 
 export interface HudState {
   tool: PieceKind;
-  tide: TideClock;
+  tide: TideState;
   score: Score | null;
 }
 
@@ -79,18 +73,19 @@ export class Hud {
     for (const [kind, b] of this.buttons) b.classList.toggle("active", kind === s.tool);
 
     const { tide } = s;
-    const top = DIAL_TOP + (1 - tide.normalized) * DIAL_H;
+    const top = DIAL_TOP + (1 - tideNormalized(tide)) * DIAL_H;
     this.tideLevel.setAttribute("y", top.toFixed(2));
     this.tideLevel.setAttribute("height", (DIAL_TOP + DIAL_H - top).toFixed(2));
-    this.tideMarker.setAttribute("transform", `rotate(${(tide.cycleFraction * 360).toFixed(1)} 32 32)`);
+    this.tideMarker.setAttribute("transform", `rotate(${(cycleFraction(tide) * 360).toFixed(1)} 32 32)`);
     this.tideValue.textContent = `${tide.level >= 0 ? "+" : ""}${tide.level.toFixed(2)} m`;
-    this.tideSub.textContent = tide.rising
-      ? `rising · high tide in ${Math.ceil(tide.secondsToHighTide)} s`
-      : `falling · low tide in ${Math.ceil(tide.secondsToLowTide)} s`;
+    this.tideSub.textContent = isRising(tide)
+      ? `rising · high tide in ${Math.ceil(secondsToHighTide(tide))} s`
+      : `falling · low tide in ${Math.ceil(secondsToLowTide(tide))} s`;
 
     if (!s.score) {
       this.scoreLabel.textContent = "Score";
       this.scoreValue.textContent = "— · first high tide pending";
+      this.lastScoreCycle = -1;
     } else if (s.score.cycle !== this.lastScoreCycle) {
       this.lastScoreCycle = s.score.cycle;
       this.scoreLabel.textContent = `High tide ${s.score.cycle}`;

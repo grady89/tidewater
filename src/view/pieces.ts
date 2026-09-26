@@ -1,14 +1,15 @@
-// Mesh factories for the three placeable pieces. Each piece merges to one mesh; houses add a lantern
-// that is lit while the house is reached.
+// Mesh factories for the placeable pieces. Each piece merges to one mesh; houses add a lantern that is lit while
+// the house is reached. View only: nothing here changes a number in the sim.
 import { Color3, Mesh, MeshBuilder, Scene, StandardMaterial } from "@babylonjs/core";
 import { HOUSE_FLOOR, PIER_FLOOR, STILT_SINK, WALKWAY_FLOOR } from "../config";
+import { cellCenter } from "../sim/grid";
+import { terrainHeight } from "../sim/heightfield";
+import { Cell } from "../sim/state";
 import { mergeFlat, tint } from "../world/flatMesh";
-import { terrainHeight } from "../world/terrain";
-import { Cell, cellCenter } from "./grid";
 
 export const PALETTE = {
-  walls: ["#f2ece0", "#f4d9c6", "#d5e6ea", "#ece3c3"],
-  roofs: ["#c9674f", "#4c5a66"],
+  walls: ["#f2ece0", "#f4d9c6", "#d5e6ea", "#ece3c3", "#f7e7d3"],
+  roofs: ["#c9674f", "#4c5a66", "#b9543f", "#5d6d7a"],
   wood: "#5a4636",
   planks: "#8a6f52",
   lantern: "#ffb859",

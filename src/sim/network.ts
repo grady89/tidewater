@@ -1,6 +1,7 @@
 // Connectivity: flood-fill from piers through walkways. Houses are leaves; a house is reached when a reached
 // walkway or pier is orthogonally adjacent. Anything whose floor is under water is cut and blocks the fill.
-import { Grid, Piece } from "../build/grid";
+import { Grid } from "./grid";
+import { Piece, SimState } from "./state";
 
 export interface NetworkStats {
   houses: number;
@@ -8,10 +9,10 @@ export interface NetworkStats {
   cut: number;
 }
 
-export function updateNetwork(grid: Grid, waterLevel: number): NetworkStats {
+export function updateNetwork(state: SimState, grid: Grid, waterLevel: number): NetworkStats {
   const stats: NetworkStats = { houses: 0, reached: 0, cut: 0 };
   const queue: Piece[] = [];
-  for (const p of grid.pieces.values()) {
+  for (const p of Object.values(state.pieces)) {
     p.cut = p.floorY < waterLevel;
     p.reached = false;
     if (p.cut) stats.cut++;
