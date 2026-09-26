@@ -414,6 +414,14 @@ Decisions and findings that CLAUDE.md does not cover. Newest at the bottom of ea
   town marks its list as seen so nothing replays. Scripted jumps (`advance`) push view time past the 6 s, which is
   why the smoke checks the popup right after a one-second tick.
 
+### Save shape check (found in the first hands-on run)
+- The user's browser held an autosave written by an early overnight build — version 2, but from before `storm`
+  existed — and `deserialize` only checked the version, so the first frame died on `state.storm.active` with a
+  blank scene and a zeroed HUD. `deserialize` now throws when any top-level key of `createState()` (or any of
+  `fields`) is missing, the autosave path already fell back to a new town on a throw, and a slot load now
+  notifies instead of crashing. Lesson for the next field added to the state: either fill it in `deserialize`
+  (as `achievements` is) or accept that older saves are discarded.
+
 ### Chunk merge (the M12 perf pass, done for the mirror)
 - `view/buildingViews.ts` now merges every building in an 8×8-cell chunk into one mesh (`chunk:i,j`), rebuilt
   when any building in the chunk appears, leaves or changes its mesh signature. 300 buildings → 15 chunk meshes;

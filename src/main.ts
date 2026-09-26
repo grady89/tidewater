@@ -10,7 +10,7 @@ import { ignite } from "./sim/fire";
 import { Grid } from "./sim/grid";
 import { AUTOSAVE_KEY, deserialize, serialize } from "./sim/save";
 import { newGame } from "./sim/start";
-import { SimState } from "./sim/state";
+import { notify, SimState } from "./sim/state";
 import { advanceCycles, tick } from "./sim/tick";
 import { cycleFraction } from "./sim/tide";
 import { orderPlanks } from "./sim/trade";
@@ -113,7 +113,9 @@ function newTown(): void {
   adopt(newGame(SEED).state);
 }
 function load(json: string): void {
-  adopt(deserialize(json));
+  let next: SimState;
+  try { next = deserialize(json); } catch { notify(state, "That save is from an older build and can't be loaded"); return; }
+  adopt(next);
   save();
 }
 

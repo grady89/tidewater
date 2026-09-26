@@ -124,6 +124,18 @@ describe("ledger", () => {
     advanceCycles(copy, grid2, 1);
     expect(stateHash(copy)).toBe(stateHash(state));
   });
+
+  it("rejects saves from older builds that lack fields the ledger has now", () => {
+    const { state } = town();
+    expect(deserialize(serialize(state)).tide.cycle).toBe(state.tide.cycle);
+    const noStorm = JSON.parse(serialize(state)) as Partial<SimState>;
+    delete noStorm.storm;
+    expect(() => deserialize(JSON.stringify(noStorm))).toThrow(/storm/);
+    const noFire = JSON.parse(serialize(state)) as SimState;
+    delete (noFire.fields as Partial<SimState["fields"]>).fire;
+    expect(() => deserialize(JSON.stringify(noFire))).toThrow(/fields\.fire/);
+    expect(() => deserialize(JSON.stringify({ version: 1 }))).toThrow(/version/);
+  });
 });
 
 describe("money loop (M2)", () => {
