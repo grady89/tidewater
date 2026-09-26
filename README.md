@@ -34,6 +34,7 @@ milestone and drops screenshots in `shots/`.
 | Speed | the bar at the bottom: pause (space), 1×, 2×, 4× |
 | Save / load / new town | **Town…** at the bottom, or Esc |
 | Sound | the speaker button; it starts on your first click |
+| Reflections | **Reflections** at the bottom — a second render of the scene in the water; off by default |
 
 ## How the town works
 
@@ -49,6 +50,9 @@ milestone and drops screenshots in `shots/`.
   sharks to busy beaches; storms keep boats in and take the unsheltered ones; after cycle 20 the sea may pull back
   and return as a wave that damages everything low and unshielded. Breakwaters shelter harbours; sea walls shield
   the flats behind them; a lighthouse sees every boat home.
+- **Districts** are clusters of three or more touching buildings; click anything to see its district's name and
+  numbers. **The isle** off the south-east is locked until you build a harbor — then the ferry runs and it takes a
+  pier and a town of its own. Milestones (first boat, fifty residents, first trade…) pop up as you reach them.
 
 ## Layout
 

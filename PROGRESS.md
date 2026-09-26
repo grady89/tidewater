@@ -25,10 +25,10 @@ Live status. Update after every milestone (and mid-milestone if you compact). On
 | Backlog 4 Roof variety | DONE | 6d7531c · pyramid / gable / hip per home, hashed from id + level; big-town smoke sees all three · headless 165 fps |
 | Backlog 5 Districts | DONE | da96ee7 · clusters of 3+ touching buildings, named from the oldest member, stats in the info panel; 3 sim tests, smoke M7 reads the panel · headless 165 fps |
 | Backlog 6 Second island | DONE | 56a188a · isle dome blended into the heightfield (main island's 750 land cells untouched), locked until a harbor, ferry steamer on the sea route; settleIsle scenario; 2 sim tests, smoke B6 · headless 165 fps |
-| Backlog 7 Achievements | IN PROGRESS | sub-task: sim/achievements.ts + popup |
+| Backlog 7 Achievements | DONE | ee5c2f1 · nine ledger milestones checked once a second, kept in state.achievements (old saves tolerated), ★ log line + 6 s popup; 2 sim tests, smoke B7 + big-town fifty/hundred · headless 165 fps |
 
 ## Current focus
-Backlog 7 Achievements — sub-task: sim/achievements.ts, ui popup, tests. Last thing that worked: isle green (build/test/smoke, 47 tests, 165 fps).
+Nothing left on ROADMAP.md: M0–M14 and backlog 1–7 are DONE, nothing BLOCKED. Last thing that worked: achievements green (build/test/smoke, 49 tests, 165 fps). HANDOFF.md rewritten at the end of the run.
 
 ## Blocked
 (milestone, why, what was tried, what would unblock)
@@ -56,3 +56,4 @@ Backlog 7 Achievements — sub-task: sim/achievements.ts, ui popup, tests. Last 
 - 2026-09-26 11:25 · Backlog 4 · 6d7531c · headless 165 fps
 - 2026-09-26 11:50 · Backlog 5 · da96ee7 · headless 165 fps
 - 2026-09-26 12:30 · Backlog 6 · 56a188a · headless 165 fps
+- 2026-09-26 12:55 · Backlog 7 · ee5c2f1 · headless 165 fps
