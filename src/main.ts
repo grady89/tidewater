@@ -3,6 +3,7 @@ import { ArcRotateCamera, Color4, DefaultRenderingPipeline, Engine, Scene, Vecto
 import { createLights } from "./world/lighting";
 import { createTerrain } from "./world/terrain";
 import { createWater } from "./world/water";
+import { createSky } from "./world/sky";
 import { TideClock } from "./sim/tide";
 
 const canvas = document.getElementById("c") as HTMLCanvasElement;
@@ -24,6 +25,7 @@ camera.autoRotationBehavior!.idleRotationSpinupTime = 2500;
 createLights(scene);
 const terrain = createTerrain(scene);
 const water = createWater(scene, terrain.heightTex);
+createSky(scene);
 
 const pipe = new DefaultRenderingPipeline("pp", false, scene, [camera]);
 pipe.fxaaEnabled = true;
