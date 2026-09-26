@@ -57,6 +57,49 @@ try {
   console.log("B7 achievement:", JSON.stringify(b7));
   assert(b7.earned.includes("firstBoat") && b7.shown.includes("firstBoat") && b7.visible && /First boat/.test(b7.text), "first-boat popup shown");
 
+  // UI: a clicked category tab stays selected while a tool of another category is active.
+  await page.click("#hud .tabs button:nth-child(1)");
+  await page.waitForTimeout(250);
+  const tab = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { category: api.view.category(), active: document.querySelector("#hud .tabs button.active")?.textContent, visible: [...document.querySelectorAll<HTMLElement>("#hud .palette button")].filter(b => !b.hidden).length }; });
+  console.log("UI tabs:", JSON.stringify(tab));
+  assert(tab.category === "Homes" && tab.active === "Homes" && tab.visible > 0, "the Homes tab stays selected after a click");
+  const overflow = await page.evaluate(() => { const hud = document.getElementById("hud")!.getBoundingClientRect(); return [...document.querySelectorAll("#hud button")].filter(b => b.getBoundingClientRect().right > hud.right + 0.5).length; });
+  assert(overflow === 0, "no HUD button bleeds past the panel");
+
+  // Camera: wheel zooms toward the cursor, drags grab the ground / rotate, keys pan and turn; nothing gets removed.
+  const cam0 = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; api.frameTown(30); return { pose: api.view.camera(), n: Object.keys(api.sim.buildings).length, ground: api.groundAt(900, 300) }; });
+  await page.mouse.move(900, 300);
+  await page.mouse.wheel(0, -900);
+  await page.waitForTimeout(700);
+  const zoomed = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { pose: api.view.camera(), ground: api.groundAt(900, 300) }; });
+  await page.mouse.move(640, 380);
+  await page.mouse.down({ button: "middle" });
+  await page.mouse.move(760, 380, { steps: 6 });
+  await page.mouse.up({ button: "middle" });
+  await page.waitForTimeout(300);
+  const panned = await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.view.camera());
+  await page.mouse.move(640, 380);
+  await page.mouse.down({ button: "right" });
+  await page.mouse.move(800, 380, { steps: 6 });
+  await page.mouse.up({ button: "right" });
+  await page.waitForTimeout(500);
+  const turned = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { pose: api.view.camera(), n: Object.keys(api.sim.buildings).length }; });
+  await page.keyboard.down("q");
+  await page.waitForTimeout(400);
+  await page.keyboard.up("q");
+  await page.keyboard.down("w");
+  await page.waitForTimeout(400);
+  await page.keyboard.up("w");
+  await page.waitForTimeout(400);
+  const keyed = await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.view.camera());
+  console.log("Camera:", JSON.stringify({ start: cam0.pose, zoomed: zoomed.pose, groundDrift: cam0.ground && zoomed.ground ? Math.hypot(zoomed.ground.x - cam0.ground.x, zoomed.ground.z - cam0.ground.z) : null, panned, turned: turned.pose, keyed }));
+  assert(zoomed.pose.dist < cam0.pose.dist * 0.6, "wheel zooms in");
+  assert(cam0.ground && zoomed.ground && Math.hypot(zoomed.ground.x - cam0.ground.x, zoomed.ground.z - cam0.ground.z) < 1.5, "zoom keeps the point under the cursor");
+  assert(Math.hypot(panned.x - zoomed.pose.x, panned.z - zoomed.pose.z) > 1, "middle-drag pans");
+  assert(Math.abs(turned.pose.yaw - panned.yaw) > 0.4 && turned.n === cam0.n, "right-drag rotates and removes nothing");
+  assert(Math.abs(keyed.yaw - turned.pose.yaw) > 0.2 && Math.hypot(keyed.x - turned.pose.x, keyed.z - turned.pose.z) > 1, "Q turns and W pans");
+  await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.frameTown());
+
   const ran = await page.evaluate(() => {
     const api = (window as unknown as { __tidewater: Api }).__tidewater;
     api.advance(4);

@@ -62,7 +62,8 @@ export class Hud {
   private readonly tradeStatus: HTMLElement;
   private readonly orderButton: HTMLButtonElement;
   private readonly notes: HTMLElement;
-  private category: Category = "Homes";
+  private _category: Category = "Homes";
+  private lastTool: Tool | null = null;
   private lastCycle = -1;
   private lastLogLen = -1;
 
@@ -152,11 +153,13 @@ export class Hud {
 
   /** Tools of the active category, in palette order (number keys map onto these). */
   private visibleTools(): ToolDef[] {
-    return TOOLS.filter(t => t.category === this.category);
+    return TOOLS.filter(t => t.category === this._category);
   }
 
+  get category(): Category { return this._category; }
+
   showCategory(cat: Category): void {
-    this.category = cat;
+    this._category = cat;
     for (const [c, b] of this.tabs) b.classList.toggle("active", c === cat);
     const visible = this.visibleTools();
     for (const [tool, b] of this.buttons) {
@@ -176,7 +179,7 @@ export class Hud {
     }
     if (key === "Tab") {
       const cats = [...this.tabs.keys()];
-      this.showCategory(cats[(cats.indexOf(this.category) + 1) % cats.length]);
+      this.showCategory(cats[(cats.indexOf(this._category) + 1) % cats.length]);
       return true;
     }
     return false;
@@ -200,8 +203,12 @@ export class Hud {
   update(s: HudState): void {
     const { state } = s;
     const r = state.resources;
-    const active = TOOLS.find(t => t.tool === s.tool);
-    if (active && active.category !== this.category) this.showCategory(active.category);
+    // Follow the tool's category only when the tool changes; otherwise a clicked tab would snap straight back.
+    if (s.tool !== this.lastTool) {
+      this.lastTool = s.tool;
+      const active = TOOLS.find(t => t.tool === s.tool);
+      if (active && active.category !== this._category) this.showCategory(active.category);
+    }
     for (const [tool, b] of this.buttons) {
       b.classList.toggle("active", tool === s.tool);
       const lock = this.lock(state, tool);

@@ -422,6 +422,23 @@ Decisions and findings that CLAUDE.md does not cover. Newest at the bottom of ea
   notifies instead of crashing. Lesson for the next field added to the state: either fill it in `deserialize`
   (as `achievements` is) or accept that older saves are discarded.
 
+### Camera rework and two HUD bugs (first hands-on feedback)
+- The camera is now modelled on Cities: Skylines rather than Babylon's ArcRotate defaults, which had left-drag
+  orbiting (fighting placement), wheel zooming toward the target rather than the cursor, no smoothing and no
+  keyboard rotation. `build/cameraControl.ts` clears Babylon's camera inputs and owns everything: left/middle
+  drag grabs the ground (the grabbed point stays under the cursor — exact, not eased), right-drag yaws and
+  tilts, the wheel dollies toward the ground point under the cursor, W A S D / arrows pan in the view frame at a
+  speed proportional to distance, Q/E turn, R/F zoom, Home frames the town. Every input sets a goal the camera
+  eases toward (12/s); pitch follows a log curve of distance (1.18 rad from the up axis at 6 units, 0.5 at 110)
+  plus the player's tilt, and is steepened if the eye would dip under the terrain or the water. Right-click
+  without a drag still removes (placement's slop check). Edge scrolling stays off per the brief.
+- Tabs could not be changed: `hud.update` re-selected the active tool's category every frame, so a click held for
+  one frame. It now follows the tool only when the tool changes.
+- Palette cards bled past the panel: `1fr` grid columns don't shrink below their content; `minmax(0, 1fr)` with
+  `min-width: 0` on the buttons fixes it, and the overlay row wraps.
+- Smoke now clicks the Homes tab, checks no HUD button extends past the panel, and drives the camera with real
+  wheel/drag/key events (zoom keeps the point under the cursor within 1.5 units, right-drag removes nothing).
+
 ### Chunk merge (the M12 perf pass, done for the mirror)
 - `view/buildingViews.ts` now merges every building in an 8×8-cell chunk into one mesh (`chunk:i,j`), rebuilt
   when any building in the chunk appears, leaves or changes its mesh signature. 300 buildings → 15 chunk meshes;

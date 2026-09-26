@@ -45,11 +45,9 @@ const scene = new Scene(engine);
 scene.clearColor = new Color4(0.81, 0.90, 0.95, 1);
 
 const camera = new ArcRotateCamera("cam", -0.95, 1.05, 46, new Vector3(0, 0.6, 0), scene);
-camera.upperBetaLimit = 1.45; camera.lowerBetaLimit = 0.25;
-camera.wheelPrecision = 18;
 camera.minZ = 0.5; camera.maxZ = 900;
-camera.attachControl(canvas, true);
-const cameraControl = new CameraControl(camera, canvas);
+camera.attachControl(canvas, true); // keeps the scene's pointer tracking; the camera's own inputs are cleared below
+const cameraControl = new CameraControl(camera, canvas, scene);
 
 const lights = createLights(scene);
 const terrain = createTerrain(scene);
@@ -96,6 +94,7 @@ const tutorial = new Tutorial(document.getElementById("tutorial")!);
 const achievements = new AchievementPopup(document.getElementById("achievement")!);
 achievements.adopt(state);
 placement.onSelect = b => info.select(b);
+cameraControl.onHome = () => api.frameTown(30);
 
 /** Swap the whole ledger (load, new town) and let every view rebuild from it. */
 function adopt(next: SimState): void {
@@ -173,6 +172,7 @@ function syncView(): void {
   ship.sync(state, viewTime);
   wildlife.sync(state, viewTime);
   ferry.sync(state, viewTime);
+  cameraControl.setWaterLevel(state.tide.level);
   terrain.update(camera.position, state.tide.level, state.tide.wetLevel);
   water.update(viewTime, camera.position, state.tide.level);
   hud.update({ tool: placement.tool, blocker: placement.blocker, fate: placement.fate, state });
@@ -267,13 +267,16 @@ const api = {
     if (!bs.length) return;
     let x = 0, z = 0, n = 0;
     for (const b of bs) for (const c of b.cells) { x += c.i + 0.5; z += c.j + 0.5; n++; }
-    camera.target.set(x / n, 0.8, z / n);
-    camera.radius = radius; camera.alpha = -0.8; camera.beta = 0.95;
+    cameraControl.jumpTo(x / n, z / n, radius, -0.8, 0.95);
   },
   /** View only: aim the camera at a world point. */
   frameAt(x: number, z: number, radius = 16) {
-    camera.target.set(x, 0.8, z);
-    camera.radius = radius; camera.alpha = -0.8; camera.beta = 0.95;
+    cameraControl.jumpTo(x, z, radius, -0.8, 0.95);
+  },
+  /** The ground point under a screen position (client pixels), for camera checks. */
+  groundAt(clientX: number, clientY: number) {
+    const g = cameraControl.groundAt(clientX, clientY);
+    return g ? { x: g.x, z: g.z } : null;
   },
   /** Read-only view probes for the smoke scenario. */
   view: {
@@ -295,6 +298,8 @@ const api = {
     ferry: () => ferry.pose,
     isleOpen: () => grid.isleOpen(),
     achievementsShown: () => achievements.shown.slice(),
+    camera: () => cameraControl.pose,
+    category: () => hud.category,
     /** How many homes wear each roof shape. */
     roofs: () => {
       const out: Record<string, number> = { pyramid: 0, gable: 0, hipped: 0 };

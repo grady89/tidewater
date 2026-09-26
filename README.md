@@ -21,8 +21,10 @@ milestone and drops screenshots in `shots/`.
 
 | Do | How |
 | --- | --- |
-| Orbit / zoom | drag / scroll |
-| Pan | middle-drag, or W A S D |
+| Pan | drag the ground (left or middle button), W A S D or the arrow keys |
+| Rotate / tilt | right-drag; Q / E turn |
+| Zoom | scroll toward the cursor; R / F. The view tilts down as you zoom out |
+| Home | the Home key frames the town |
 | Pick a building | the tabs in the panel (Tab cycles them), or the number keys shown on the buttons |
 | Place | click a cell — the ghost is green when it fits, amber if spring tides will flood it, red if every high tide will, grey when it can't go there (the line under the palette says why) |
 | Inspect | click any building; Esc closes the panel |

@@ -65,16 +65,16 @@
       }
       .tabs button:hover { color: var(--ink); }
       .tabs button.active { color: var(--accent); border-color: rgba(255, 209, 138, 0.4); background: rgba(255, 209, 138, 0.08); }
-      .palette { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+      .palette { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
       .palette button[hidden] { display: none; }
       .palette button .reason { grid-column: 1; font-size: 10px; color: var(--bad); }
       .palette button .reason:empty { display: none; }
       .palette button {
         font: inherit; font-size: 12px; color: var(--ink); background: rgba(255, 255, 255, 0.06);
-        border: 1px solid var(--panel-line); border-radius: 6px; padding: 6px 7px;
-        display: grid; grid-template-columns: 1fr auto; grid-auto-rows: auto; column-gap: 6px; align-items: center; text-align: left; cursor: pointer;
+        border: 1px solid var(--panel-line); border-radius: 6px; padding: 6px 7px; min-width: 0; overflow: hidden;
+        display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-auto-rows: auto; column-gap: 6px; align-items: center; text-align: left; cursor: pointer;
       }
-      .palette button .name { grid-column: 1; }
+      .palette button .name { grid-column: 1; overflow-wrap: anywhere; }
       .palette button .cost { grid-column: 1; font-size: 10px; color: var(--ink-dim); font-variant-numeric: tabular-nums; }
       .palette button kbd { grid-column: 2; grid-row: 1 / span 3; font: 10px/1 "IBM Plex Sans", system-ui, sans-serif; color: var(--ink-dim); border: 1px solid var(--track); border-radius: 3px; padding: 2px 4px; }
       .palette button kbd:empty { display: none; }
@@ -116,7 +116,7 @@
       .info-body .desc { margin: 4px 0 0; font-size: 11px; color: var(--ink-dim); }
       .info-body .district { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.1); font-size: 11px; color: var(--ink-dim); }
       .info-body .district h3 { margin: 0 0 2px; font-size: 13px; font-weight: 600; color: var(--ink); }
-      .overlays { display: flex; gap: 4px; align-items: center; }
+      .overlays { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
       .overlays label { margin-right: 4px; }
       .overlays button {
         font: inherit; font-size: 11px; color: var(--ink-dim); background: rgba(255, 255, 255, 0.05);
