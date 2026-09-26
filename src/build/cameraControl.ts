@@ -156,8 +156,9 @@ export class CameraControl {
     if (this.keys.size) {
       const yaw = this.camera.alpha;
       // Screen-up on the ground is the direction from the camera to the target.
+      // Right is up × forward in Babylon's left-handed frame: (fz, -fx).
       const fx = -Math.cos(yaw), fz = -Math.sin(yaw);
-      const rx = -fz, rz = fx;
+      const rx = fz, rz = -fx;
       let mx = 0, mz = 0;
       if (this.keys.has("w") || this.keys.has("ArrowUp")) { mx += fx; mz += fz; }
       if (this.keys.has("s") || this.keys.has("ArrowDown")) { mx -= fx; mz -= fz; }

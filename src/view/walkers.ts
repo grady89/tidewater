@@ -3,10 +3,10 @@
 // between home and work; a few loiterers mill about staffed markets. Nothing here writes to the sim.
 import { Color4, Matrix, Mesh, MeshBuilder, Quaternion, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
 import { SIZE } from "../config";
-import { BUILDINGS } from "../sim/balance";
+import { BUILDINGS, SWIM_FRACTION } from "../sim/balance";
 import { cellCenter, cellIndex, Grid } from "../sim/grid";
 import { terrainHeight } from "../sim/heightfield";
-import { Building, Cell, Phase, SimState } from "../sim/state";
+import { Building, Cell, Phase, population, SimState } from "../sim/state";
 import { flatMaterial, mergeFlat, tint } from "../world/flatMesh";
 
 export const MAX_WALKERS = 200;
@@ -19,7 +19,15 @@ interface Walker {
   t0: number;
   duration: number;
   color: Color4;
+  /** Workers stay at the end of their walk (at work) until the shift ends; others go indoors and fade. */
+  stay: boolean;
+  seed: number;
 }
+
+/** People are a third of a cell tall, a little larger than a city builder's but readable from the default camera. */
+export const PERSON_SCALE = 0.62;
+/** Seconds a homecoming walker takes to go indoors at the end of the walk. */
+const FADE = 0.5;
 
 interface Loiterer {
   centre: Vector3;
@@ -141,6 +149,8 @@ export class Walkers {
 
   /** Spawn the wave of walkers for a shift change: home → work when a shift starts, back when it ends. */
   private shiftChange(state: SimState, toWork: boolean, now: number): void {
+    // The last shift's workers leave their posts (they become the homeward wave below).
+    this.walkers = this.walkers.filter(w => !w.stay);
     const total = state.assignments.reduce((n, a) => n + a.n, 0);
     const keep = total > MAX_WALKERS ? MAX_WALKERS / total : 1;
     for (const a of state.assignments) {
@@ -157,6 +167,8 @@ export class Walkers {
           t0: now + this.rand() * 2,
           duration: path.length / SPEED,
           color: Color4.FromHexString(COLORS[Math.floor(this.rand() * COLORS.length)]),
+          stay: toWork,
+          seed: this.rand() * 6.28,
         });
       }
     }
@@ -172,7 +184,7 @@ export class Walkers {
       const path = this.route(home, work);
       if (!path || path.length < 2) continue;
       const jitter = new Vector3((this.rand() - 0.5) * 0.4, 0, (this.rand() - 0.5) * 0.4);
-      this.walkers.push({ path: path.map(p => p.add(jitter)), t0: now + this.rand() * 4, duration: path.length / SPEED + 30, color: Color4.FromHexString(COLORS[Math.floor(this.rand() * COLORS.length)]) });
+      this.walkers.push({ path: path.map(p => p.add(jitter)), t0: now + this.rand() * 4, duration: path.length / SPEED + 30, color: Color4.FromHexString(COLORS[Math.floor(this.rand() * COLORS.length)]), stay: false, seed: 0 });
       spawned++;
     }
     return spawned;
@@ -200,19 +212,26 @@ export class Walkers {
     const out: { pos: Vector3; yaw: number; color: Color4 }[] = [];
     if (state.phase !== "high") return out;
     const level = state.tide.level;
+    // The ledger counts swimmers per beach cell for shark risk; the view shows at most a share of the town —
+    // a few figures in the water, not a line along the whole shore — spread over the beaches with deep enough
+    // water beside them.
+    let budget = Math.max(0, Math.round(population(state) * SWIM_FRACTION));
+    const spots: { water: Cell; k: number }[] = [];
     for (const s of state.swimmers) {
-      const ci = Math.floor(s.k / SIZE) - SIZE / 2, cj = (s.k % SIZE) - SIZE / 2;
-      const beach = { i: ci, j: cj };
-      // Swim off the deepest water cell beside the beach. Bodies sit so the waterline crosses the tunic, but
-      // never below the sand: in shallow water they stand at the waterline instead.
+      const beach = { i: Math.floor(s.k / SIZE) - SIZE / 2, j: (s.k % SIZE) - SIZE / 2 };
       const water = this.grid.neighbors(beach).filter(n => this.grid.water[cellIndex(n.i, n.j)]).sort((a, b) => this.grid.heightAt(a) - this.grid.heightAt(b))[0];
-      if (!water) continue;
-      const count = Math.min(6, Math.round(s.n));
-      for (let k = 0; k < count; k++) {
-        const t = viewTime * 0.6 + k * 1.7 + s.k * 0.01;
-        const x = water.i + 0.5 + Math.cos(t) * 0.3 + (k % 3 - 1) * 0.25, z = water.j + 0.5 + Math.sin(t * 0.8) * 0.3 + Math.floor(k / 3) * 0.3 - 0.15;
-        const y = Math.max(level + Math.sin(viewTime * 2 + k) * 0.04 - 0.3, terrainHeight(x, z) + 0.02);
-        out.push({ pos: new Vector3(x, y, z), yaw: t, color: Color4.FromHexString(COLORS[(k + 2) % COLORS.length]) });
+      if (!water || level - this.grid.heightAt(water) < 0.12) continue; // at least knee-deep
+      spots.push({ water, k: s.k });
+    }
+    for (let round = 0; round < 3 && budget > 0; round++) {
+      for (const { water, k: sk } of spots) {
+        if (budget-- <= 0) break;
+        const k = round;
+        const t = viewTime * 0.5 + k * 1.7 + sk * 0.01;
+        const x = water.i + 0.5 + Math.cos(t) * 0.28 + (k - 1) * 0.22, z = water.j + 0.5 + Math.sin(t * 0.8) * 0.28;
+        // Chest-deep: the figure is PERSON_SCALE × 0.6 tall, so its middle sits at the waterline.
+        const y = Math.max(level + Math.sin(viewTime * 2 + k) * 0.03 - 0.2, terrainHeight(x, z) + 0.02);
+        out.push({ pos: new Vector3(x, y, z), yaw: t, color: Color4.FromHexString(COLORS[(k + sk) % COLORS.length]) });
       }
     }
     return out;
@@ -230,7 +249,7 @@ export class Walkers {
     }
     if (Math.floor(viewTime / 5) !== Math.floor(this.lastTime / 5)) this.refreshLoiterers(state);
     this.lastTime = viewTime;
-    this.walkers = this.walkers.filter(w => viewTime < w.t0 + w.duration);
+    this.walkers = this.walkers.filter(w => w.stay || viewTime < w.t0 + w.duration + FADE);
     const swimmers = this.swimmerPoses(state, viewTime);
 
     const n = this.walkers.length + this.loiterers.length + swimmers.length;
@@ -238,26 +257,46 @@ export class Walkers {
     const scale = new Vector3(1, 1, 1);
     let k = 0;
     const put = (pos: Vector3, yaw: number, color: Color4, s = 1) => {
-      scale.set(s, s, s);
+      scale.set(s * PERSON_SCALE, s * PERSON_SCALE, s * PERSON_SCALE);
       Matrix.Compose(scale, Quaternion.FromEulerAngles(0, yaw, 0), pos).copyToArray(this.matrices, k * 16);
       this.colors[k * 4] = color.r; this.colors[k * 4 + 1] = color.g; this.colors[k * 4 + 2] = color.b; this.colors[k * 4 + 3] = 1;
       k++;
     };
     for (const w of this.walkers) {
-      const u = Math.min(1, Math.max(0, (viewTime - w.t0) / w.duration));
+      const raw = (viewTime - w.t0) / w.duration;
+      const u = Math.min(1, Math.max(0, raw));
       const idx = u * (w.path.length - 1);
       const i0 = Math.min(w.path.length - 2, Math.floor(idx)), f = idx - i0;
       const a = w.path[i0], b = w.path[i0 + 1];
       const pos = new Vector3(a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f, a.z + (b.z - a.z) * f);
-      const bob = u > 0 && u < 1 ? Math.abs(Math.sin(viewTime * 9)) * 0.03 : 0;
-      pos.y += bob;
-      put(pos, Math.atan2(b.x - a.x, b.z - a.z), w.color);
+      let yaw = Math.atan2(b.x - a.x, b.z - a.z);
+      let s = 1;
+      if (raw < 1) {
+        pos.y += u > 0 ? Math.abs(Math.sin(viewTime * 9)) * 0.03 : 0;
+      } else if (w.stay) {
+        // At work: stand at the post, turn slowly, shift weight now and then.
+        yaw += Math.sin(viewTime * 0.3 + w.seed) * 0.8;
+        pos.x += Math.sin(viewTime * 0.5 + w.seed) * 0.12;
+        pos.z += Math.cos(viewTime * 0.4 + w.seed) * 0.12;
+      } else {
+        // Home: step inside — shrink away over FADE seconds.
+        s = Math.max(0, 1 - (viewTime - (w.t0 + w.duration)) / FADE);
+      }
+      put(pos, yaw, w.color, s);
     }
     for (const l of this.loiterers) {
-      const t = viewTime * (l.scale < 1 ? 0.8 : 0.35) + l.seed;
-      const r = l.scale < 1 ? 0.7 : 0.55;
-      const pos = new Vector3(l.centre.x + Math.cos(t) * r, l.centre.y, l.centre.z + Math.sin(t * 0.7) * r);
-      put(pos, t + Math.PI / 2, l.color, l.scale);
+      // Loiterers stand, then walk a few steps to a new spot and stand again — never glide. Each bout has a
+      // seeded spot; the walk takes the first part of the bout and the figure faces where it is going.
+      const bout = l.scale < 1 ? 2.6 : 4.5, walk = l.scale < 1 ? 1.0 : 1.3, r = l.scale < 1 ? 0.6 : 0.5;
+      const t = viewTime / bout + l.seed;
+      const n = Math.floor(t);
+      const u = Math.min(1, ((t - n) * bout) / walk);
+      const spot = (k: number) => { const h = Math.sin(k * 12.9898 + l.seed * 78.233) * 43758.5453; const a = (h - Math.floor(h)) * 6.283; const rr = r * (0.4 + 0.6 * ((h * 7) - Math.floor(h * 7))); return { x: rr * Math.cos(a), z: rr * Math.sin(a) }; };
+      const from = spot(n - 1), to = spot(n);
+      const e = u * u * (3 - 2 * u);
+      const pos = new Vector3(l.centre.x + from.x + (to.x - from.x) * e, l.centre.y, l.centre.z + from.z + (to.z - from.z) * e);
+      if (u < 1) pos.y += Math.abs(Math.sin(viewTime * 9)) * 0.03;
+      put(pos, Math.atan2(to.x - from.x, to.z - from.z), l.color, l.scale);
     }
     for (const s of swimmers) put(s.pos, s.yaw, s.color);
     if (n === 0) { this.mesh.setEnabled(false); this.detail.setEnabled(false); return; }

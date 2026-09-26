@@ -17,7 +17,7 @@ const DRAFT = 0.12;
 const HEEL = 0.42; // radians, resting on the mud
 const OUT = 0.3, BACK = 0.7; // trip fractions: leaving, fishing, returning
 
-export interface BoatPose { x: number; z: number; atSea: boolean; moored: boolean }
+export interface BoatPose { x: number; z: number; atSea: boolean; moored: boolean; fishing?: boolean }
 
 /** Two rounds of corner-cutting (Chaikin) over the cell centres; the ends stay put. */
 function smooth(points: Vector3[]): Vector3[] {
@@ -48,6 +48,7 @@ interface Instance { pos: Vector3; yaw: number; roll: number; color: Color4 }
 export class Boats {
   private readonly hull: Mesh;
   private readonly sail: Mesh;
+  private readonly floats: Mesh;
   private readonly paths = new Map<string, Vector3[]>();
   private matrices = new Float32Array(0);
   private colors = new Float32Array(0);
@@ -107,7 +108,11 @@ export class Boats {
     sailParts.push(tint(sail, PALETTE.sail));
     this.sail = mergeFlat("boatSails", sailParts, scene);
 
-    for (const m of [this.hull, this.sail]) { m.isPickable = false; m.alwaysSelectAsActiveMesh = true; }
+    // Net floats, shown trailing a boat while it fishes.
+    const ring = MeshBuilder.CreateTorus("nf", { diameter: 0.12, thickness: 0.05, tessellation: 6 }, scene);
+    this.floats = mergeFlat("netFloats", [tint(ring, PALETTE.roofs[0])], scene);
+    for (const m of [this.hull, this.sail, this.floats]) { m.isPickable = false; m.alwaysSelectAsActiveMesh = true; }
+    this.floats.setEnabled(false);
   }
 
   /** The sea route as cell centres, with the harbour's own cells dropped (a trip starts from the mooring). */
@@ -159,6 +164,7 @@ export class Boats {
     const level = state.tide.level;
     const instances: Instance[] = [];
     const poses: BoatPose[] = [];
+    const floats: Vector3[] = [];
     let colorIndex = 0;
     for (const h of Object.values(state.buildings)) {
       if ((BUILDINGS[h.kind].slots ?? 0) === 0 || h.boats === 0) continue;
@@ -190,7 +196,14 @@ export class Boats {
           // The hull's bow is +x, so the yaw that puts +x onto the travel direction is heading − π/2.
           const yaw = heading - Math.PI / 2 + (s === 1 ? drift * Math.PI * 2 : 0);
           instances.push({ pos: new Vector3(px, level + waveHeight(px, pz, viewTime) - DRAFT * 0.3, pz), yaw, roll: 0.04 * Math.sin(viewTime * 1.3 + k), color });
-          poses.push({ x: px, z: pz, atSea: true, moored: false });
+          poses.push({ x: px, z: pz, atSea: true, moored: false, fishing: s === 1 });
+          if (s === 1) {
+            // On the ground: the net is out — a line of floats trails off the quarter, bobbing.
+            for (let f = 0; f < 4; f++) {
+              const fx = px - Math.cos(yaw) * (0.45 + f * 0.28) + Math.sin(yaw) * 0.25, fz = pz + Math.sin(yaw) * (0.45 + f * 0.28) + Math.cos(yaw) * 0.25;
+              floats.push(new Vector3(fx, level + waveHeight(fx, fz, viewTime) + 0.02 + 0.02 * Math.sin(viewTime * 2.5 + f), fz));
+            }
+          }
         } else {
           const m = moorings[k % moorings.length];
           const bed = terrainHeight(m.x, m.z);
@@ -204,6 +217,13 @@ export class Boats {
     }
     this.poses = poses;
     this.write(instances);
+    if (floats.length === 0) this.floats.setEnabled(false);
+    else {
+      const m = new Float32Array(floats.length * 16);
+      floats.forEach((p, k) => Matrix.Translation(p.x, p.y, p.z).copyToArray(m, k * 16));
+      this.floats.thinInstanceSetBuffer("matrix", m, 16, false);
+      this.floats.setEnabled(true);
+    }
   }
 
   private write(instances: Instance[]): void {

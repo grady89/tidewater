@@ -322,6 +322,8 @@ export function deckJoins(b: Building, grid: Grid): Join[] {
   return DIRS.map(d => {
     const n = grid.buildingAt({ i: c.i + d.i, j: c.j + d.j });
     if (!n) return { side: d, kind: "open" as const, dh: 0 };
+    // Paths drape over the ground, so two paths always meet flush whatever their nominal floors.
+    if (b.kind === "path" && n.kind === "path") return { side: d, kind: "flush" as const, dh: 0 };
     const dh = n.floorY - b.floorY;
     if (dh > 0.1 && dh <= 0.8) return { side: d, kind: "step" as const, dh };
     return { side: d, kind: "flush" as const, dh: 0 };
@@ -400,13 +402,45 @@ function raisedWalkway(scene: Scene, b: Building, grid: Grid): BuildingMeshes {
   return { root: mergeFlat("raisedWalkway", parts, scene), lantern: lamp };
 }
 
-/** A dirt track: a slab the colour of wet sand lying on the ground, joined to its neighbours like a deck. */
+/**
+ * A dirt track: a strip laid on the ground that follows the terrain, the way roads drape over hills in a city
+ * builder. The strip is a subdivided patch whose vertices sit just above the heightfield, so it never cuts
+ * into a slope; it runs to the cell edge on every side that meets another piece (paths join paths flush) and
+ * stops short with a rounded end where it is open. A stair climbs to a higher deck.
+ */
 function path(scene: Scene, b: Building, grid: Grid): BuildingMeshes {
   const { x, z } = cellCenter(b.cells[0]);
   const parts: Mesh[] = [];
-  streetDeck(scene, parts, b, grid, x, z, b.floorY, ROPE, null);
+  const joins = deckJoins(b, grid);
+  const met = (di: number, dj: number) => joins.find(j => j.side.i === di && j.side.j === dj)!.kind !== "open";
+  const x0 = x - (met(-1, 0) ? 0.5 : 0.36), x1 = x + (met(1, 0) ? 0.5 : 0.36);
+  const z0 = z - (met(0, -1) ? 0.5 : 0.36), z1 = z + (met(0, 1) ? 0.5 : 0.36);
+  const N = 6;
+  const strip = MeshBuilder.CreateGround("path", { width: x1 - x0, height: z1 - z0, subdivisions: N }, scene);
+  strip.position.set((x0 + x1) / 2, 0, (z0 + z1) / 2);
+  const pos = strip.getVerticesData(VertexBuffer.PositionKind)!;
+  for (let k = 0; k < pos.length; k += 3) pos[k + 1] = terrainHeight(pos[k] + strip.position.x, pos[k + 2] + strip.position.z) + 0.06;
+  strip.updateVerticesData(VertexBuffer.PositionKind, pos);
+  parts.push(tint(strip, ROPE));
+  for (const j of joins) {
+    if (j.kind !== "step") continue;
+    // The stair up to a deck: treads from the ground at the edge up to the neighbour's floor.
+    const ax = j.side.i, az = j.side.j;
+    const ex = x + ax * 0.5, ez = z + az * 0.5;
+    const base = terrainHeight(ex, ez) + 0.06;
+    const top = b.floorY + j.dh;
+    const n = Math.max(2, Math.ceil((top - base) / 0.13));
+    const depth = Math.min(0.45, 0.15 * n);
+    for (let k = 1; k <= n; k++) {
+      const front = 0.5 - depth * (n - k + 1) / n;
+      const len = 0.5 - front, mid = (front + 0.5) / 2;
+      const h = base + ((top - base) * k) / n;
+      const foot = terrainHeight(x + ax * mid, z + az * mid);
+      parts.push(box(scene, ax ? len : 0.7, h - foot, az ? len : 0.7, x + ax * mid, (h + foot) / 2, z + az * mid, k % 2 ? PALETTE.planks : PALETTE.wood));
+    }
+  }
   // A few pebbles along the verge.
-  for (const [dx, dz, s] of [[-0.38, 0.2, 0.06], [0.4, -0.3, 0.05], [0.1, 0.42, 0.04]] as [number, number, number][]) parts.push(rock(scene, x + dx, b.floorY + 0.02, z + dz, s, STONE, dx * 10));
+  for (const [dx, dz, s] of [[-0.38, 0.2, 0.06], [0.4, -0.3, 0.05], [0.1, 0.42, 0.04]] as [number, number, number][]) parts.push(rock(scene, x + dx, terrainHeight(x + dx, z + dz) + 0.03, z + dz, s, STONE, dx * 10));
   return { root: mergeFlat("path", parts, scene) };
 }
 

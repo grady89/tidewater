@@ -11,6 +11,7 @@ const FIN_COUNT = 3;
 const FIN_MIN_RISK = 0.25;
 const FLAMES_PER_FIRE = 4;
 const PUFFS_PER_FIRE = 5;
+const CHIMNEY_PUFFS = 3;
 
 export class Effects {
   private readonly fins: Mesh;
@@ -85,13 +86,27 @@ export class Effects {
 
   private syncFire(state: SimState, viewTime: number): void {
     const burning: Building[] = [];
-    for (const b of Object.values(state.buildings)) if (b.fire > 0) burning.push(b);
+    const working: Building[] = [];
+    for (const b of Object.values(state.buildings)) {
+      if (b.fire > 0) burning.push(b);
+      else if (b.kind === "smokehouse" && b.workers > 0 && b.reached && !b.cut && !b.damaged) working.push(b);
+    }
     this.burning = burning.length;
-    if (!burning.length) { this.flames.setEnabled(false); this.smoke.setEnabled(false); return; }
-    const nf = burning.length * FLAMES_PER_FIRE, ns = burning.length * PUFFS_PER_FIRE;
+    if (!burning.length && !working.length) { this.flames.setEnabled(false); this.smoke.setEnabled(false); return; }
+    const nf = burning.length * FLAMES_PER_FIRE, ns = burning.length * PUFFS_PER_FIRE + working.length * CHIMNEY_PUFFS;
     if (this.flameMatrices.length !== nf * 16) this.flameMatrices = new Float32Array(nf * 16);
     if (this.smokeMatrices.length !== ns * 16) this.smokeMatrices = new Float32Array(ns * 16);
     let fi = 0, si = 0;
+    // A working smokehouse: thin puffs drifting up from the chimney top, so you can see it is at work.
+    for (const b of working) {
+      const is = b.cells.map(c => c.i), js = b.cells.map(c => c.j);
+      const cx = (Math.min(...is) + Math.max(...is) + 1) / 2, cz = (Math.min(...js) + Math.max(...js) + 1) / 2;
+      for (let k = 0; k < CHIMNEY_PUFFS; k++) {
+        const u = ((viewTime * 0.25 + k / CHIMNEY_PUFFS + b.id * 0.17) % 1);
+        const s = 0.25 + u * 0.5;
+        Matrix.Compose(new Vector3(s, s, s), Quaternion.Identity(), new Vector3(cx + 0.6 + u * 0.3 + 0.08 * Math.sin(u * 9), b.floorY + 1.6 + u * 1.4, cz + 0.1)).copyToArray(this.smokeMatrices, si++ * 16);
+      }
+    }
     for (const b of burning) {
       const is = b.cells.map(c => c.i), js = b.cells.map(c => c.j);
       const cx = (Math.min(...is) + Math.max(...is) + 1) / 2, cz = (Math.min(...js) + Math.max(...js) + 1) / 2;
@@ -109,8 +124,8 @@ export class Effects {
         Matrix.Compose(new Vector3(s, s, s), Quaternion.Identity(), new Vector3(x, b.floorY + 1.0 + u * 2.4, z)).copyToArray(this.smokeMatrices, si++ * 16);
       }
     }
-    this.flames.setEnabled(true); this.smoke.setEnabled(true);
-    this.flames.thinInstanceSetBuffer("matrix", this.flameMatrices, 16, false);
+    this.flames.setEnabled(nf > 0); this.smoke.setEnabled(true);
+    if (nf > 0) this.flames.thinInstanceSetBuffer("matrix", this.flameMatrices, 16, false);
     this.smoke.thinInstanceSetBuffer("matrix", this.smokeMatrices, 16, false);
   }
 

@@ -94,9 +94,10 @@ export class Placement {
       this.down = null;
       const start = this.lineStart;
       this.lineStart = null;
-      if (!d || d.button !== e.button) { this.refresh(); return; }
+      if (!d || d.button !== e.button) { this.linePath = []; this.refresh(); return; }
       const moved = Math.hypot(e.clientX - d.x, e.clientY - d.y) > CLICK_SLOP_PX;
       if (e.button === 0 && start && this.linePath.length > 1) { this.placeLine(); return; }
+      this.linePath = [];
       if (moved) { this.refresh(); return; }
       if (e.button === 0) this.click();
       else if (e.button === 2) this.remove();
@@ -239,7 +240,19 @@ export class Placement {
   refresh(): void {
     this.hover = this.pickCell();
     if (this.lineStart && this.hover) {
-      this.linePath = linePath(this.lineStart, this.hover);
+      // Paint: the run follows the pointer's own track, cell by cell, so a street can bend where the player
+      // bends it. Each pointer step adds the L from the last painted cell; revisited cells are skipped.
+      if (this.linePath.length === 0) this.linePath = [this.lineStart];
+      const last = this.linePath[this.linePath.length - 1];
+      if (last.i !== this.hover.i || last.j !== this.hover.j) {
+        const seen = new Set(this.linePath.map(c => `${c.i},${c.j}`));
+        for (const c of linePath(last, this.hover).slice(1)) {
+          const key = `${c.i},${c.j}`;
+          if (seen.has(key) || this.linePath.length >= MAX_LINE) continue;
+          seen.add(key);
+          this.linePath.push(c);
+        }
+      }
       this.showLine();
       this.blocker = null; this.warn = null;
       return;
