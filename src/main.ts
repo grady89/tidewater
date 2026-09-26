@@ -5,6 +5,7 @@ import { createTerrain } from "./world/terrain";
 import { createWater } from "./world/water";
 import { createSky } from "./world/sky";
 import { TideClock } from "./sim/tide";
+import { createTempDecoration } from "./tempDecoration";
 
 const canvas = document.getElementById("c") as HTMLCanvasElement;
 const engine = new Engine(canvas, true, { antialias: true, adaptToDeviceRatio: true });
@@ -26,6 +27,7 @@ createLights(scene);
 const terrain = createTerrain(scene);
 const water = createWater(scene, terrain.heightTex);
 createSky(scene);
+createTempDecoration(scene);
 
 const pipe = new DefaultRenderingPipeline("pp", false, scene, [camera]);
 pipe.fxaaEnabled = true;
