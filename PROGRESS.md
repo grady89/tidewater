@@ -17,11 +17,11 @@ Live status. Update after every milestone (and mid-milestone if you compact). On
 | M10 Fire | DONE | 2a81e62 · fire-risk field (smokehouse/tavern/lanterns), per-cycle ignition above a threshold, tick-wise spread, burn-out damage, auto-repair (money + timber), fire watch (damps + saves), damaged tint/lean, flames + smoke, Fire overlay; cluster burns / watched cluster never ignites; 37 sim tests, shots/m10-*.png · headless 165 fps |
 | M11 Storms & tsunami | DONE | 5e2aceb · storms (12 %/cycle after 6, boats stay in, 50 % loss unsheltered, rain, dusk light + ×3 swell), tsunami (20 s drawdown to −1.2, crest sweep uniform, unshielded floors < 1.4 damaged, boats lost), breakwater + sea wall shielding along the wave axis, forceStorm/forceTsunami; 40 sim tests, shots/m11-*.png · headless 165 fps |
 | M12 Camera, polish, saves | DONE | 8fb0af0 · middle-drag/WASD pan, pause/1×/2×/4×, three save slots + new town, 5-step tutorial + empty-state hints, greyed palette reasons; 300 buildings / 30 boats / 200 walkers at 164.8 fps headless, 300-building reload 615 ms (chunk merge skipped: target holds); 42 sim tests, shots/m12-bigtown.png · headless 165 fps |
-| M13 Audio | IN PROGRESS | sub-task: view/audio.ts (surf, bell, thrum, mute), smoke check |
-| M14 Ship it | TODO | |
+| M13 Audio | DONE | 121ed07 · Web Audio surf (noise + low-pass, follows tide/storm), shift bell, tsunami thrum, mute (remembered); context created on first gesture, smoke asserts running after click and no console errors · headless 165 fps |
+| M14 Ship it | IN PROGRESS | sub-task: README + HANDOFF rewrite; dist/ builds |
 
 ## Current focus
-M13 Audio — sub-task: view/audio.ts. Last thing that worked: M12 green (build/test/smoke, 42 tests, big town 164.8 fps).
+M14 Ship it — sub-task: README written, HANDOFF rewrite. Last thing that worked: M13 green (build/test/smoke, 42 tests).
 
 ## Blocked
 (milestone, why, what was tried, what would unblock)
@@ -41,3 +41,4 @@ M13 Audio — sub-task: view/audio.ts. Last thing that worked: M12 green (build/
 - 2026-09-26 07:25 · M10 · 2a81e62 · headless 165 fps
 - 2026-09-26 08:10 · M11 · 5e2aceb · headless 165 fps
 - 2026-09-26 08:55 · M12 · 8fb0af0 · headless 165 fps; big town 164.8 fps; reload 615 ms
+- 2026-09-26 09:15 · M13 · 121ed07 · headless 165 fps

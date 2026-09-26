@@ -1,0 +1,58 @@
+# Tidewater
+
+A coastal town simulator where the tide is the clock. Twice a cycle the water rises over the flats and the boats
+go out; twice it drains and the flats become the workplace. You place, the town runs itself. The sea gives (fish,
+shellfish, trade, tourists) and the sea takes (pollution, sharks, storms, and once in a long while a wave).
+
+![A stilt town at high water with boats on their grounds](shots/m4-high.png)
+
+## Run it
+
+```bash
+npm install
+npm run dev
+```
+
+Open http://localhost:5180. `npm run build` typechecks and bundles to `dist/`; `npm run preview` serves that.
+`npm run test` runs the simulation's unit checks; `npm run smoke` drives the whole game headlessly through every
+milestone and drops screenshots in `shots/`.
+
+## Controls
+
+| Do | How |
+| --- | --- |
+| Orbit / zoom | drag / scroll |
+| Pan | middle-drag, or W A S D |
+| Pick a building | the tabs in the panel (Tab cycles them), or the number keys shown on the buttons |
+| Place | click a cell — the ghost is green when it fits, amber if spring tides will flood it, red if every high tide will, grey when it can't go there (the line under the palette says why) |
+| Inspect | click any building; Esc closes the panel |
+| Remove | right-click |
+| Buy a boat | pick **Boat** (Sea tab) and click a pier or dock |
+| Lantern post | pick **Lantern post** (Streets tab) and click a walkway |
+| Order planks | the button in the panel once you have a harbor; the trade ship brings them |
+| Overlays | Pollution, Fish, Sharks, Fire — the buttons above the ledger line |
+| Speed | the bar at the bottom: pause (space), 1×, 2×, 4× |
+| Save / load / new town | **Town…** at the bottom, or Esc |
+| Sound | the speaker button; it starts on your first click |
+
+## How the town works
+
+- **Walkways** connect everything to a pier. Standard walkways stand half a metre above their cell, so on low
+  flats they flood at high tide and cut whatever lies beyond them; raised walkways never flood and cross shallows.
+- **Boats** sail from piers at high water and from deep docks on every tide, to the richest ground in range, and
+  thin it. Oyster beds and clam camps work the exposed flats at low water. Every fourth tide is a spring tide.
+- **People** move in while there is food, work and room; they walk to work at shift change, level their homes when
+  life is good (food, work, water, leisure, lanterns, clean water), and swim at the beach on sunny high waters.
+- **The ledger settles at every high-tide peak**: the market sells beyond the food reserve, taxes and upkeep are
+  paid, wood becomes planks, the shipyard builds, the trade ship calls, fires start where smokehouses cluster.
+- **What the sea does back**: an outfall's waste drifts with the tide and kills oyster beds; fish waste draws
+  sharks to busy beaches; storms keep boats in and take the unsheltered ones; after cycle 20 the sea may pull back
+  and return as a wave that damages everything low and unshielded. Breakwaters shelter harbours; sea walls shield
+  the flats behind them; a lighthouse sees every boat home.
+
+## Layout
+
+`src/sim` is the ledger: every number, ticking on a fixed timestep, importing nothing from Babylon. `src/view`
+draws it and never writes to it. `src/ui` is the DOM. `shaders/` is the water and sky study, byte for byte, plus a
+handful of uniforms. `test/` holds the sim checks, the shared scripted-town scenarios, and the headless smoke.
+`NOTES.md` records every decision the brief didn't make; `HANDOFF.md` is where things stand.

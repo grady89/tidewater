@@ -1,75 +1,98 @@
 # Tidewater — handoff
 
-State of the project after sessions 1–2 (2026-09-26). Read CLAUDE.md first; NOTES.md holds every decision that
-CLAUDE.md didn't cover. This file is the "where are we" summary.
+Where things stand after the overnight build of 2026-09-26 (brief v2, ROADMAP M0–M14). Read CLAUDE.md first;
+NOTES.md has every decision the brief didn't make, milestone by milestone; PROGRESS.md has the per-milestone
+status, commit hashes and fps. This file is the summary.
 
 ## Run it
 
 ```bash
 npm install
-npm run dev
+npm run dev        # http://localhost:5180 (5173 belongs to another project on this machine)
+npm run build      # tsc --noEmit + vite build → dist/
+npm run test       # vitest: 42 sim-only checks (no Babylon in src/sim, enforced by a test)
+npm run smoke      # headless Chrome (the installed one, GPU on) plays every milestone, asserts, shoots shots/
 ```
 
-Opens on http://localhost:5180 (port 5173 is taken by another project on this machine; `strictPort` is on).
-`npm run build` typechecks then bundles to `dist/`.
+The smoke takes about four minutes and ends with `smoke OK`. Its console lines are the quickest health check of
+the whole game: starter-town economy, spring tides, boats and walkers, the wood chain, pollution, leveling, sharks,
+trade, fire, storm and tsunami, the 300-building town, audio.
 
-Controls: **1 / 2 / 3** or the palette buttons pick House / Walkway / Pier. **Click** a cell to place, **right-click**
-to remove, **drag** to orbit, **scroll** to zoom. In dev builds `window.__tidewater` exposes
-`{ engine, scene, tide, grid, placement }` for console poking; `placement.place({ i, j })` places at a cell directly.
+Console API in dev builds: `window.__tidewater` — `sim` (the ledger), `grid`, `fields`, `place(kind, i, j)`,
+`remove`, `select`, `setTide`, `advance(cycles)`, `advanceTo(fraction)`, `tickSeconds`, `setSpeed`, `grant`,
+`orderPlanks`, `ignite`, `forceStorm`, `forceTsunami`, `frameTown`, `frameAt`, `setOverlay`, `save`, `load`,
+`newTown`, `stressWalkers`, and read-only `view.*` probes (boats, walkers, swimmers, fins, ship, burning, audio).
 
-## What exists (all of CLAUDE.md v1 scope)
+## What exists
 
-| System | File | Notes |
+Everything in ROADMAP M0–M14 is DONE; nothing is BLOCKED. The backlog beyond M14 is untouched (see the end).
+
+| Area | Where | What |
 | --- | --- | --- |
-| Constants | `src/config.ts` | SIZE, TIDE_LO/HI, TIDE_PERIOD, TERRAIN_SEED, floor heights, WET_SAND_DRY_RATE |
-| Terrain | `src/world/terrain.ts` | seeded noise, 170-subdivision flat-shaded heightfield, 16-bit heightmap texture |
-| Water | `src/world/water.ts` | one plane, study shader verbatim, tide = plane Y |
-| Sky | `src/world/sky.ts` | dome with the study shader |
-| Lighting | `src/world/lighting.ts` | late-morning constants baked from the study's dusk=0.15 |
-| Trees | `src/world/trees.ts` | 70 trees on high ground, merged to one mesh |
-| Flat mesh helpers | `src/world/flatMesh.ts` | vertex-colour tint + merge → one draw call per prop |
-| Grid | `src/build/grid.ts` | 64×64 cells, deep/flat/high classes, occupancy, footprint + validation |
-| Pieces | `src/build/pieces.ts` | house / walkway / pier factories, lantern lit/dark materials |
-| Placement | `src/build/placement.ts` | floor-plane picking, ghost preview, click/right-click |
-| Tide | `src/sim/tide.ts` | 80 s cycle, wet-sand lag, peak detection, clock helpers |
-| Network | `src/sim/network.ts` | BFS from piers through walkways; cut + reached flags |
-| HUD | `src/ui/hud.ts` + `index.html` | palette, tide dial, score readout |
-| Shaders | `shaders/*.ts` | byte-identical to `reference/tidewater-study.html` |
+| Ledger | `src/sim/` | One plain `SimState` (JSON-serializable), fixed 1/20 s tick, seeded RNG. Grid index over buildings; 64×64 fields for pollution, fish density, shark risk, fire risk and six service coverages, all drifting with `fields.stepDrift`. |
+| Tide | `sim/tide.ts` | 120 s cycles, eased between extremes, every 4th a spring tide (0.85 / −0.55). High water > 0.25, low < 0. |
+| Buildings | `sim/balance.ts` | 31 kinds in one catalog: footprint, placement class, terrain window, cost, jobs, residents, upkeep, floor rule, network role, service coverage, prerequisites. |
+| Economy | `sim/economy.ts`, `workers.ts`, `trade.ts` | Settlement at each peak: nearest-first jobs over the walkway graph, food reserve, market sales, wood → planks, smokehouse, shipyard, warehouse caps, net loft, taxes/upkeep, immigration, tourism and the trade ship. |
+| Hazards | `pollution.ts`, `sharks.ts`, `fire.ts`, `events.ts` | Waste → outfalls → drifting pollution that kills oyster beds; fish waste → shark risk → incidents/injuries; fire risk → ignition/spread → damage → auto-repair; storms; the tsunami. |
+| View | `src/view/` | One merged mesh per building (rebuilt when level/lantern/damage changes); thin instances for trees, walkers, boats, fins, flames, smoke; the trade ship; one overlay mesh; effects. Reads the ledger, writes nothing. |
+| World | `src/world/`, `shaders/` | The study's terrain/water/sky, byte-identical fragment shaders; the water vertex shader gained `waveAmp` and a Gaussian crest for storms/tsunami. Day/night from the study's lerp. |
+| UI | `src/ui/` | Resource bar, build menu by category with greyed reasons, tide clock (spring, ship, events), ledger line, info panel, notifications, tutorial + empty-state hints, speed bar with mute and Town menu (3 save slots, new town). |
+| Tests | `test/` | `sim.test.ts` (42), `scenario.ts` (shared scripted towns, imported by both harnesses), `smoke.ts`. |
 
-Rules as implemented: houses and walkways go on flat cells (terrain between −0.35 and +0.60); piers go on a deep
-cell touching the flats and extend one cell seaward; a house is reached if a chain of walkways (or direct adjacency)
-connects it to an un-cut pier; anything with its floor below the water is cut; score = reached houses on the frame
-the tide peaks, shown until the next peak. Lanterns light on reached houses.
+## Measured
 
-## Verified
+- Headless Chrome on an RTX 4060 Laptop: 165 fps in every milestone's smoke, 164.8 fps with 300 buildings, 30
+  boats and 200 walkers; a saved 300-building town reloads in ~0.6 s. Integrated graphics are unmeasured.
+- Starter town (500$): pier, two boats, walkways to the free hut, two huts, market, outfall — ends the build
+  with ~4$ and nets about +50$ over the first four cycles. First shipyard boat at cycle 10–11 with a camp,
+  sawmill and second pier. A home with well, shrine and lanterns reaches level 3 by cycle 7–8.
 
-- Renders at 165 fps in Chrome on an RTX 4060 Laptop (session 1, before gameplay; gameplay adds ~1 draw call per piece).
-- Placement, footprint rules, removal, network BFS, lantern feedback: exercised programmatically and with real clicks.
-- Severing: isolating a house drops it to unreached and darkens the lantern.
-- Cut rule: forcing the water to 0.97 cuts every walkway (floor 0.95) but no house or pier (floor 1.0) and zeroes
-  reached houses. **At the shipped TIDE_HI = 0.60 nothing is ever cut** — see the open question below.
-- Picking: ghost lands within half a cell of the cursor at every sampled screen position and tool.
+## Known-broken and rough edges
 
-## Open design questions (yours to decide)
+- **Shark-net floats sit at a fixed height** (y = 0.15) and hang in the air at spring low / drawdown.
+- **Sky is black below the horizon** — `pow` of a negative in `skyFS`, inherited from the study; a one-character
+  clamp fixes it if you are willing to touch the shader.
+- **Lantern spheres** are one small mesh per building (not instanced); fine at 300 buildings, untested beyond.
+- **The per-chunk static merge** from M12 was not done: the fps target held without it. If integrated graphics
+  fall short, that and instanced lanterns are the first two moves.
+- **Sea wall is placed on any flat cell**, not the brief's "shore" class (see NOTES M11 for why).
+- **Outfalls need no walkway** (sewers assumed); docks in open water are "reached" by definition and only get crew
+  when a raised walkway or pier touches them.
+- **Tsunami damage is blunt**: every floor under 1.4 that isn't behind a wall, including walkways; a big town
+  loses most of its street in one wave and the repair fund then eats money and timber for cycles.
+- Immigration and jobs: with only huts, a town caps early; the tutorial nudges toward a market and houses but
+  nothing tells the player that *jobs* are what unhappy idle residents want.
+- No sound design beyond the three procedural voices; the bell rings at every shift change including at night.
 
-1. **The tide never threatens anything.** High tide +0.60 vs lowest floor 0.95. Options: raise TIDE_HI past 0.95
-   so walkways flood but houses don't; add an occasional spring/storm tide; or keep v1 as pure sandbox. The
-   0.05 gap between walkway and house floors is only meaningful with a tide above 0.95.
-2. Nothing can be built on high ground. Intentional reading of "build grid over the flats"; revisit if the town
-   wants to climb the hill.
-3. Sky is black below the horizon (`pow` of a negative in `skyFS`, inherited from the study). One-character fix
-   (`clamp(d.y, 0.0, 1.0)`) when you're ready to touch shaders.
+## Balance observations from the smoke runs
 
-## Not done / next
+- The stilt rule is the whole game: standard walkways on terrain < 0.1 are under water at every settlement and
+  their street is dead; 0.1–0.35 dies at spring peaks. Raised walkways (12$) on anything not "safe" is the only
+  robust way to build on the shoreline, and every scripted town does exactly that.
+- Diffusion, not emission, is the sensitive knob in every field. Pollution at 12 %/s spread to nothing; 3 %/s gives
+  an outfall cell ≈1 and neighbours ≈0.4. Fire at 2 %/s never crossed the ignition threshold; 0.5 %/s lets three
+  smokehouses reach ≈1.5. Shark risk wants the opposite: 8 %/s with slow decay so the plume reaches a beach.
+- Markets must keep a food reserve, or they sell every fish at the peak and immigration (needs food > 0) stops.
+- The no-outfall penalty must accumulate rather than land flat, or a fresh town never crosses the immigration bar.
+- The island's flats hold about 160 filled jobs and ~260 buildings; anything beyond that is breakwaters.
+- Storms after cycle 6 take boats from unsheltered piers often enough that every scripted scenario shelters its
+  harbours with one breakwater cell 2–3 out (a full ring walls the boats in — the sea BFS can't pass built cells).
 
-- Play a few cycles and answer the three v1 questions in NOTES.md (tension, town shapes, rhythm).
-- No camera panning. Orbit + zoom only; the whole island fits at the default radius.
-- Performance on integrated graphics is unmeasured. If it drops below 60, cut bloom first
-  (`pipe.bloomEnabled` in `src/main.ts`).
-- Dev-environment gotcha: writing a source file with a shell redirect can make Vite cache an empty transform
-  (watcher fires on truncate). Symptom: blank page, no errors, `fetch('/src/main.ts')` returns ~160 bytes.
-  Fix: touch the file.
+## The three things to do next
 
-## Commits (session 2)
+1. **Play it, with a controller in hand, for an hour.** Nothing above was tuned by feel; every number came from
+   making a check pass. The first playtest will want `IMMIGRANTS_PER_CYCLE`, prices and upkeep moved.
+2. **Instance the lanterns and merge per chunk**, then measure on integrated graphics; that is the stated target
+   and it has not been seen.
+3. **Give the tsunami and storms a fair warning and a fair repair**: a cycle of notice, walkways exempt from wave
+   damage or cheap to rebuild, and a repair queue the player can see.
 
-Build grid → Pieces → Network + tide peak → Placement → HUD → loop wiring / trees replace decoration → notes + handoff.
+## Backlog (ROADMAP, in order) — not started
+
+1. Planar reflections on the water (MirrorTexture) behind a quality toggle.
+2. Caustics in the shallows (new uniform + noise in the water shader's shallow band, additive only).
+3. Seagulls (thin instances circling docks), crabs on exposed flats at low water.
+4. Building variety: 3 roof shapes per house level, randomized per placement (seeded).
+5. Districts: name a cluster; district stats in the info panel.
+6. Second island unlock via harbor (ferry).
+7. Achievements/milestones popups (first boat, 50 residents, first trade).
