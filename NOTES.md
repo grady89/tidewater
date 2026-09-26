@@ -156,6 +156,26 @@ Decisions and findings that CLAUDE.md does not cover. Newest at the bottom of ea
 - `__tidewater.advanceTo(fraction)` ticks to the next time the clock passes a cycle fraction; views only see the
   final state, so a scenario that wants a shift-change wave steps through slack water first.
 
+### M5 production chain
+- **Trees are ledger state.** `sim/trees.ts` generates the 70 sites deterministically (same LCG as the study, so
+  the island looks the same); `state.trees[k]` is each site's age 0..1. Lumber camps fell the nearest grown trees
+  within radius 7 (`LUMBER_TREES_PER_CYCLE` × staffing per cycle), felled trees regrow 1/6 per cycle, and the view
+  scales two thin-instance meshes (trunks, canopies) by age. Trees are not obstacles.
+- **Markets keep a food reserve** (`FOOD_RESERVE_CYCLES` × the town's per-cycle need, counting next cycle's
+  immigrants) before selling. Without it the market sold every fish at the peak, immigration saw "no food" and the
+  town froze at 6 residents — found while chasing the M5 check.
+- Balance nudges for the 12-cycle check: `LUMBER_TREES_PER_CYCLE` 3→4, `SAWMILL_RATE` 10→12,
+  `IMMIGRANTS_PER_CYCLE` 3→4. With those the scripted town launches its first shipyard boat at cycle 10.
+- The shipyard only accrues progress when a harbour has a free slot *and* the boat's planks and money are on
+  hand; a full pier silently stalls it (the scenario adds a second pier). Boats go to the nearest harbour with room.
+- `floor: "ground"` kinds (lumber camp, sawmill) sit on the terrain (max(1.0, terrain + 0.05)) and get no stilts;
+  hill tools pick against the heightfield instead of a deck plane. Lumber camps must touch a flat cell with a
+  walkway (`needsWalkway`); tall houses need a sawmill somewhere (`requires`). Both reasons show in the build menu.
+- Build menu is by category (tabs; Tab cycles, digits pick within the visible tab). Greyed buttons say why:
+  "no money", "no planks", "needs sawmill".
+- Scripted streets now raise any walkway that isn't safe at spring tide; otherwise the whole town idles every
+  fourth cycle and no 12-cycle check can pass. That is the real design lesson: **the flats need raised walkways**.
+
 ## Findings on the v1 questions
 
 (placement and connectivity exist now; play a few cycles and write answers here)

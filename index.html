@@ -66,6 +66,7 @@
       .tabs button:hover { color: var(--ink); }
       .tabs button.active { color: var(--accent); border-color: rgba(255, 209, 138, 0.4); background: rgba(255, 209, 138, 0.08); }
       .palette { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+      .palette button[hidden] { display: none; }
       .palette button .reason { grid-column: 1; font-size: 10px; color: var(--bad); }
       .palette button .reason:empty { display: none; }
       .palette button {
