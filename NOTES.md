@@ -45,7 +45,7 @@ Decisions and findings that CLAUDE.md does not cover. Newest at the bottom of ea
 - The Claude desktop app's embedded browser pane does not fire `requestAnimationFrame` unless it is on screen, and
   even when driven synchronously it shows a content-independent floor of ~33 ms/frame at 1920x1080: disabling bloom,
   FXAA, and the whole water plane changed nothing. The study benchmarks identically in the same pane, so the port is at
-  parity but **60 fps is not yet confirmed in a normal browser**. Check in Chrome with
-  `__tidewater.engine.getFps()` on the console; if bloom costs frames on integrated graphics, cut it first.
+  parity. **Measured in Chrome: 165 fps** (RTX 4060 Laptop, full post-processing). Still untested on integrated
+  graphics; if that falls short of 60, cut bloom first.
 - Draw calls will drop a lot once the decoration layer is replaced: the study's props are ~290 unmerged meshes.
   Merging stilts/decks per house or instancing is the obvious first optimisation when real placement lands.
