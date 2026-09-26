@@ -1,15 +1,16 @@
 // Sim-only unit checks. Nothing here may pull in Babylon; the hygiene test enforces that for src/sim/**.
 import { describe, expect, it } from "vitest";
-import { SPRING_HI, SPRING_LO, STILT_LENGTH, TIDE_HI, TIDE_LO, TIDE_PERIOD } from "../src/config";
-import { BOAT_COST, BUILDINGS, STARTING_MONEY } from "../src/sim/balance";
+import { HIGH_WATER_MARK, LOW_WATER_MARK, SPRING_HI, SPRING_LO, STILT_LENGTH, TIDE_HI, TIDE_LO, TIDE_PERIOD } from "../src/config";
+import { BOAT_COST, BOAT_MIN_RANGE, BOAT_RANGE, BUILDINGS, STARTING_MONEY } from "../src/sim/balance";
 import { boatPurchaseBlocker, buyBoat, tryPlace } from "../src/sim/economy";
 import { Grid } from "../src/sim/grid";
 import { updateNetwork } from "../src/sim/network";
 import { stateHash } from "../src/sim/save";
+import { chooseGround, seaPath } from "../src/sim/sea";
 import { newGame } from "../src/sim/start";
 import { buildingList, Cell, createState, population, SimState } from "../src/sim/state";
 import { advanceCycles, tick } from "../src/sim/tick";
-import { floodFate, isRising, tickTide, tideNormalized } from "../src/sim/tide";
+import { floodFate, isRising, phaseProgress, tickTide, tideNormalized } from "../src/sim/tide";
 import { assignWorkers } from "../src/sim/workers";
 import { starterTown } from "./scenario";
 
@@ -156,6 +157,41 @@ describe("money loop (M2)", () => {
     expect(boatPurchaseBlocker(state, t.pier)).not.toBeNull();
     expect(buyBoat(state, t.pier)).toBe(false);
     expect(boatPurchaseBlocker(state, t.huts[0])).not.toBeNull();
+  });
+});
+
+describe("the sea (M4 sim side)", () => {
+  it("chooses a deep ground within boat range and finds a deep-water path to it", () => {
+    const { state, grid, town: t } = town();
+    const ground = chooseGround(grid, t.pier)!;
+    expect(ground).not.toBeNull();
+    expect(grid.classAt(ground)).toBe("deep");
+    const path = seaPath(grid, t.pier, ground);
+    expect(path.length).toBeGreaterThanOrEqual(BOAT_MIN_RANGE);
+    expect(path.length).toBeLessThanOrEqual(BOAT_RANGE + 1);
+    for (let k = 1; k < path.length; k++) {
+      expect(Math.abs(path[k].i - path[k - 1].i) + Math.abs(path[k].j - path[k - 1].j)).toBe(1);
+      expect(grid.classAt(path[k])).toBe("deep");
+    }
+    expect(path[path.length - 1]).toEqual(ground);
+    advanceCycles(state, grid, 2);
+    expect(t.pier.ground).not.toBeNull();
+  });
+
+  it("phase progress runs 0→1 across a shift and is ½ at the extremes", () => {
+    const t = createState().tide;
+    expect(phaseProgress(t, HIGH_WATER_MARK, LOW_WATER_MARK)).toBeCloseTo(0.5, 1);
+    const dt = 1 / 60;
+    let entered: number | null = null, last = 0;
+    for (let s = 0; s < TIDE_PERIOD; s += dt) {
+      tickTide(t, dt);
+      const p = phaseProgress(t, HIGH_WATER_MARK, LOW_WATER_MARK);
+      if (t.level < LOW_WATER_MARK) { if (entered === null) entered = p; last = p; }
+    }
+    expect(entered!).toBeLessThan(0.05);
+    expect(last).toBeGreaterThan(0.95);
+    for (let s = 0; s < TIDE_PERIOD / 2; s += dt) tickTide(t, dt);
+    expect(phaseProgress(t, HIGH_WATER_MARK, LOW_WATER_MARK)).toBeCloseTo(0.5, 1);
   });
 });
 

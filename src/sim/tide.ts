@@ -68,6 +68,34 @@ export function cyclesToSpring(t: TideState): number {
   return n;
 }
 
+/**
+ * Where the clock stands within the current shift, 0..1: 0 as the water crossed into high/low water, 1 as it
+ * crosses back out. Solved numerically on the eased tide shape so the view can animate trips against it.
+ */
+export function phaseProgress(t: TideState, highMark: number, lowMark: number): number {
+  const f = cycleFraction(t);
+  const lvl = (frac: number) => levelAt({ ...t, phase: Math.PI / 2 + frac * TAU, override: null });
+  const cross = (target: number, from: number, to: number, rising: boolean): number => {
+    // Bisection on the monotone half-cycle segment between `from` and `to`.
+    let lo = from, hi = to;
+    for (let k = 0; k < 24; k++) { const m = (lo + hi) / 2; if ((lvl(m) > target) === rising) hi = m; else lo = m; }
+    return (lo + hi) / 2;
+  };
+  const level = t.override ?? lvl(f);
+  if (level > highMark) {
+    const enter = cross(highMark, 0.5, 1, true) - 1;   // rising crossing, expressed relative to the peak at 0
+    const exit = cross(highMark, 0, 0.5, false);       // falling crossing
+    const pos = f >= 0.5 ? f - 1 : f;
+    return Math.min(1, Math.max(0, (pos - enter) / (exit - enter)));
+  }
+  if (level < lowMark) {
+    const enter = cross(lowMark, 0, 0.5, false);
+    const exit = cross(lowMark, 0.5, 1, true);
+    return Math.min(1, Math.max(0, (f - enter) / (exit - enter)));
+  }
+  return 0;
+}
+
 /** Fate of a deck at `floorY`: which tides put it under water. */
 export function floodFate(floorY: number): "safe" | "spring" | "always" {
   if (floorY <= TIDE_HI) return "always";

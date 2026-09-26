@@ -8,6 +8,7 @@ import {
   PURCHASABLE_BOATS, SPRING_LOW_BONUS, TAX_PER_RESIDENT,
 } from "./balance";
 import { Grid } from "./grid";
+import { chooseGround } from "./sea";
 import { Building, buildingList, Cell, notify, Phase, SimState } from "./state";
 import { assignWorkers, employed, staffing } from "./workers";
 
@@ -75,11 +76,14 @@ export function sailsIn(b: Building, phase: Phase): boolean {
   return false;
 }
 
-/** Shift start: boats leave, low-water crews walk out. */
-export function shiftStart(state: SimState, phase: Phase): void {
+/** Shift start: boats leave for their ground, low-water crews walk out. */
+export function shiftStart(state: SimState, grid: Grid, phase: Phase): void {
   for (const b of buildingList(state)) {
     if (!b.reached || b.cut) continue;
-    if (isHarbour(b) && b.boats > 0 && sailsIn(b, phase) && staffing(b) > 0) b.atSea = true;
+    if (isHarbour(b) && b.boats > 0 && sailsIn(b, phase) && staffing(b) > 0) {
+      b.ground = chooseGround(grid, b);
+      b.atSea = b.ground !== null;
+    }
   }
 }
 

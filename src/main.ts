@@ -1,15 +1,18 @@
 // Bootstrap: engine, scene, the ledger, the fixed-timestep loop, and the dev/test console API.
 import { ArcRotateCamera, Color4, DefaultRenderingPipeline, Engine, Scene, Vector3 } from "@babylonjs/core";
 import { Placement, Tool } from "./build/placement";
-import { SIM_TICK } from "./config";
+import { SIM_TICK, TIDE_PERIOD } from "./config";
 import { Grid } from "./sim/grid";
 import { AUTOSAVE_KEY, deserialize, serialize } from "./sim/save";
 import { newGame } from "./sim/start";
 import { SimState } from "./sim/state";
 import { advanceCycles, tick } from "./sim/tick";
+import { cycleFraction } from "./sim/tide";
 import { Hud, toolForKey } from "./ui/hud";
+import { Boats } from "./view/boats";
 import { BuildingViews } from "./view/buildingViews";
-import { createLights } from "./world/lighting";
+import { Walkers } from "./view/walkers";
+import { computeLighting, createLights, duskAt } from "./world/lighting";
 import { createSky } from "./world/sky";
 import { createTerrain } from "./world/terrain";
 import { createTrees } from "./world/trees";
@@ -29,10 +32,10 @@ camera.wheelPrecision = 18; camera.panningSensibility = 0;
 camera.minZ = 0.5; camera.maxZ = 900;
 camera.attachControl(canvas, true);
 
-createLights(scene);
+const lights = createLights(scene);
 const terrain = createTerrain(scene);
 const water = createWater(scene, terrain.heightTex);
-createSky(scene);
+const sky = createSky(scene);
 createTrees(scene);
 
 const pipe = new DefaultRenderingPipeline("pp", false, scene, [camera]);
@@ -57,7 +60,11 @@ let state: SimState;
 let grid: Grid;
 if (loaded) { state = loaded; grid = new Grid(state); }
 else ({ state, grid } = newGame(SEED));
+
+// ---------- the view ----------
 const views = new BuildingViews(scene);
+const boats = new Boats(scene, grid);
+const walkers = new Walkers(scene, grid);
 const placement = new Placement(scene, camera, grid, canvas);
 const hud = new Hud(document.getElementById("hud")!, document.getElementById("resources")!, document.getElementById("notes")!, tool => placement.setTool(tool));
 
@@ -66,6 +73,7 @@ function newTown(): void {
   state = newGame(SEED).state;
   grid.attach(state);
   views.clear();
+  walkers.clear();
 }
 
 window.addEventListener("keydown", e => {
@@ -73,10 +81,25 @@ window.addEventListener("keydown", e => {
   if (tool) placement.setTool(tool);
 });
 
-// ---------- loop ----------
 let speed = 1;
 let acc = 0;
 let viewTime = 0;
+
+/** Everything the view derives from the ledger for one frame. */
+function syncView(): void {
+  const light = computeLighting(duskAt(state.time));
+  lights.apply(light);
+  terrain.setLighting(light);
+  water.setLighting(light);
+  sky.setLighting(light);
+  views.sync(state, light.lamp);
+  boats.sync(state, viewTime);
+  walkers.sync(state, viewTime);
+  terrain.update(camera.position, state.tide.level, state.tide.wetLevel);
+  water.update(viewTime, camera.position, state.tide.level);
+  hud.update({ tool: placement.tool, blocker: placement.blocker, fate: placement.fate, state });
+}
+
 engine.runRenderLoop(() => {
   const frameDt = Math.min(engine.getDeltaTime() / 1000, 0.1) * speed;
   viewTime += frameDt;
@@ -86,10 +109,7 @@ engine.runRenderLoop(() => {
     acc -= SIM_TICK;
     if (state.tide.peaked) save();
   }
-  views.sync(state);
-  terrain.update(camera.position, state.tide.level, state.tide.wetLevel);
-  water.update(viewTime, camera.position, state.tide.level);
-  hud.update({ tool: placement.tool, blocker: placement.blocker, fate: placement.fate, state });
+  syncView();
   scene.render();
 });
 window.addEventListener("resize", () => engine.resize());
@@ -114,7 +134,22 @@ const api = {
   /** Advance the ledger by whole tide cycles in fixed ticks, independent of rendering. */
   advance(cycles: number) {
     advanceCycles(state, grid, cycles);
-    views.sync(state);
+    viewTime += cycles * TIDE_PERIOD;
+    syncView();
+  },
+  /** Advance to the next time the clock reaches `fraction` of the cycle (0 = high tide, 0.5 = low). */
+  advanceTo(fraction: number) {
+    const cap = Math.ceil(2 * TIDE_PERIOD / SIM_TICK);
+    let prev = cycleFraction(state.tide);
+    for (let k = 0; k < cap; k++) {
+      tick(state, grid);
+      viewTime += SIM_TICK;
+      const f = cycleFraction(state.tide);
+      const crossed = prev <= fraction ? f >= fraction && f - prev < 0.5 : f >= fraction && f < prev;
+      prev = f;
+      if (crossed) break;
+    }
+    syncView();
   },
   setSpeed(n: number) {
     speed = n;
@@ -133,6 +168,12 @@ const api = {
     for (const b of bs) for (const c of b.cells) { x += c.i + 0.5; z += c.j + 0.5; n++; }
     camera.target.set(x / n, 0.8, z / n);
     camera.radius = radius; camera.alpha = -0.8; camera.beta = 0.95;
+  },
+  /** Read-only view probes for the smoke scenario. */
+  view: {
+    boats: () => boats.poses,
+    walkers: () => walkers.count,
+    dusk: () => duskAt(state.time),
   },
   save,
   newTown,

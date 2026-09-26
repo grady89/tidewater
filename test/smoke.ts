@@ -106,6 +106,86 @@ try {
   await page.screenshot({ path: "shots/m3.png" });
   await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.setTide(null));
 
+  // M4: boats out at high water, moored (and heeled) at low water; walkers at shift change; ≥ 60 fps.
+  const m4setup = await page.evaluate(() => {
+    type Cell = { i: number; j: number };
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    const grid = api.grid;
+    api.grant(600, 20);
+    const s = api.sim;
+    const pier = (Object.values(s.buildings) as any[]).find(b => b.kind === "pier");
+    // A second pier along the same shore and a dock against the first pier; boats set in the ledger (the shipyard is M5).
+    let pier2: any = null, bd = Infinity;
+    for (let i = -32; i < 32 && !pier2; i++) for (let j = -32; j < 32; j++) {
+      const c = { i, j };
+      if (grid.classAt(c) !== "deep" || !grid.footprint("pier", c) || grid.buildingAt(c)) continue;
+      const d = Math.hypot(i - pier.cells[0].i, j - pier.cells[0].j);
+      if (d >= 3 && d < bd) { bd = d; pier2 = c; }
+    }
+    const p2 = pier2 ? api.place("pier", pier2.i, pier2.j) : null;
+    let dock: any = null;
+    for (const pc of pier.cells as Cell[]) for (const n of grid.neighbors(pc)) {
+      for (let di = 0; di < 2 && !dock; di++) for (let dj = 0; dj < 2 && !dock; dj++) dock = api.place("dock", n.i - di, n.j - dj);
+      if (dock) break;
+    }
+    if (p2) p2.boats = 2;
+    if (dock) dock.boats = 2;
+    // Grow the street with raised walkways (they never flood) and hang houses off them, then let immigration run,
+    // so there are hands for every boat after the pier and market fill.
+    api.grant(1500);
+    let laid = 0, huts = 0;
+    for (let round = 0; round < 8; round++) {
+      const links = (Object.values(s.buildings) as any[]).filter(b => b.kind === "walkway" || b.kind === "raisedWalkway");
+      let placed = false;
+      for (const w of links) {
+        for (const n of grid.neighbors(w.cells[0])) {
+          if (grid.classAt(n) === "flat" && !grid.buildingAt(n) && api.place("raisedWalkway", n.i, n.j)) { laid++; placed = true; break; }
+        }
+        if (placed) break;
+      }
+      if (!placed) break;
+    }
+    for (const w of (Object.values(s.buildings) as any[]).filter(b => b.kind === "raisedWalkway")) {
+      for (const n of grid.neighbors(w.cells[0])) { if (huts >= 6) break; if (api.place("house", n.i, n.j)) huts++; }
+    }
+    api.advance(6);
+    let pop = 0; for (const b of Object.values(s.buildings) as any[]) pop += b.residents;
+    return { pier2: !!p2, dock: !!dock, laid, houses: huts, pop, boats: (Object.values(s.buildings) as any[]).reduce((n, b) => n + b.boats, 0) };
+  });
+  console.log("M4 setup:", JSON.stringify(m4setup));
+  assert(m4setup.boats >= 4, "at least four boats in the ledger");
+
+  const high = await page.evaluate(() => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    api.advanceTo(0.65); // slack water on the rise, so the view sees the coming shift change
+    api.advanceTo(0.8);  // just inside high water: the shift has changed
+    const walkersAtShift = api.view.walkers();
+    api.advanceTo(0.0);  // the peak: boats are on their grounds
+    api.frameTown(30);
+    const boats = api.view.boats();
+    const harbours = (Object.values(api.sim.buildings) as any[]).filter(b => b.kind === "pier" || b.kind === "dock")
+      .map(b => ({ kind: b.kind, boats: b.boats, workers: b.workers, reached: b.reached, atSea: b.atSea, ground: b.ground }));
+    return { walkersAtShift, phase: api.sim.phase, away: boats.filter((b: any) => b.atSea).length, total: boats.length, dusk: api.view.dusk(), harbours, assignments: api.sim.assignments };
+  });
+  console.log("M4 high water:", JSON.stringify(high));
+  assert(high.phase === "high", "clock is at high water");
+  assert(high.away >= 3, "at least 3 boats away from the docks at high water");
+  assert(high.walkersAtShift > 0, "walkers spawned at shift change");
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: "shots/m4-high.png" });
+
+  const low = await page.evaluate(() => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    api.advanceTo(0.5);
+    const boats = api.view.boats();
+    return { phase: api.sim.phase, moored: boats.filter((b: any) => b.moored).length, away: boats.filter((b: any) => b.atSea).length };
+  });
+  console.log("M4 low water:", JSON.stringify(low));
+  assert(low.phase === "low", "clock is at low water");
+  assert(low.moored >= 3, "at least 3 boats at the docks at low water");
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: "shots/m4-low.png" });
+
   // M1: save, reload the page, every building is back and the clock kept its place.
   const before = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; api.save(); return { n: Object.keys(api.sim.buildings).length, cycle: api.sim.tide.cycle, money: api.sim.resources.money }; });
   await page.reload();
@@ -127,6 +207,7 @@ try {
     return frames / 5;
   });
   console.log(`headless fps: ${fps.toFixed(1)}`);
+  assert(fps >= 60, "60 fps in headless");
   assert(errors.length === 0, "no page errors: " + errors.join(" | "));
   console.log("smoke OK → shots/");
 } finally {

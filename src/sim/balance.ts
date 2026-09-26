@@ -61,6 +61,10 @@ export const STARTING_FISH = 10;
 export const BOAT_COST = 80;
 export const BOAT_CREW = 2;
 export const BOAT_BASE_FISH = 6;
+/** How far (cells, by water) a boat will go from its harbour to fish. */
+export const BOAT_RANGE = 14;
+/** Grounds this close to the harbour are skipped when something further is reachable. */
+export const BOAT_MIN_RANGE = 5;
 /** The first boats are bought; after this many the shipyard is the only source. */
 export const PURCHASABLE_BOATS = 2;
 

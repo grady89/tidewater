@@ -21,7 +21,7 @@ export function tick(state: SimState, grid: Grid, dt = SIM_TICK): void {
     const prev = state.phase;
     state.phase = phase;
     if (prev !== "slack") shiftEnd(state, grid, prev);
-    if (phase !== "slack") shiftStart(state, phase);
+    if (phase !== "slack") shiftStart(state, grid, phase);
   }
   if (state.tide.peaked) {
     if (isSpringCycle(state.tide.cycle)) notify(state, "Spring tide: the water runs higher and lower than usual");

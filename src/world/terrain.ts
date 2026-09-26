@@ -4,7 +4,7 @@ import { Mesh, MeshBuilder, RawTexture, Scene, ShaderMaterial, Texture, Vector3,
 import { SIZE } from "../config";
 import { terrainHeight } from "../sim/heightfield";
 import { terrainFS, terrainVS } from "../../shaders/terrain";
-import { FOG_COLOR, GROUND_AMBIENT, SKY_AMBIENT, SUN_DIR, SUN_LIT } from "./lighting";
+import { Lighting, MORNING } from "./lighting";
 
 export { terrainHeight };
 
@@ -32,6 +32,7 @@ export interface Terrain {
   mesh: Mesh;
   material: ShaderMaterial;
   heightTex: RawTexture;
+  setLighting(l: Lighting): void;
   update(camPos: Vector3, waterLevel: number, wetLevel: number): void;
 }
 
@@ -48,14 +49,18 @@ export function createTerrain(scene: Scene): Terrain {
     attributes: ["position", "normal"],
     uniforms: ["world", "worldViewProjection", "sunDir", "sunColor", "skyAmb", "groundAmb", "fogColor", "camPos", "waterLevel", "wetLevel"],
   });
-  material.setVector3("sunDir", SUN_DIR).setVector3("sunColor", SUN_LIT).setVector3("skyAmb", SKY_AMBIENT)
-    .setVector3("groundAmb", GROUND_AMBIENT).setVector3("fogColor", FOG_COLOR);
   mesh.material = material;
 
-  return {
+  const terrain: Terrain = {
     mesh, material, heightTex,
+    setLighting(l) {
+      material.setVector3("sunDir", l.sunDir).setVector3("sunColor", l.sunLit).setVector3("skyAmb", l.skyAmbient)
+        .setVector3("groundAmb", l.groundAmbient).setVector3("fogColor", l.fog);
+    },
     update(camPos, waterLevel, wetLevel) {
       material.setVector3("camPos", camPos).setFloat("waterLevel", waterLevel).setFloat("wetLevel", wetLevel);
     },
   };
+  terrain.setLighting(MORNING);
+  return terrain;
 }

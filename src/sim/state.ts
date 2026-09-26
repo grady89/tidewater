@@ -24,8 +24,10 @@ export interface Building {
   residents: number;
   /** Boats moored here (piers). */
   boats: number;
-  /** Boats currently out fishing (piers). */
+  /** Boats currently out fishing (piers, docks). */
   atSea: boolean;
+  /** Deep cell the boats fish this trip (piers, docks). */
+  ground: Cell | null;
   /** Resource produced or sold last cycle, for the info panel. */
   output: number;
   /** Fed and employed fraction last cycle, 0..1 (houses). */

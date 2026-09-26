@@ -132,6 +132,30 @@ Decisions and findings that CLAUDE.md does not cover. Newest at the bottom of ea
 - The smoke scenario imports `test/scenario.ts` into the page through the Vite dev server instead of duplicating
   the script; the unit tests import it directly.
 
+### M4 the town looks alive
+- **Boats are a pure function of ledger + view time.** The sim stores per harbour `boats`, `atSea` and the chosen
+  `ground` (deepest reachable deep cell 5–14 cells out by water; M6 swaps "deepest" for "richest"). The view
+  derives a position from `phaseProgress` (0..1 across the current high/low shift, solved numerically on the eased
+  tide) and the BFS sea path: out for the first 30 %, drifting on the ground, back for the last 30 %. Moored
+  boats float on the shader's wave function (`waveHeight` in `world/water.ts`, kept in step with the vertex
+  shader) or heel 24° on the mud when the water is more than a boat's draft below the mooring. Nothing in the
+  boat code writes to the sim, and `advance()` jumps land the boats exactly where they belong.
+- Hulls and sails are two thin-instance meshes (per-instance colour on hulls via the `color` thin-instance
+  buffer): two draw calls for every boat in the world.
+- **Walkers** are one thin-instance figure (body, head, hat) with per-instance colour. On every shift change the
+  view spawns one walker per assigned worker (home → work on entering a shift, back on leaving; capped at
+  `MAX_WALKERS` = 200, sampled beyond) and walks it over a BFS route on reached, un-cut links at 1.6 cells/s.
+  Three loiterers circle each staffed market. Routes and RNG live in the view (an LCG, not `Math.random`, so
+  screenshots are repeatable; it still touches no sim number).
+- **Day/night** is `duskAt(sim time)`: late morning (0.15) at the start of each `DAY_CYCLES`-long day, full dusk
+  half a day later, cosine in between. `computeLighting(dusk)` is the study's NOON/DUSK lerp; terrain, water and
+  sky get the values as the uniforms they already had. Lantern emissive follows the study's lamp curve.
+- The smoke can't buy more than two boats (that's the rule), so M4 sets `boats` on a second pier and a dock in
+  the ledger directly and notes it; the shipyard makes this legitimate in M5. A dock only gets crew after the
+  nearer pier and market fill, so the scenario grows the town to ~14 residents first.
+- `__tidewater.advanceTo(fraction)` ticks to the next time the clock passes a cycle fraction; views only see the
+  final state, so a scenario that wants a shift-change wave steps through slack water first.
+
 ## Findings on the v1 questions
 
 (placement and connectivity exist now; play a few cycles and write answers here)

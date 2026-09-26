@@ -1,32 +1,85 @@
-// Fixed late-morning light. Values are baked from the study's time-of-day system
-// at its default slider position (dusk = 0.15): NOON/DUSK palettes lerped by k = 0.15^0.8.
+// Time of day: the study's NOON → DUSK lerp, driven by sim time. Every light-dependent uniform is derived from one
+// `dusk` value in 0..1; the shaders themselves are untouched (they already take these uniforms).
 import { Color3, DirectionalLight, HemisphericLight, Scene, Vector3 } from "@babylonjs/core";
+import { DAY_CYCLES, TIDE_PERIOD } from "../config";
 
-/** Unit vector pointing toward the sun (elevation 56.45 deg, azimuth -35.5 deg). */
-export const SUN_DIR = new Vector3(-0.3209, 0.8334, 0.4499);
-export const SUN_COLOR = new Vector3(1.0, 0.8808, 0.7651);
-export const SUN_INTENSITY = 0.9233;
-/** Sun color as fed to the terrain and water shaders. */
-export const SUN_LIT = SUN_COLOR.scale(SUN_INTENSITY);
+const c3 = (h: string) => { const c = Color3.FromHexString(h); return new Vector3(c.r, c.g, c.b); };
+const NOON = { sun: c3("#fff5e2"), zen: c3("#6fb0de"), hor: c3("#dbeef8"), skyAmb: c3("#a9c8dc"), grAmb: c3("#7d6f58"), fog: c3("#cfe3ef"), water: c3("#bfe0f0") };
+const DUSK = { sun: c3("#ff9855"), zen: c3("#4a3f7e"), hor: c3("#f2a878"), skyAmb: c3("#6a5a8e"), grAmb: c3("#3b2e44"), fog: c3("#d99a7d"), water: c3("#c98f86") };
 
-export const SKY_ZENITH = new Vector3(0.4035, 0.5931, 0.7881);
-export const SKY_HORIZON = new Vector3(0.8786, 0.8732, 0.8625);
-export const SKY_AMBIENT = new Vector3(0.6086, 0.6897, 0.7957);
-export const GROUND_AMBIENT = new Vector3(0.4335, 0.3794, 0.3279);
-export const FOG_COLOR = new Vector3(0.8204, 0.8274, 0.8393);
-/** Sky tint reflected by the water's fresnel term. */
-export const WATER_SKY = new Vector3(0.7576, 0.8088, 0.8501);
-/** The study's `dusk` blend factor k; the shaders still take it as a uniform. */
-export const DUSK = 0.2192;
+/** The study's default slider position: late morning. Used as the daytime floor. */
+export const DUSK_MIN = 0.15;
 
-/** Scene lights for StandardMaterial props. The terrain/water/sky shaders use the constants above directly. */
-export function createLights(scene: Scene): void {
-  const sun = new DirectionalLight("sun", SUN_DIR.scale(-1), scene);
-  sun.diffuse = new Color3(SUN_COLOR.x, SUN_COLOR.y, SUN_COLOR.z);
-  sun.intensity = 1.1 * SUN_INTENSITY;
+export interface Lighting {
+  /** The study's blend factor k = dusk^0.8. */
+  k: number;
+  sunDir: Vector3;
+  sunColor: Vector3;
+  sunIntensity: number;
+  /** Sun colour as fed to the terrain and water shaders. */
+  sunLit: Vector3;
+  zenith: Vector3;
+  horizon: Vector3;
+  skyAmbient: Vector3;
+  groundAmbient: Vector3;
+  fog: Vector3;
+  /** Sky tint reflected by the water's fresnel term. */
+  waterSky: Vector3;
+  /** Lantern brightness, 0 by day. */
+  lamp: number;
+}
 
+const lerp3 = (a: Vector3, b: Vector3, k: number) => new Vector3(a.x + (b.x - a.x) * k, a.y + (b.y - a.y) * k, a.z + (b.z - a.z) * k);
+
+/** Dusk in 0..1 for a sim time: late morning at the start of a day, full dusk half a day later. */
+export function duskAt(time: number): number {
+  const d = (time / (DAY_CYCLES * TIDE_PERIOD)) % 1;
+  return DUSK_MIN + (1 - DUSK_MIN) * (0.5 - 0.5 * Math.cos(2 * Math.PI * (d - 0.25)));
+}
+
+export function computeLighting(dusk: number): Lighting {
+  const elev = (65 - 57 * dusk) * Math.PI / 180, az = (-40 + 30 * dusk) * Math.PI / 180;
+  const sunDir = new Vector3(Math.cos(elev) * Math.sin(az), Math.sin(elev), Math.cos(elev) * Math.cos(az)).normalize();
+  const k = Math.pow(dusk, 0.8);
+  const sunColor = lerp3(NOON.sun, DUSK.sun, k);
+  const sunIntensity = 1.0 - 0.35 * k;
+  return {
+    k, sunDir, sunColor, sunIntensity,
+    sunLit: sunColor.scale(sunIntensity),
+    zenith: lerp3(NOON.zen, DUSK.zen, k),
+    horizon: lerp3(NOON.hor, DUSK.hor, k),
+    skyAmbient: lerp3(NOON.skyAmb, DUSK.skyAmb, k),
+    groundAmbient: lerp3(NOON.grAmb, DUSK.grAmb, k),
+    fog: lerp3(NOON.fog, DUSK.fog, k),
+    waterSky: lerp3(NOON.water, DUSK.water, k),
+    lamp: Math.pow(Math.max(0, (dusk - 0.45) / 0.55), 1.5) * 2.2,
+  };
+}
+
+/** The fixed late-morning set, for anything that doesn't animate. */
+export const MORNING = computeLighting(DUSK_MIN);
+
+export interface SceneLights {
+  sun: DirectionalLight;
+  hemi: HemisphericLight;
+  apply(l: Lighting): void;
+}
+
+/** Scene lights for StandardMaterial props. The terrain/water/sky shaders take the Lighting values directly. */
+export function createLights(scene: Scene): SceneLights {
+  const sun = new DirectionalLight("sun", MORNING.sunDir.scale(-1), scene);
   const hemi = new HemisphericLight("hemi", new Vector3(0, 1, 0), scene);
-  hemi.diffuse = new Color3(SKY_AMBIENT.x, SKY_AMBIENT.y, SKY_AMBIENT.z);
-  hemi.groundColor = new Color3(GROUND_AMBIENT.x, GROUND_AMBIENT.y, GROUND_AMBIENT.z);
   hemi.intensity = 0.9;
+  const lights: SceneLights = {
+    sun, hemi,
+    apply(l) {
+      sun.direction = l.sunDir.scale(-1);
+      sun.diffuse = new Color3(l.sunColor.x, l.sunColor.y, l.sunColor.z);
+      sun.intensity = 1.1 * l.sunIntensity;
+      hemi.diffuse = new Color3(l.skyAmbient.x, l.skyAmbient.y, l.skyAmbient.z);
+      hemi.groundColor = new Color3(l.groundAmbient.x, l.groundAmbient.y, l.groundAmbient.z);
+    },
+  };
+  lights.apply(MORNING);
+  return lights;
 }

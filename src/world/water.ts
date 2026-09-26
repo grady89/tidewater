@@ -2,12 +2,18 @@
 import { Mesh, MeshBuilder, RawTexture, Scene, ShaderMaterial, Vector3 } from "@babylonjs/core";
 import { SIZE } from "../config";
 import { waterFS, waterVS } from "../../shaders/water";
-import { DUSK, FOG_COLOR, SUN_DIR, SUN_LIT, WATER_SKY } from "./lighting";
+import { Lighting, MORNING } from "./lighting";
 
 export interface Water {
   mesh: Mesh;
   material: ShaderMaterial;
+  setLighting(l: Lighting): void;
   update(time: number, camPos: Vector3, waterLevel: number): void;
+}
+
+/** The vertex shader's surface displacement, for anything that floats. Keep in step with shaders/water.ts. */
+export function waveHeight(x: number, z: number, time: number): number {
+  return 0.045 * Math.sin(x * 0.9 + time * 1.1) + 0.035 * Math.sin((x * 0.6 + z * 0.8) * 1.3 - time * 0.9) + 0.025 * Math.sin(z * 1.7 + time * 1.6);
 }
 
 export function createWater(scene: Scene, heightTex: RawTexture): Water {
@@ -19,17 +25,21 @@ export function createWater(scene: Scene, heightTex: RawTexture): Water {
     needAlphaBlending: true,
   });
   material.setTexture("heightTex", heightTex);
-  material.setVector3("sunDir", SUN_DIR).setVector3("sunColor", SUN_LIT).setVector3("skyColor", WATER_SKY)
-    .setVector3("fogColor", FOG_COLOR).setFloat("dusk", DUSK);
   material.backFaceCulling = false;
   mesh.material = material;
   mesh.alphaIndex = 10;
 
-  return {
+  const water: Water = {
     mesh, material,
+    setLighting(l) {
+      material.setVector3("sunDir", l.sunDir).setVector3("sunColor", l.sunLit).setVector3("skyColor", l.waterSky)
+        .setVector3("fogColor", l.fog).setFloat("dusk", l.k);
+    },
     update(time, camPos, waterLevel) {
       mesh.position.y = waterLevel;
       material.setFloat("time", time).setVector3("camPos", camPos);
     },
   };
+  water.setLighting(MORNING);
+  return water;
 }

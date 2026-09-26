@@ -22,6 +22,9 @@ export const SPRING_EVERY = 4;
 export const SPRING_HI = 0.85;
 export const SPRING_LO = -0.55;
 
+/** Tide cycles per day. Day/night is visual only (plus lanterns and night swimming risk). */
+export const DAY_CYCLES = 2;
+
 /** Standard walkway deck height above the cell's terrain. */
 export const STILT_LENGTH = 0.5;
 /** Raised walkway deck height, absolute. Above any spring tide. */

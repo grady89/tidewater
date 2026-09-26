@@ -1,20 +1,31 @@
 // Sky dome: gradient from horizon to zenith with a sun disc and halo.
 import { Mesh, MeshBuilder, Scene, ShaderMaterial } from "@babylonjs/core";
 import { skyFS, skyVS } from "../../shaders/sky";
-import { DUSK, SKY_HORIZON, SKY_ZENITH, SUN_COLOR, SUN_DIR } from "./lighting";
+import { Lighting, MORNING } from "./lighting";
 
-export function createSky(scene: Scene): Mesh {
+export interface Sky {
+  mesh: Mesh;
+  setLighting(l: Lighting): void;
+}
+
+export function createSky(scene: Scene): Sky {
   const dome = MeshBuilder.CreateSphere("sky", { diameter: 600, segments: 24, sideOrientation: Mesh.BACKSIDE }, scene);
   const material = new ShaderMaterial("sky", scene, { vertexSource: skyVS, fragmentSource: skyFS }, {
     attributes: ["position"],
     uniforms: ["worldViewProjection", "zenith", "horizon", "sunDir", "sunColor", "dusk"],
   });
-  material.setVector3("zenith", SKY_ZENITH).setVector3("horizon", SKY_HORIZON)
-    .setVector3("sunDir", SUN_DIR).setVector3("sunColor", SUN_COLOR).setFloat("dusk", DUSK);
   material.disableDepthWrite = true;
   material.backFaceCulling = false;
   dome.material = material;
   dome.infiniteDistance = true;
   dome.isPickable = false;
-  return dome;
+  const sky: Sky = {
+    mesh: dome,
+    setLighting(l) {
+      material.setVector3("zenith", l.zenith).setVector3("horizon", l.horizon)
+        .setVector3("sunDir", l.sunDir).setVector3("sunColor", l.sunColor).setFloat("dusk", l.k);
+    },
+  };
+  sky.setLighting(MORNING);
+  return sky;
 }
