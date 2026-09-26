@@ -1,21 +1,35 @@
 // The ledger. Everything the game knows is in one plain JSON-serializable object; the view only reads it.
 import { TIDE_HI } from "../config";
+import { BuildingKind, ResourceKind, STARTING_FISH, STARTING_MONEY } from "./balance";
 
-export type PieceKind = "house" | "walkway" | "pier";
+export type { BuildingKind } from "./balance";
 
 export interface Cell { i: number; j: number }
 
-export interface Piece {
+export type Phase = "high" | "slack" | "low";
+
+export interface Building {
   id: number;
-  kind: PieceKind;
-  /** One cell, or two for a pier (shore cell first, seaward cell second). */
+  kind: BuildingKind;
+  /** Footprint cells. Piers: shore cell first, seaward cell second. */
   cells: Cell[];
   /** Top of the deck in world Y. */
   floorY: number;
   /** Floor is below the water this tick. Breaks connectivity; nothing is destroyed. */
   cut: boolean;
-  /** Connected to a pier through walkways this tick. Piers are always reached unless cut. */
+  /** Linked to the network (a pier or market) through walkways this tick. */
   reached: boolean;
+  /** Jobs filled this cycle. */
+  workers: number;
+  residents: number;
+  /** Boats moored here (piers). */
+  boats: number;
+  /** Boats currently out fishing (piers). */
+  atSea: boolean;
+  /** Resource produced or sold last cycle, for the info panel. */
+  output: number;
+  /** Fed and employed fraction last cycle, 0..1 (houses). */
+  happiness: number;
 }
 
 export interface TideState {
@@ -33,14 +47,19 @@ export interface TideState {
   override: number | null;
 }
 
-export interface Score {
+export interface Assignment { home: number; work: number; n: number }
+
+export interface CycleStats {
   cycle: number;
-  reached: number;
-  houses: number;
+  fishCaught: number;
+  fishSold: number;
+  income: number;
+  expenses: number;
+  immigrants: number;
 }
 
 export interface SimState {
-  version: 1;
+  version: 2;
   seed: number;
   /** RNG stream state (see rng.ts). */
   rng: number;
@@ -48,25 +67,49 @@ export interface SimState {
   time: number;
   tick: number;
   tide: TideState;
-  pieces: Record<number, Piece>;
-  nextPieceId: number;
-  score: Score | null;
+  phase: Phase;
+  resources: Record<ResourceKind, number>;
+  buildings: Record<number, Building>;
+  nextId: number;
+  assignments: Assignment[];
+  /** Town happiness 0..1, averaged over occupied houses (1 when empty). */
+  happiness: number;
+  /** Last completed cycle's ledger, for the HUD. */
+  last: CycleStats;
+  /** Newest last; capped. */
+  log: string[];
 }
 
 export function createState(seed = 1): SimState {
   return {
-    version: 1,
+    version: 2,
     seed,
     rng: seed | 0,
     time: 0,
     tick: 0,
     tide: { phase: Math.PI * 0.5, level: TIDE_HI, wetLevel: 0, cycle: 0, peaked: false, override: null },
-    pieces: {},
-    nextPieceId: 1,
-    score: null,
+    phase: "high",
+    resources: { money: STARTING_MONEY, fish: STARTING_FISH, shellfish: 0, smoked: 0, timber: 0, planks: 0 },
+    buildings: {},
+    nextId: 1,
+    assignments: [],
+    happiness: 1,
+    last: { cycle: 0, fishCaught: 0, fishSold: 0, income: 0, expenses: 0, immigrants: 0 },
+    log: [],
   };
 }
 
-export function pieceList(state: SimState): Piece[] {
-  return Object.values(state.pieces);
+export function buildingList(state: SimState): Building[] {
+  return Object.values(state.buildings);
+}
+
+export function population(state: SimState): number {
+  let n = 0;
+  for (const b of Object.values(state.buildings)) n += b.residents;
+  return n;
+}
+
+export function notify(state: SimState, msg: string): void {
+  state.log.push(msg);
+  if (state.log.length > 40) state.log.shift();
 }

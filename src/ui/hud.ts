@@ -1,33 +1,58 @@
-// The whole UI: build palette, tide clock, score readout. Plain DOM over the canvas, read-only over the sim.
-import { PieceKind, Score, TideState } from "../sim/state";
+// The UI: resource bar, build palette, tide clock, last-cycle ledger, notifications. Plain DOM over the canvas,
+// read-only over the sim.
+import { Tool } from "../build/placement";
+import { BOAT_COST, BUILDING_KINDS, BuildingKind, BUILDINGS } from "../sim/balance";
+import { canAfford } from "../sim/economy";
+import { population, SimState } from "../sim/state";
 import { cycleFraction, isRising, secondsToHighTide, secondsToLowTide, tideNormalized } from "../sim/tide";
+import { jobsAt } from "../sim/workers";
 
 export interface HudState {
-  tool: PieceKind;
-  tide: TideState;
-  score: Score | null;
+  tool: Tool;
+  blocker: string | null;
+  state: SimState;
 }
 
-const TOOLS: { kind: PieceKind; label: string; key: string }[] = [
-  { kind: "house", label: "House", key: "1" },
-  { kind: "walkway", label: "Walkway", key: "2" },
-  { kind: "pier", label: "Pier", key: "3" },
+interface ToolDef { tool: Tool; label: string; key: string; cost: string }
+const TOOLS: ToolDef[] = [
+  ...BUILDING_KINDS.map((kind, i) => ({ tool: kind as Tool, label: BUILDINGS[kind].name, key: String(i + 1), cost: costOf(kind) })),
+  { tool: "boat", label: "Boat", key: String(BUILDING_KINDS.length + 1), cost: `${BOAT_COST}$` },
 ];
+
+function costOf(kind: BuildingKind): string {
+  const c = BUILDINGS[kind].cost;
+  const parts = [`${c.money}$`];
+  if (c.planks) parts.push(`${c.planks}p`);
+  if (c.timber) parts.push(`${c.timber}t`);
+  return parts.join("+");
+}
+
+export function toolForKey(key: string): Tool | null {
+  return TOOLS.find(t => t.key === key)?.tool ?? null;
+}
 
 // Tide dial geometry (SVG units). The fill rect is clipped to the inner disc.
 const DIAL_R = 24, DIAL_TOP = 32 - DIAL_R, DIAL_H = DIAL_R * 2;
 
 export class Hud {
-  private readonly buttons = new Map<PieceKind, HTMLButtonElement>();
+  private readonly buttons = new Map<Tool, HTMLButtonElement>();
+  private readonly res: Record<string, HTMLElement> = {};
   private readonly tideLevel: SVGRectElement;
   private readonly tideMarker: SVGCircleElement;
   private readonly tideValue: HTMLElement;
   private readonly tideSub: HTMLElement;
-  private readonly scoreLabel: HTMLElement;
-  private readonly scoreValue: HTMLElement;
-  private lastScoreCycle = -1;
+  private readonly hint: HTMLElement;
+  private readonly ledgerLabel: HTMLElement;
+  private readonly ledgerValue: HTMLElement;
+  private readonly notes: HTMLElement;
+  private lastCycle = -1;
+  private lastLogLen = -1;
 
-  constructor(root: HTMLElement, onTool: (kind: PieceKind) => void) {
+  constructor(root: HTMLElement, resources: HTMLElement, notes: HTMLElement, onTool: (tool: Tool) => void) {
+    resources.innerHTML = ["money", "fish", "population", "happiness"].map(k => `<div class="res" data-res="${k}"><label>${k}</label><span>0</span></div>`).join("");
+    for (const el of resources.querySelectorAll<HTMLElement>(".res")) this.res[el.dataset.res!] = el.querySelector("span")!;
+    this.notes = notes;
+
     root.innerHTML = `
       <h1>Tidewater</h1>
       <div class="tide">
@@ -56,43 +81,69 @@ export class Hud {
     for (const t of TOOLS) {
       const b = document.createElement("button");
       b.type = "button";
-      b.innerHTML = `<span>${t.label}</span><kbd>${t.key}</kbd>`;
-      b.addEventListener("click", () => onTool(t.kind));
+      b.innerHTML = `<span class="name">${t.label}</span><span class="cost">${t.cost}</span><kbd>${t.key}</kbd>`;
+      b.addEventListener("click", () => onTool(t.tool));
       palette.appendChild(b);
-      this.buttons.set(t.kind, b);
+      this.buttons.set(t.tool, b);
     }
     this.tideLevel = root.querySelector<SVGRectElement>(".tide-level")!;
     this.tideMarker = root.querySelector<SVGCircleElement>(".tide-marker")!;
     this.tideValue = root.querySelector<HTMLElement>(".tide-value")!;
     this.tideSub = root.querySelector<HTMLElement>(".tide-sub")!;
-    this.scoreLabel = root.querySelector<HTMLElement>(".score label")!;
-    this.scoreValue = root.querySelector<HTMLElement>(".score-value")!;
+    this.hint = root.querySelector<HTMLElement>(".hint")!;
+    this.ledgerLabel = root.querySelector<HTMLElement>(".score label")!;
+    this.ledgerValue = root.querySelector<HTMLElement>(".score-value")!;
   }
 
   update(s: HudState): void {
-    for (const [kind, b] of this.buttons) b.classList.toggle("active", kind === s.tool);
+    const { state } = s;
+    const r = state.resources;
+    for (const [tool, b] of this.buttons) {
+      b.classList.toggle("active", tool === s.tool);
+      const affordable = tool === "boat" ? r.money >= BOAT_COST : canAfford(state, BUILDINGS[tool].cost);
+      b.classList.toggle("unaffordable", !affordable);
+    }
 
-    const { tide } = s;
+    let jobs = 0;
+    for (const b of Object.values(state.buildings)) jobs += jobsAt(b);
+    this.res.money.textContent = `${Math.floor(r.money)}$`;
+    this.res.fish.textContent = `${Math.floor(r.fish)}`;
+    this.res.population.textContent = `${population(state)} / ${jobs} jobs`;
+    this.res.happiness.textContent = `${Math.round(state.happiness * 100)}%`;
+
+    const { tide } = state;
     const top = DIAL_TOP + (1 - tideNormalized(tide)) * DIAL_H;
     this.tideLevel.setAttribute("y", top.toFixed(2));
     this.tideLevel.setAttribute("height", (DIAL_TOP + DIAL_H - top).toFixed(2));
     this.tideMarker.setAttribute("transform", `rotate(${(cycleFraction(tide) * 360).toFixed(1)} 32 32)`);
     this.tideValue.textContent = `${tide.level >= 0 ? "+" : ""}${tide.level.toFixed(2)} m`;
+    const phase = state.phase === "high" ? "high water" : state.phase === "low" ? "low water" : "slack";
     this.tideSub.textContent = isRising(tide)
-      ? `rising · high tide in ${Math.ceil(secondsToHighTide(tide))} s`
-      : `falling · low tide in ${Math.ceil(secondsToLowTide(tide))} s`;
+      ? `${phase} · rising · high in ${Math.ceil(secondsToHighTide(tide))} s`
+      : `${phase} · falling · low in ${Math.ceil(secondsToLowTide(tide))} s`;
 
-    if (!s.score) {
-      this.scoreLabel.textContent = "Score";
-      this.scoreValue.textContent = "— · first high tide pending";
-      this.lastScoreCycle = -1;
-    } else if (s.score.cycle !== this.lastScoreCycle) {
-      this.lastScoreCycle = s.score.cycle;
-      this.scoreLabel.textContent = `High tide ${s.score.cycle}`;
-      this.scoreValue.textContent = `${s.score.reached} of ${s.score.houses} households reached`;
-      this.scoreValue.classList.remove("flash");
-      void this.scoreValue.offsetWidth;
-      this.scoreValue.classList.add("flash");
+    this.hint.textContent = s.blocker ?? "Click to place · right-click to remove · drag to orbit";
+    this.hint.classList.toggle("blocked", s.blocker !== null);
+
+    if (state.last.cycle !== this.lastCycle) {
+      this.lastCycle = state.last.cycle;
+      const l = state.last;
+      if (l.cycle === 0) {
+        this.ledgerLabel.textContent = "Ledger";
+        this.ledgerValue.textContent = "First high tide pending";
+      } else {
+        const net = l.income - l.expenses;
+        this.ledgerLabel.textContent = `Cycle ${l.cycle}`;
+        this.ledgerValue.textContent = `${net >= 0 ? "+" : ""}${net.toFixed(0)}$ · ${l.fishCaught.toFixed(0)} fish landed · ${l.fishSold.toFixed(0)} sold`;
+        this.ledgerValue.classList.remove("flash");
+        void this.ledgerValue.offsetWidth;
+        this.ledgerValue.classList.add("flash");
+      }
+    }
+
+    if (state.log.length !== this.lastLogLen) {
+      this.lastLogLen = state.log.length;
+      this.notes.innerHTML = state.log.slice(-4).map(m => `<div>${m}</div>`).join("");
     }
   }
 }

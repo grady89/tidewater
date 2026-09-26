@@ -13,6 +13,10 @@ export const TIDE_PERIOD = 120;
 /** Game seconds per simulation tick. The ledger advances in these fixed steps regardless of frame rate. */
 export const SIM_TICK = 1 / 20;
 
+/** Water above this is "high water" (boats sail, high-water producers run); below LOW is "low water". Between is slack. */
+export const HIGH_WATER_MARK = 0.25;
+export const LOW_WATER_MARK = 0.0;
+
 /** Seed for the terrain noise. 0 reproduces the island in reference/tidewater-study.html. */
 export const TERRAIN_SEED = 0;
 

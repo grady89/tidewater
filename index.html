@@ -16,23 +16,35 @@
         --accent: #ffd18a;
         --track: rgba(255, 255, 255, 0.18);
         --water: #3f8fa8;
+        --bad: #e08a7a;
         color-scheme: dark;
       }
       html, body { height: 100%; }
       body { margin: 0; background: var(--sky); overflow: hidden; font-family: "IBM Plex Sans", system-ui, sans-serif; color: var(--ink); }
       #c { width: 100%; height: 100%; display: block; outline: none; touch-action: none; cursor: crosshair; }
 
-      #hud {
-        position: fixed; left: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px));
-        width: min(300px, calc(100vw - 32px));
+      .glass {
         background: var(--panel); border: 1px solid var(--panel-line);
         backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
-        border-radius: 10px; padding: 14px 16px 16px; box-sizing: border-box;
-        display: grid; gap: 12px; user-select: none;
+        border-radius: 10px; box-sizing: border-box; user-select: none;
+      }
+      #hud {
+        position: fixed; left: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+        width: min(320px, calc(100vw - 32px));
+        padding: 14px 16px 16px; display: grid; gap: 12px;
       }
       #hud h1 { font: 400 26px/1 "Instrument Serif", Georgia, serif; margin: 0; letter-spacing: 0.01em; }
-      #hud label { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-dim); }
-      #hud .hint { margin: 0; font-size: 11px; color: var(--ink-dim); line-height: 1.45; }
+      label { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-dim); }
+      #hud .hint { margin: 0; font-size: 11px; color: var(--ink-dim); line-height: 1.45; min-height: 16px; }
+      #hud .hint.blocked { color: var(--bad); }
+
+      #resources { position: fixed; left: 16px; top: 16px; display: flex; gap: 18px; padding: 8px 14px; }
+      #resources .res { display: grid; gap: 1px; }
+      #resources .res span { font: 400 18px/1.1 "Instrument Serif", Georgia, serif; font-variant-numeric: tabular-nums; }
+
+      #notes { position: fixed; right: 16px; top: 16px; display: grid; gap: 4px; font-size: 12px; color: var(--ink-dim); text-align: right; pointer-events: none; }
+      #notes div { background: var(--panel); border: 1px solid var(--panel-line); border-radius: 6px; padding: 4px 10px; }
+      #notes div:last-child { color: var(--ink); }
 
       .tide { display: grid; grid-template-columns: 64px 1fr; gap: 12px; align-items: center; }
       .tide svg { display: block; }
@@ -46,13 +58,17 @@
       .palette { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
       .palette button {
         font: inherit; font-size: 12px; color: var(--ink); background: rgba(255, 255, 255, 0.06);
-        border: 1px solid var(--panel-line); border-radius: 6px; padding: 8px 6px;
-        display: flex; justify-content: space-between; align-items: center; cursor: pointer;
+        border: 1px solid var(--panel-line); border-radius: 6px; padding: 6px 7px;
+        display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto; column-gap: 6px; align-items: center; text-align: left; cursor: pointer;
       }
+      .palette button .name { grid-column: 1; }
+      .palette button .cost { grid-column: 1; font-size: 10px; color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+      .palette button kbd { grid-column: 2; grid-row: 1 / span 2; font: 10px/1 "IBM Plex Sans", system-ui, sans-serif; color: var(--ink-dim); border: 1px solid var(--track); border-radius: 3px; padding: 2px 4px; }
       .palette button:hover { background: rgba(255, 255, 255, 0.11); }
       .palette button.active { background: rgba(255, 209, 138, 0.16); border-color: var(--accent); color: var(--accent); }
-      .palette kbd { font: 10px/1 "IBM Plex Sans", system-ui, sans-serif; color: var(--ink-dim); border: 1px solid var(--track); border-radius: 3px; padding: 2px 4px; }
       .palette button.active kbd { color: var(--accent); border-color: rgba(255, 209, 138, 0.5); }
+      .palette button.unaffordable { opacity: 0.45; }
+      .palette button.unaffordable .cost { color: var(--bad); }
 
       .score { border-top: 1px solid var(--panel-line); padding-top: 10px; display: grid; gap: 4px; }
       .score-value { font-size: 13px; }
@@ -63,7 +79,9 @@
   </head>
   <body>
     <canvas id="c"></canvas>
-    <div id="hud"></div>
+    <div id="resources" class="glass"></div>
+    <div id="notes"></div>
+    <div id="hud" class="glass"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

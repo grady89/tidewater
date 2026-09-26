@@ -1,14 +1,20 @@
-// Pointer interaction: hover picks a cell, a ghost previews the footprint, click places, right-click removes.
-// Placement writes to the sim through the Grid; meshes appear when the view syncs.
+// Pointer interaction: hover picks a cell, a ghost previews the footprint, click places (and pays), right-click
+// removes. Placement writes to the sim through the Grid; meshes appear when the view syncs.
 import { ArcRotateCamera, Color3, Matrix, Mesh, MeshBuilder, Scene, StandardMaterial } from "@babylonjs/core";
-import { FLOOR_Y, Grid, HALF, worldToCell } from "../sim/grid";
-import { Cell, Piece, PieceKind } from "../sim/state";
+import { BuildingKind, BUILDINGS, PlacementClass } from "../sim/balance";
+import { boatPurchaseBlocker, buyBoat, canAfford, tryPlace } from "../sim/economy";
+import { Grid, HALF, worldToCell } from "../sim/grid";
+import { Building, Cell } from "../sim/state";
+
+export type Tool = BuildingKind | "boat";
 
 const CLICK_SLOP_PX = 5;
 
 export class Placement {
-  tool: PieceKind = "walkway";
+  tool: Tool = "walkway";
   hover: Cell | null = null;
+  /** Why the current hover can't be placed, for the HUD. Null when it can. */
+  blocker: string | null = null;
   private readonly ghost: Mesh;
   private readonly ghostOk: StandardMaterial;
   private readonly ghostBad: StandardMaterial;
@@ -45,9 +51,13 @@ export class Placement {
     return m;
   }
 
-  setTool(kind: PieceKind): void {
-    this.tool = kind;
+  setTool(tool: Tool): void {
+    this.tool = tool;
     this.refresh();
+  }
+
+  private floorY(): number {
+    return this.tool === "boat" ? BUILDINGS.pier.floor : BUILDINGS[this.tool].floor;
   }
 
   /**
@@ -57,44 +67,83 @@ export class Placement {
   private pickCell(): Cell | null {
     const ray = this.scene.createPickingRay(this.scene.pointerX, this.scene.pointerY, Matrix.Identity(), this.camera);
     const o = ray.origin, d = ray.direction;
-    const floorY = FLOOR_Y[this.tool];
     if (Math.abs(d.y) < 1e-6) return null;
-    const t = (floorY - o.y) / d.y;
+    const t = (this.floorY() - o.y) / d.y;
     if (t <= 0) return null;
     const x = o.x + d.x * t, z = o.z + d.z * t;
     if (Math.abs(x) >= HALF || Math.abs(z) >= HALF) return null;
     return worldToCell(x, z);
   }
 
+  /** Footprint and blocker for placing the current tool at `anchor`. */
+  private evaluate(anchor: Cell): { cells: Cell[]; blocker: string | null } {
+    const state = this.grid.state;
+    if (this.tool === "boat") {
+      const b = this.grid.buildingAt(anchor);
+      return { cells: b?.kind === "pier" ? b.cells : [anchor], blocker: boatPurchaseBlocker(state, b) };
+    }
+    const def = BUILDINGS[this.tool];
+    const cells = this.grid.footprint(this.tool, anchor);
+    if (!cells) return { cells: [anchor], blocker: def.cls === "edge" ? "Needs deep water against the shore" : "Off the map" };
+    if (!this.grid.classOk(def.cls, cells)) return { cells, blocker: classHint(def.cls) };
+    if (cells.some(c => this.grid.buildingAt(c))) return { cells, blocker: "Occupied" };
+    if (!canAfford(state, def.cost)) return { cells, blocker: `Costs ${costLabel(this.tool)}` };
+    return { cells, blocker: null };
+  }
+
   refresh(): void {
     this.hover = this.pickCell();
-    if (!this.hover) { this.ghost.setEnabled(false); return; }
-    const footprint = this.grid.footprint(this.tool, this.hover);
-    const cells = footprint ?? [this.hover];
-    const ok = footprint !== null && this.grid.canPlace(this.tool, cells);
+    if (!this.hover) { this.ghost.setEnabled(false); this.blocker = null; return; }
+    const { cells, blocker } = this.evaluate(this.hover);
+    this.blocker = blocker;
     const is = cells.map(c => c.i), js = cells.map(c => c.j);
     const minI = Math.min(...is), maxI = Math.max(...is), minJ = Math.min(...js), maxJ = Math.max(...js);
-    this.ghost.position.set((minI + maxI + 1) / 2, FLOOR_Y[this.tool], (minJ + maxJ + 1) / 2);
+    this.ghost.position.set((minI + maxI + 1) / 2, this.floorY(), (minJ + maxJ + 1) / 2);
     this.ghost.scaling.x = maxI - minI + 0.96;
     this.ghost.scaling.z = maxJ - minJ + 0.96;
-    this.ghost.material = ok ? this.ghostOk : this.ghostBad;
+    this.ghost.material = blocker ? this.ghostBad : this.ghostOk;
     this.ghost.setEnabled(true);
   }
 
-  place(anchor: Cell | null = this.hover): Piece | null {
+  /** Place (and pay for) the current tool at `anchor`. Returns the building, or null if blocked. */
+  place(anchor: Cell | null = this.hover): Building | null {
     if (!anchor) return null;
-    const cells = this.grid.footprint(this.tool, anchor);
-    if (!cells || !this.grid.canPlace(this.tool, cells)) return null;
-    const piece = this.grid.place(this.tool, cells);
+    const state = this.grid.state;
+    if (this.tool === "boat") {
+      const pier = this.grid.buildingAt(anchor);
+      const ok = pier ? buyBoat(state, pier) : false;
+      this.refresh();
+      return ok ? pier : null;
+    }
+    const b = tryPlace(state, this.grid, this.tool, anchor);
     this.refresh();
-    return piece;
+    return b;
   }
 
   remove(at: Cell | null = this.hover): void {
     if (!at) return;
-    const piece = this.grid.pieceAt(at);
-    if (!piece) return;
-    this.grid.remove(piece);
+    const b = this.grid.buildingAt(at);
+    if (!b) return;
+    this.grid.remove(b);
     this.refresh();
+  }
+}
+
+export function costLabel(kind: BuildingKind): string {
+  const c = BUILDINGS[kind].cost;
+  const parts = [`${c.money}$`];
+  if (c.planks) parts.push(`${c.planks} planks`);
+  if (c.timber) parts.push(`${c.timber} timber`);
+  return parts.join(" + ");
+}
+
+function classHint(cls: PlacementClass): string {
+  switch (cls) {
+    case "flat": return "Needs the tidal flats";
+    case "deep": return "Needs deep water";
+    case "high": return "Needs high ground";
+    case "flatOrHigh": return "Needs land";
+    case "shore": return "Needs the shore";
+    case "edge": return "Needs deep water against the shore";
   }
 }

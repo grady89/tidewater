@@ -1,13 +1,13 @@
 // Bootstrap: engine, scene, the ledger, the fixed-timestep loop, and the dev/test console API.
 import { ArcRotateCamera, Color4, DefaultRenderingPipeline, Engine, Scene, Vector3 } from "@babylonjs/core";
-import { Placement } from "./build/placement";
+import { Placement, Tool } from "./build/placement";
 import { SIM_TICK } from "./config";
 import { Grid } from "./sim/grid";
 import { AUTOSAVE_KEY, deserialize, serialize } from "./sim/save";
-import { createState, PieceKind, SimState } from "./sim/state";
+import { createState, SimState } from "./sim/state";
 import { advanceCycles, tick } from "./sim/tick";
-import { Hud } from "./ui/hud";
-import { PieceViews } from "./view/pieceViews";
+import { Hud, toolForKey } from "./ui/hud";
+import { BuildingViews } from "./view/buildingViews";
 import { createLights } from "./world/lighting";
 import { createSky } from "./world/sky";
 import { createTerrain } from "./world/terrain";
@@ -53,9 +53,9 @@ function save(): void {
 
 let state = loadAutosave() ?? createState(SEED);
 const grid = new Grid(state);
-const views = new PieceViews(scene);
+const views = new BuildingViews(scene);
 const placement = new Placement(scene, camera, grid, canvas);
-const hud = new Hud(document.getElementById("hud")!, kind => placement.setTool(kind));
+const hud = new Hud(document.getElementById("hud")!, document.getElementById("resources")!, document.getElementById("notes")!, tool => placement.setTool(tool));
 
 function newTown(): void {
   try { localStorage.removeItem(AUTOSAVE_KEY); } catch { /* ignore */ }
@@ -64,10 +64,9 @@ function newTown(): void {
   views.clear();
 }
 
-const TOOL_KEYS: Record<string, PieceKind> = { "1": "house", "2": "walkway", "3": "pier" };
 window.addEventListener("keydown", e => {
-  const kind = TOOL_KEYS[e.key];
-  if (kind) placement.setTool(kind);
+  const tool = toolForKey(e.key);
+  if (tool) placement.setTool(tool);
 });
 
 // ---------- loop ----------
@@ -86,7 +85,7 @@ engine.runRenderLoop(() => {
   views.sync(state);
   terrain.update(camera.position, state.tide.level, state.tide.wetLevel);
   water.update(viewTime, camera.position, state.tide.level);
-  hud.update({ tool: placement.tool, tide: state.tide, score: state.score });
+  hud.update({ tool: placement.tool, blocker: placement.blocker, state });
   scene.render();
 });
 window.addEventListener("resize", () => engine.resize());
@@ -97,7 +96,8 @@ const api = {
   grid,
   fields: {} as Record<string, Float32Array>,
   ready: false,
-  place(type: PieceKind, i: number, j: number) {
+  /** Place (and pay for) a building; "boat" buys a boat at the pier under (i, j). Null when blocked. */
+  place(type: Tool, i: number, j: number) {
     placement.setTool(type);
     return placement.place({ i, j });
   },
@@ -114,6 +114,10 @@ const api = {
   },
   setSpeed(n: number) {
     speed = n;
+  },
+  /** Cheat for scripted scenarios. */
+  grant(money: number) {
+    state.resources.money += money;
   },
   save,
   newTown,

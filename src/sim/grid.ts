@@ -1,8 +1,9 @@
-// Cell model over the terrain, occupancy index, and placement rules. Pieces live in SimState; the Grid is the
+// Cell model over the terrain, occupancy index, and placement rules. Buildings live in SimState; the Grid is the
 // spatial index over them (rebuilt from state on load) plus the fixed terrain classification.
-import { HOUSE_FLOOR, PIER_FLOOR, SIZE, TIDE_HI, TIDE_LO, WALKWAY_FLOOR } from "../config";
+import { SIZE, TIDE_HI, TIDE_LO } from "../config";
+import { BuildingKind, BUILDINGS, PlacementClass } from "./balance";
 import { terrainHeight } from "./heightfield";
-import { Cell, Piece, PieceKind, SimState } from "./state";
+import { Building, Cell, SimState } from "./state";
 
 /** deep: always underwater. flat: the tidal flats, buildable. high: dry land above the tide. */
 export type CellClass = "deep" | "flat" | "high";
@@ -10,9 +11,7 @@ export type CellClass = "deep" | "flat" | "high";
 /** Cells span i, j in [-HALF, HALF). Cell (i, j) covers x in [i, i+1), z in [j, j+1). */
 export const HALF = SIZE / 2;
 
-export const FLOOR_Y: Record<PieceKind, number> = { house: HOUSE_FLOOR, walkway: WALKWAY_FLOOR, pier: PIER_FLOOR };
-
-const DIRS: readonly Cell[] = [{ i: 1, j: 0 }, { i: -1, j: 0 }, { i: 0, j: 1 }, { i: 0, j: -1 }];
+export const DIRS: readonly Cell[] = [{ i: 1, j: 0 }, { i: -1, j: 0 }, { i: 0, j: 1 }, { i: 0, j: -1 }];
 
 export function inBounds(i: number, j: number): boolean {
   return i >= -HALF && i < HALF && j >= -HALF && j < HALF;
@@ -30,7 +29,7 @@ export function worldToCell(x: number, z: number): Cell {
 export class Grid {
   private readonly heights = new Float32Array(SIZE * SIZE);
   private readonly classes: CellClass[] = new Array(SIZE * SIZE);
-  private readonly occupancy: (Piece | null)[] = new Array(SIZE * SIZE).fill(null);
+  private readonly occupancy: (Building | null)[] = new Array(SIZE * SIZE).fill(null);
 
   constructor(public state: SimState) {
     for (let i = -HALF; i < HALF; i++) for (let j = -HALF; j < HALF; j++) {
@@ -42,7 +41,7 @@ export class Grid {
     this.rebuild();
   }
 
-  /** Point the index at a (loaded) state and rebuild occupancy from its pieces. */
+  /** Point the index at a (loaded) state and rebuild occupancy from its buildings. */
   attach(state: SimState): void {
     this.state = state;
     this.rebuild();
@@ -50,45 +49,75 @@ export class Grid {
 
   private rebuild(): void {
     this.occupancy.fill(null);
-    for (const p of Object.values(this.state.pieces)) for (const c of p.cells) this.occupancy[cellIndex(c.i, c.j)] = p;
+    for (const b of Object.values(this.state.buildings)) for (const c of b.cells) this.occupancy[cellIndex(c.i, c.j)] = b;
   }
 
   heightAt(c: Cell): number { return this.heights[cellIndex(c.i, c.j)]; }
   classAt(c: Cell): CellClass | null { return inBounds(c.i, c.j) ? this.classes[cellIndex(c.i, c.j)] : null; }
-  pieceAt(c: Cell): Piece | null { return inBounds(c.i, c.j) ? this.occupancy[cellIndex(c.i, c.j)] : null; }
+  buildingAt(c: Cell): Building | null { return inBounds(c.i, c.j) ? this.occupancy[cellIndex(c.i, c.j)] : null; }
   neighbors(c: Cell): Cell[] {
     return DIRS.map(d => ({ i: c.i + d.i, j: c.j + d.j })).filter(n => inBounds(n.i, n.j));
   }
+  private touches(c: Cell, cls: CellClass): boolean {
+    return this.neighbors(c).some(n => this.classAt(n) === cls);
+  }
 
-  /** The cells a piece of `kind` anchored at `c` would occupy, or null if that shape can't be formed there. */
-  footprint(kind: PieceKind, c: Cell): Cell[] | null {
-    if (!inBounds(c.i, c.j)) return null;
-    if (kind !== "pier") return [c];
-    // A pier sits in deep water against the shore and extends one cell seaward, away from the flat cell it touches.
-    if (this.classAt(c) !== "deep") return null;
-    for (const d of DIRS) {
-      const shore = { i: c.i + d.i, j: c.j + d.j };
-      const sea = { i: c.i - d.i, j: c.j - d.j };
-      if (this.classAt(shore) === "flat" && this.classAt(sea) === "deep") return [c, sea];
+  /** Does `cells` satisfy the placement class? Base class on every cell; adjacency on at least one. */
+  classOk(cls: PlacementClass, cells: Cell[]): boolean {
+    const base = (c: Cell) => this.classAt(c);
+    switch (cls) {
+      case "flat": return cells.every(c => base(c) === "flat");
+      case "deep": return cells.every(c => base(c) === "deep");
+      case "high": return cells.every(c => base(c) === "high");
+      case "flatOrHigh": return cells.every(c => base(c) === "flat" || base(c) === "high");
+      case "shore": return cells.every(c => base(c) === "flat") && cells.some(c => this.touches(c, "high"));
+      case "edge": return cells.every(c => base(c) === "deep") && cells.some(c => this.touches(c, "flat"));
     }
-    return null;
   }
 
-  canPlace(kind: PieceKind, cells: Cell[]): boolean {
-    const want: CellClass = kind === "pier" ? "deep" : "flat";
-    return cells.every(c => this.classAt(c) === want && !this.pieceAt(c));
+  /** The cells a building of `kind` anchored at `c` would occupy, or null if that shape can't be formed there. */
+  footprint(kind: BuildingKind, c: Cell): Cell[] | null {
+    if (!inBounds(c.i, c.j)) return null;
+    const def = BUILDINGS[kind];
+    if (def.cls === "edge") {
+      // Edge pieces sit in deep water against the shore and extend seaward, away from the flat cell they touch.
+      if (this.classAt(c) !== "deep") return null;
+      for (const d of DIRS) {
+        const shore = { i: c.i + d.i, j: c.j + d.j };
+        if (this.classAt(shore) !== "flat") continue;
+        const cells: Cell[] = [];
+        for (let k = 0; k < def.d; k++) cells.push({ i: c.i - d.i * k, j: c.j - d.j * k });
+        if (cells.every(x => this.classAt(x) === "deep")) return cells;
+      }
+      return null;
+    }
+    const cells: Cell[] = [];
+    for (let di = 0; di < def.w; di++) for (let dj = 0; dj < def.d; dj++) {
+      const x = { i: c.i + di, j: c.j + dj };
+      if (!inBounds(x.i, x.j)) return null;
+      cells.push(x);
+    }
+    return cells;
   }
 
-  place(kind: PieceKind, cells: Cell[]): Piece {
+  canPlace(kind: BuildingKind, cells: Cell[]): boolean {
+    return this.classOk(BUILDINGS[kind].cls, cells) && cells.every(c => !this.buildingAt(c));
+  }
+
+  place(kind: BuildingKind, cells: Cell[]): Building {
     const s = this.state;
-    const piece: Piece = { id: s.nextPieceId++, kind, cells, floorY: FLOOR_Y[kind], cut: false, reached: false };
-    for (const c of cells) this.occupancy[cellIndex(c.i, c.j)] = piece;
-    s.pieces[piece.id] = piece;
-    return piece;
+    const b: Building = {
+      id: s.nextId++, kind, cells, floorY: BUILDINGS[kind].floor, cut: false, reached: false,
+      workers: 0, residents: 0, boats: 0, atSea: false, output: 0, happiness: 1,
+    };
+    for (const c of cells) this.occupancy[cellIndex(c.i, c.j)] = b;
+    s.buildings[b.id] = b;
+    return b;
   }
 
-  remove(piece: Piece): void {
-    for (const c of piece.cells) this.occupancy[cellIndex(c.i, c.j)] = null;
-    delete this.state.pieces[piece.id];
+  remove(b: Building): void {
+    for (const c of b.cells) this.occupancy[cellIndex(c.i, c.j)] = null;
+    delete this.state.buildings[b.id];
+    this.state.assignments = this.state.assignments.filter(a => a.home !== b.id && a.work !== b.id);
   }
 }
