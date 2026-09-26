@@ -21,10 +21,11 @@ Live status. Update after every milestone (and mid-milestone if you compact). On
 | M14 Ship it | DONE | 7d32ada · README (run, controls, how the town works, layout, screenshot), HANDOFF rewritten (what exists, known-broken, balance notes, next three, backlog), `npm run build` → dist/ · headless 164.8 fps |
 | Backlog 1 Reflections | DONE | eddf8ae (+ chunk merge) · MirrorTexture through the water plane mixed into the fresnel sky term by `reflectMix`; speed-bar toggle, remembered, off by default; forced the M12 chunk merge (300 buildings → 15 meshes, lanterns thin-instanced) · headless 165 fps with it on in the big town |
 | Backlog 2 Caustics | DONE | (see run log) · additive noise web in the 0.03–1.6 depth band scaled by a `caustics` uniform that follows daylight; smoke A/Bs viewport brightness over a beach · headless 165 fps |
-| Backlog 3 Gulls & crabs | IN PROGRESS | sub-task: view/wildlife.ts thin instances |
+| Backlog 3 Gulls & crabs | DONE | 5638fe2 · view/wildlife.ts: gulls circle harbours with boats (2 + 1/boat, ≤ 48), crabs on seeded flat cells near town while exposed; smoke M4: gulls > 0 and crabs = 0 at high water, crabs > 0 at low · headless 165 fps |
+| Backlog 4 Roof variety | IN PROGRESS | sub-task: three roof shapes in view/buildings.ts home() |
 
 ## Current focus
-Backlog 3 Gulls & crabs — sub-task: view/wildlife.ts. Last thing that worked: caustics green (build/test/smoke, 42 tests, 165 fps).
+Backlog 4 Roof variety — sub-task: view/buildings.ts. Last thing that worked: gulls & crabs green (build/test/smoke, 42 tests, 165 fps).
 
 ## Blocked
 (milestone, why, what was tried, what would unblock)
@@ -47,3 +48,5 @@ Backlog 3 Gulls & crabs — sub-task: view/wildlife.ts. Last thing that worked: 
 - 2026-09-26 09:15 · M13 · 121ed07 · headless 165 fps
 - 2026-09-26 09:30 · M14 · 7d32ada · headless 164.8 fps
 - 2026-09-26 10:20 · Backlog 1 · eddf8ae + chunk merge · headless 165 fps, big town with reflections 165 fps
+- 2026-09-26 10:45 · Backlog 2 · 988a2c6 · headless 165 fps
+- 2026-09-26 11:05 · Backlog 3 · 5638fe2 · headless 165 fps

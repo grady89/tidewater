@@ -3,7 +3,7 @@ import { ArcRotateCamera, Color4, DefaultRenderingPipeline, Engine, Scene, Vecto
 import { CameraControl } from "./build/cameraControl";
 import { Placement, Tool } from "./build/placement";
 import { SIM_TICK, TIDE_PERIOD } from "./config";
-import { STORM_WAVE_AMP, WAVE_HEIGHT, WAVE_WIDTH } from "./sim/balance";
+import { BUILDINGS, STORM_WAVE_AMP, WAVE_HEIGHT, WAVE_WIDTH } from "./sim/balance";
 import { startStorm, startTsunami } from "./sim/events";
 import { ignite } from "./sim/fire";
 import { Grid } from "./sim/grid";
@@ -20,6 +20,7 @@ import { Speed, SpeedControls } from "./ui/speed";
 import { Tutorial } from "./ui/tutorial";
 import { Audio } from "./view/audio";
 import { Boats } from "./view/boats";
+import { roofShape } from "./view/buildings";
 import { BuildingViews } from "./view/buildingViews";
 import { Effects } from "./view/effects";
 import { OverlayKind, Overlays } from "./view/overlays";
@@ -280,6 +281,12 @@ const api = {
     caustics: () => water.caustics,
     gulls: () => wildlife.gullCount,
     crabs: () => wildlife.crabCount,
+    /** How many homes wear each roof shape. */
+    roofs: () => {
+      const out: Record<string, number> = { pyramid: 0, gable: 0, hipped: 0 };
+      for (const b of Object.values(state.buildings)) if (BUILDINGS[b.kind].residents > 0) out[roofShape(b)]++;
+      return out;
+    },
   },
   /** The reflections quality toggle (remembered). */
   setReflections,

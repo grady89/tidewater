@@ -485,9 +485,11 @@ try {
     // The island's flats hold ~160 jobs; the rest of the 200-walker load is view-only stress on the same routes.
     const extra = shiftWalkers < 200 ? api.stressWalkers(200 - shiftWalkers) : 0;
     api.frameTown(40);
-    return { ...built, shiftWalkers, extra, walkers: api.view.walkers(), away: api.view.boats().filter((b: any) => b.atSea).length, assignments: s.assignments.reduce((n: number, a: any) => n + a.n, 0) };
+    return { ...built, shiftWalkers, extra, walkers: api.view.walkers(), away: api.view.boats().filter((b: any) => b.atSea).length, assignments: s.assignments.reduce((n: number, a: any) => n + a.n, 0), roofs: api.view.roofs() };
   });
   console.log("M12 big town:", JSON.stringify(m12));
+  // Backlog 4: the homes of a big town wear all three roof shapes.
+  assert(m12.roofs.pyramid > 0 && m12.roofs.gable > 0 && m12.roofs.hipped > 0, "three roof shapes among the homes");
   assert(m12.buildings >= 300, "300 buildings placed");
   assert(m12.boats >= 30, "30 boats in the ledger");
   assert(m12.walkers >= 200, "200 walkers on the streets");

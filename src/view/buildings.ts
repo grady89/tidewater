@@ -1,6 +1,6 @@
 // Mesh factories for every building kind. Each building merges to one mesh; homes add a lantern that is lit while
 // the home is reached. View only: nothing here changes a number in the sim.
-import { Color3, Mesh, MeshBuilder, Scene, StandardMaterial, Vector3, VertexBuffer } from "@babylonjs/core";
+import { Axis, Color3, Mesh, MeshBuilder, Scene, Space, StandardMaterial, Vector3, VertexBuffer } from "@babylonjs/core";
 import { STILT_SINK } from "../config";
 import { BUILDINGS } from "../sim/balance";
 import { cellCenter } from "../sim/grid";
@@ -109,6 +109,41 @@ function roofFor(b: Building): string {
   return PALETTE.roofs[b.id % PALETTE.roofs.length];
 }
 
+export type RoofShape = "pyramid" | "gable" | "hipped";
+const ROOF_SHAPES: RoofShape[] = ["pyramid", "gable", "hipped"];
+
+/** Which of the three roofs a home wears: seeded by its id (one draw per placement) and its level. */
+export function roofShape(b: Building): RoofShape {
+  return ROOF_SHAPES[(Math.imul(b.id * 31 + b.level * 17 + 5, 2654435761) >>> 0) % 3];
+}
+
+/** The roof of a home, sitting on walls `bodyW` square and `bodyH` tall. Every shape rises about 0.6 × bodyH. */
+function homeRoof(scene: Scene, parts: Mesh[], b: Building, cx: number, cz: number, bodyW: number, bodyH: number, F: number): void {
+  const hex = roofFor(b);
+  const top = F + bodyH;
+  switch (roofShape(b)) {
+    case "pyramid":
+      parts.push(pyramid(scene, bodyW * 1.62, bodyH * 0.6, cx, top + bodyH * 0.3, cz, hex));
+      return;
+    case "gable": {
+      // A triangular prism: a 3-sided cylinder laid on its side, apex up, along x or z by the same seed.
+      const r = bodyW * 0.66, len = bodyW * 1.18;
+      const m = MeshBuilder.CreateCylinder("gable", { diameter: r * 2, height: len, tessellation: 3 }, scene);
+      m.rotate(Axis.Z, Math.PI / 2, Space.WORLD);
+      if (b.id % 2 === 1) m.rotate(Axis.Y, Math.PI / 2, Space.WORLD);
+      m.position.set(cx, top + r / 2 - 0.01, cz);
+      parts.push(tint(m, hex));
+      return;
+    }
+    case "hipped":
+      // A low hip with a ridge cap: a four-sided frustum and a slim box along its top.
+      parts.push(tint(Object.assign(MeshBuilder.CreateCylinder("hip", { diameterTop: bodyW * 0.55, diameterBottom: bodyW * 1.62, height: bodyH * 0.42, tessellation: 4 }, scene),
+        { rotation: new Vector3(0, Math.PI / 4, 0), position: new Vector3(cx, top + bodyH * 0.21, cz) }), hex));
+      parts.push(box(scene, bodyW * 0.5, 0.06, 0.1, cx, top + bodyH * 0.42 + 0.03, cz, PALETTE.wood));
+      return;
+  }
+}
+
 function home(scene: Scene, b: Building, bodyW: number, baseH: number): BuildingMeshes {
   const { cx, cz, w, d } = bounds(b.cells);
   const F = b.floorY;
@@ -118,7 +153,7 @@ function home(scene: Scene, b: Building, bodyW: number, baseH: number): Building
   parts.push(box(scene, bodyW, bodyH, bodyW, cx, F + bodyH / 2, cz, PALETTE.walls[b.id % PALETTE.walls.length]));
   if (b.level >= 2) parts.push(box(scene, bodyW * 0.35, 0.22, 0.06, cx, F + bodyH * 0.6, cz - bodyW / 2 - 0.02, PALETTE.wood)); // a window box
   if (b.level >= 3) parts.push(box(scene, 0.14, 0.4, 0.14, cx + bodyW * 0.3, F + bodyH + bodyH * 0.3, cz + bodyW * 0.2, "#8d8a83")); // a chimney
-  parts.push(pyramid(scene, bodyW * 1.62, bodyH * 0.6, cx, F + bodyH + bodyH * 0.3, cz, roofFor(b)));
+  homeRoof(scene, parts, b, cx, cz, bodyW, bodyH, F);
   const post = MeshBuilder.CreateCylinder("post", { diameter: 0.05, height: 0.7, tessellation: 5 }, scene);
   post.position.set(cx + w / 2 - 0.08, F + 0.35, cz - d / 2 + 0.08);
   parts.push(tint(post, PALETTE.wood));

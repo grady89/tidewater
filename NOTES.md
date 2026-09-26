@@ -366,6 +366,14 @@ Decisions and findings that CLAUDE.md does not cover. Newest at the bottom of ea
   the water, popping up over the first 8 cm of exposure and scuttling sideways in place; at +0.6 every flat cell is
   under water, so high tide has none and the smoke asserts exactly that, and > 0 at low water.
 
+### Backlog 4 roof variety
+- Homes (hut, house, tall house) draw one of three roofs — the pyramid the game had, a gable (a 3-sided cylinder
+  on its side, apex up, ridge along x or z), and a low hip with a ridge cap — chosen by a hash of the building id
+  and its level. The id is the per-placement seed the brief asked for (it comes off the ledger's counter, so a
+  saved town keeps its roofs); the level is in the hash so a level-up may change the shape along with the colour.
+  The ledger stores nothing new. `__tidewater.view.roofs()` counts shapes over homes; the big-town smoke asserts
+  all three appear.
+
 ### Chunk merge (the M12 perf pass, done for the mirror)
 - `view/buildingViews.ts` now merges every building in an 8×8-cell chunk into one mesh (`chunk:i,j`), rebuilt
   when any building in the chunk appears, leaves or changes its mesh signature. 300 buildings → 15 chunk meshes;
