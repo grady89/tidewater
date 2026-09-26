@@ -15,13 +15,13 @@ Live status. Update after every milestone (and mid-milestone if you compact). On
 | M8 Beaches & sharks | DONE | 52adce6 · derived beaches, daytime swimmers at high water, shark-risk field (markets/docks, nets absorb), seeded incidents → injuries/shock, clinic + lifeguard + nets, fins + swimmers in the view, Sharks overlay; unguarded beach by a busy pier: incident by cycle 7 / with nets+lifeguard 0; 31 sim tests, shots/m8.png · headless 165 fps |
 | M9 Trade & tourism | DONE | cdd020a (+ addCapped fix) · harbor (depth < −1.5), trade ship every 3 cycles (2 w/ lighthouse) buying smoked/surplus fish, plank orders, inn + tourists spending, ship view in/out along a ≥12-cell sea path; 34 sim tests, shots/m9-in.png + m9-out.png · headless 165 fps |
 | M10 Fire | DONE | 2a81e62 · fire-risk field (smokehouse/tavern/lanterns), per-cycle ignition above a threshold, tick-wise spread, burn-out damage, auto-repair (money + timber), fire watch (damps + saves), damaged tint/lean, flames + smoke, Fire overlay; cluster burns / watched cluster never ignites; 37 sim tests, shots/m10-*.png · headless 165 fps |
-| M11 Storms & tsunami | IN PROGRESS | sub-task: sim (events.ts, shielding, breakwater/sea wall) + water shader uniforms |
-| M12 Camera, polish, saves | TODO | |
+| M11 Storms & tsunami | DONE | 5e2aceb · storms (12 %/cycle after 6, boats stay in, 50 % loss unsheltered, rain, dusk light + ×3 swell), tsunami (20 s drawdown to −1.2, crest sweep uniform, unshielded floors < 1.4 damaged, boats lost), breakwater + sea wall shielding along the wave axis, forceStorm/forceTsunami; 40 sim tests, shots/m11-*.png · headless 165 fps |
+| M12 Camera, polish, saves | IN PROGRESS | sub-task: camera pan + speed + save slots + tutorial; then perf pass (chunked meshes, instanced lanterns) + 300-building smoke |
 | M13 Audio | TODO | |
 | M14 Ship it | TODO | |
 
 ## Current focus
-M11 Storms & tsunami — sub-task: sim + shader uniforms. Last thing that worked: M10 green (build/test/smoke, 37 tests).
+M12 Camera, polish, saves — sub-task: UI (pan, speed, save slots, tutorial). Last thing that worked: M11 green (build/test/smoke, 40 tests).
 
 ## Blocked
 (milestone, why, what was tried, what would unblock)
@@ -39,3 +39,4 @@ M11 Storms & tsunami — sub-task: sim + shader uniforms. Last thing that worked
 - 2026-09-26 06:05 · M8 · 52adce6 · headless 165 fps
 - 2026-09-26 06:45 · M9 · cdd020a · headless 165 fps
 - 2026-09-26 07:25 · M10 · 2a81e62 · headless 165 fps
+- 2026-09-26 08:10 · M11 · 5e2aceb · headless 165 fps
