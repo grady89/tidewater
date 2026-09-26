@@ -63,6 +63,31 @@ Decisions and findings that CLAUDE.md does not cover. Newest at the bottom of ea
 - **Picking** marches the camera ray against the analytic heightfield (`terrainHeight`) instead of picking the
   57k-triangle terrain mesh; 8 bisection steps after the first hit.
 
+## Overnight build (brief v2 / ROADMAP)
+
+### M0 harness
+- `npm run test` = vitest over `test/sim.test.ts`; a hygiene test greps `src/sim/**` for `@babylonjs` and for imports
+  from view/world/build/ui, so the ledger can't grow a Babylon dependency silently.
+- `npm run smoke` = `node test/smoke.ts` (Node 24 strips types natively, so no tsx). It starts Vite in-process on
+  port 5181, drives headless Chrome (`channel: "chrome"`, the installed browser; no Playwright download) and writes
+  `shots/m*.png`. `--ignore-gpu-blocklist` makes headless use the real GPU; without it Chrome falls back to
+  SwiftShader (15 fps, meaningless). fps in the run log are measured this way.
+- Type-only imports in `test/smoke.ts` must be `import type` — Node's type stripping doesn't elide them otherwise.
+
+### M1 ledger
+- `SimState` is one plain object (`src/sim/state.ts`): tide, pieces keyed by id, nextPieceId, score, rng, time,
+  tick. `Grid` is an index over it (terrain classes + occupancy) rebuilt from `state.pieces`; `grid.attach(state)`
+  repoints it after a load. Save = `JSON.stringify(state)`.
+- `TIDE_PERIOD` is now 120 game seconds (brief v2); `SIM_TICK` = 1/20 s. The render loop accumulates frame time
+  and runs whole ticks; `advance(cycles)` runs ticks until that many more high tides have passed (counting ticks
+  instead left the phase a float below the peak and skipped the score snapshot).
+- Autosave writes on every high-tide tick and on `__tidewater.save()`. Load on start if `tidewater.autosave`
+  exists in localStorage; `__tidewater.newTown()` clears it. The smoke scenario calls `newTown()` first so a stale
+  autosave can't leak between runs.
+- View (`src/view/pieceViews.ts`) syncs meshes to `state.pieces` every frame: create for new ids, dispose for gone
+  ids, lantern material from `reached`. Placement no longer owns meshes.
+- `TideClock` class became functions over `state.tide` so the tide is serializable like everything else.
+
 ## Findings on the v1 questions
 
 (placement and connectivity exist now; play a few cycles and write answers here)
