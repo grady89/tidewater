@@ -88,6 +88,26 @@ Decisions and findings that CLAUDE.md does not cover. Newest at the bottom of ea
   ids, lantern material from `reached`. Placement no longer owns meshes.
 - `TideClock` class became functions over `state.tide` so the tide is serializable like everything else.
 
+### M2 money loop
+- Catalog lives in `src/sim/balance.ts` (`BUILDINGS`), with footprint, placement class, cost, jobs, residents,
+  upkeep, floor height and a `network` role: **root** (piers; later docks) seeds connectivity, **link** (walkways,
+  markets) passes it on, **leaf** (homes, most producers) only receives it. A market is a link, not a root, so
+  cutting its walkway disconnects it and sales stop — the brief's "connected to a market or dock" reading.
+- `economy.tryPlace(state, grid, kind, anchor)` is the one validate → pay → place path; placement, tests and the
+  smoke scenario all go through it. `Placement.evaluate` only produces the ghost's blocker text.
+- Cycle settlement runs at the high-tide peak: assign workers → residents eat → taxes → market sells what's left
+  → upkeep → immigration (then workers re-assigned so newcomers work at once). Boats sail on entering high water
+  and land their catch on leaving it, so a catch is sold at the *next* peak. Income lags a cycle; the starter town
+  still nets ~+95$ over 4 cycles from 0$.
+- Workers: nearest-first over the walkway graph using a per-workplace BFS distance field (`network.distanceField`,
+  a 64×64 Int32Array — the grid-field mechanism). Ties break by id so assignment is deterministic.
+- Happiness (M2 stub) = ½ fed + ½ employed per house, averaged; 1 with no residents so the first settlers come.
+  Immigration: up to 3 per cycle into reached homes with room while food > 0 and happiness ≥ 0.5.
+- Boats are a count on the pier (`building.boats`), crew = 2 per boat as pier jobs. Only the first two boats are
+  purchasable (`PURCHASABLE_BOATS`); the "Boat" tool is clicked onto a pier.
+- Save format bumped to `version: 2`; older autosaves are discarded on load (returns null → new town).
+- `__tidewater.grant(money)` exists for scripted scenarios that need more than the 500$ start.
+
 ## Findings on the v1 questions
 
 (placement and connectivity exist now; play a few cycles and write answers here)
