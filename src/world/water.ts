@@ -16,6 +16,9 @@ export interface Water {
   /** Planar reflections (a second render of the scene per frame): the quality toggle. */
   setReflections(on: boolean): void;
   readonly reflections: boolean;
+  /** Caustics in the shallows (an additive shader term); on by default, faded with the daylight. */
+  setCaustics(on: boolean): void;
+  readonly caustics: boolean;
 }
 
 /** The vertex shader's surface displacement, for anything that floats. Keep in step with shaders/water.ts. */
@@ -33,7 +36,7 @@ export function createWater(scene: Scene, heightTex: RawTexture): Water {
   const material = new ShaderMaterial("water", scene, { vertexSource: waterVS, fragmentSource: waterFS }, {
     attributes: ["position"],
     uniforms: ["world", "worldViewProjection", "time", "sunDir", "sunColor", "skyColor", "fogColor", "camPos", "dusk",
-      "waveAmp", "waveDir", "waveFront", "waveHeight", "waveWidth", "reflectMix"],
+      "waveAmp", "waveDir", "waveFront", "waveHeight", "waveWidth", "reflectMix", "caustics"],
     samplers: ["heightTex", "reflectTex"],
     needAlphaBlending: true,
   });
@@ -50,10 +53,14 @@ export function createWater(scene: Scene, heightTex: RawTexture): Water {
   mirror.mirrorPlane = Plane.FromPositionAndNormal(new Vector3(0, 0, 0), new Vector3(0, -1, 0));
   material.setTexture("reflectTex", mirror).setFloat("reflectMix", 0);
   let reflections = false;
+  let caustics = true;
+  let lighting: Lighting = MORNING;
 
   const water: Water = {
     mesh, material,
     get reflections() { return reflections; },
+    get caustics() { return caustics; },
+    setCaustics(on) { caustics = on; water.setLighting(lighting); },
     setReflections(on) {
       if (on === reflections) return;
       reflections = on;
@@ -67,8 +74,9 @@ export function createWater(scene: Scene, heightTex: RawTexture): Water {
       material.setVector2("waveDir", new Vector2(dir.x, dir.z)).setFloat("waveFront", front).setFloat("waveHeight", height).setFloat("waveWidth", width);
     },
     setLighting(l) {
+      lighting = l;
       material.setVector3("sunDir", l.sunDir).setVector3("sunColor", l.sunLit).setVector3("skyColor", l.waterSky)
-        .setVector3("fogColor", l.fog).setFloat("dusk", l.k);
+        .setVector3("fogColor", l.fog).setFloat("dusk", l.k).setFloat("caustics", caustics ? 1 - l.k : 0);
     },
     update(time, camPos, waterLevel) {
       mesh.position.y = waterLevel;

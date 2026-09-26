@@ -274,9 +274,20 @@ const api = {
     audio: () => ({ started: audio.started, state: audio.state, muted: audio.muted }),
     reflections: () => water.reflections,
     chunks: () => views.chunkCount,
+    caustics: () => water.caustics,
   },
   /** The reflections quality toggle (remembered). */
   setReflections,
+  /** Caustics on/off (for A/B checks; on by default). */
+  setCaustics(on: boolean) { water.setCaustics(on); },
+  /** Mean brightness (0–255) of a viewport rectangle in the next rendered frame; (x, y) from the bottom-left. */
+  async brightness(x: number, y: number, w: number, h: number): Promise<number> {
+    const px = await new Promise<ArrayBufferView>(res => scene.onAfterRenderObservable.addOnce(() => { void engine.readPixels(x, y, w, h).then(res); }));
+    const a = px as Uint8Array;
+    let sum = 0;
+    for (let i = 0; i < a.length; i += 4) sum += 0.299 * a[i] + 0.587 * a[i + 1] + 0.114 * a[i + 2];
+    return sum / (a.length / 4);
+  },
   orderPlanks() {
     return orderPlanks(state);
   },

@@ -345,6 +345,17 @@ Decisions and findings that CLAUDE.md does not cover. Newest at the bottom of ea
   below; with it the mirror renders every frame at the 165 fps cap. Walkers, lantern spheres, fins, flames and
   smoke are left out of the mirror. `__tidewater.setReflections(on)`.
 
+### Backlog 2 caustics
+- One additive line in the water fragment shader, after foam: two drifting `vnoise` layers (scales 2.6 and 4.3
+  per unit, opposite drifts) summed, `smoothstep(0.5, 0.85)` then squared into a web, masked to depths 0.03–1.6
+  (nothing on the shoreline foam, nothing in the deep), × `caustics` × 1.1. The strength looks high because the
+  shallow water's alpha is 0.34: the terrain below carries most of the pixel, so the web reaches the eye at a
+  third of its value.
+- `caustics` is set with the lighting as `1 − k` (no sun at dusk or in a storm) and `water.setCaustics(false)`
+  zeroes it. Smoke A/Bs the mean brightness of the viewport centre over a beach at high water
+  (`__tidewater.brightness(x, y, w, h)` reads pixels in the next rendered frame) and expects on > off; the
+  measured delta is ~1 of 255 because the sample includes sand and glint, hence the 0.5 threshold.
+
 ### Chunk merge (the M12 perf pass, done for the mirror)
 - `view/buildingViews.ts` now merges every building in an 8×8-cell chunk into one mesh (`chunk:i,j`), rebuilt
   when any building in the chunk appears, leaves or changes its mesh signature. 300 buildings → 15 chunk meshes;

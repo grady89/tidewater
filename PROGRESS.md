@@ -19,10 +19,11 @@ Live status. Update after every milestone (and mid-milestone if you compact). On
 | M12 Camera, polish, saves | DONE | 8fb0af0 · middle-drag/WASD pan, pause/1×/2×/4×, three save slots + new town, 5-step tutorial + empty-state hints, greyed palette reasons; 300 buildings / 30 boats / 200 walkers at 164.8 fps headless, 300-building reload 615 ms (chunk merge skipped: target holds); 42 sim tests, shots/m12-bigtown.png · headless 165 fps |
 | M13 Audio | DONE | 121ed07 · Web Audio surf (noise + low-pass, follows tide/storm), shift bell, tsunami thrum, mute (remembered); context created on first gesture, smoke asserts running after click and no console errors · headless 165 fps |
 | M14 Ship it | DONE | 7d32ada · README (run, controls, how the town works, layout, screenshot), HANDOFF rewritten (what exists, known-broken, balance notes, next three, backlog), `npm run build` → dist/ · headless 164.8 fps |
-| Backlog 1 Reflections | IN PROGRESS | sub-task: MirrorTexture behind a quality toggle |
+| Backlog 1 Reflections | DONE | eddf8ae (+ chunk merge) · MirrorTexture through the water plane mixed into the fresnel sky term by `reflectMix`; speed-bar toggle, remembered, off by default; forced the M12 chunk merge (300 buildings → 15 meshes, lanterns thin-instanced) · headless 165 fps with it on in the big town |
+| Backlog 2 Caustics | IN PROGRESS | sub-task: `caustics` uniform + noise in the shallow band |
 
 ## Current focus
-Backlog 1 Reflections — sub-task: world/water.ts MirrorTexture + quality toggle. Last thing that worked: M14 green (build/test/smoke, 42 tests, 164.8 fps).
+Backlog 2 Caustics — sub-task: shaders/water.ts additive term. Last thing that worked: chunk merge green (build/test/smoke, 42 tests, 165 fps with reflections).
 
 ## Blocked
 (milestone, why, what was tried, what would unblock)
@@ -44,3 +45,4 @@ Backlog 1 Reflections — sub-task: world/water.ts MirrorTexture + quality toggl
 - 2026-09-26 08:55 · M12 · 8fb0af0 · headless 165 fps; big town 164.8 fps; reload 615 ms
 - 2026-09-26 09:15 · M13 · 121ed07 · headless 165 fps
 - 2026-09-26 09:30 · M14 · 7d32ada · headless 164.8 fps
+- 2026-09-26 10:20 · Backlog 1 · eddf8ae + chunk merge · headless 165 fps, big town with reflections 165 fps

@@ -541,6 +541,26 @@ try {
   assert(audioAfter.started && audioAfter.state === "running", "audio context runs after a click");
   assert(audioMuted.muted, "mute button mutes");
 
+  // Backlog 2: caustics brighten the shallows over a beach at high water and add nothing when off.
+  const b2 = await page.evaluate(async () => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    api.setReflections(false);
+    api.advanceTo(0);
+    let beach: { i: number; j: number } | null = null;
+    for (let j = -31; j < 31 && !beach; j++) for (let i = -31; i < 31; i++) if (api.grid.isBeach({ i, j }) && !api.grid.buildingAt({ i, j })) { beach = { i, j }; break; }
+    if (!beach) return null;
+    api.frameAt(beach.i + 0.5, beach.j + 0.5, 7);
+    api.camera.beta = 0.7;
+    const on = await api.brightness(440, 260, 400, 200);
+    api.setCaustics(false);
+    const off = await api.brightness(440, 260, 400, 200);
+    api.setCaustics(true);
+    return { beach, on, off, phase: api.sim.phase };
+  });
+  await page.screenshot({ path: "shots/b2-caustics.png" });
+  console.log("B2 caustics:", JSON.stringify(b2));
+  assert(b2 && b2.on > b2.off + 0.5, "caustics brighten the shallows");
+
   // M1: save, reload the page, every building is back and the clock kept its place.
   const before = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; api.save(); return { n: Object.keys(api.sim.buildings).length, cycle: api.sim.tide.cycle, money: api.sim.resources.money, chunks: api.view.chunks() }; });
   await page.reload();
