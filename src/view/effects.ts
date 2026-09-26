@@ -67,7 +67,7 @@ export class Effects {
   get finCount(): number { return this.finCells.length; }
 
   private syncFins(state: SimState, viewTime: number): void {
-    if (this.frame % 60 === 0) this.pickCells(state);
+    if (this.frame % 60 === 0 || this.finCells.length === 0) this.pickCells(state);
     const n = this.finCells.length;
     if (n === 0) { this.fins.setEnabled(false); return; }
     this.fins.setEnabled(true);

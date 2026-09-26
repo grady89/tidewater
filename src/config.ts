@@ -29,8 +29,9 @@ export const DAY_CYCLES = 2;
 export const STILT_LENGTH = 0.5;
 /** Raised walkway deck height, absolute. Above any spring tide. */
 export const RAISED_FLOOR = 1.2;
-/** A stilt walkway rises to meet a neighbouring deck up to this much above its own height, so streets run level. */
-export const WALKWAY_SNAP = 0.4;
+/** A stilt walkway rises to meet a neighbouring deck up to this much above its own height, so streets run level
+ *  (longer stilts on the low side); it never drops below its own stilts, so uphill runs climb by a stair. */
+export const WALKWAY_SNAP = 1.2;
 
 /** Seed for the terrain noise. 0 reproduces the island in reference/tidewater-study.html. */
 export const TERRAIN_SEED = 0;

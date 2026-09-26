@@ -489,6 +489,37 @@ What other builders do and what was taken from each:
   click, which is how the first playtest lost it), each step points at its tab and tool and the HUD pulses them,
   and the pier ring carries a DOM label "Pier goes here" pinned via `screenOf`. Steps clear themselves as before.
 
+### Fourth hands-on feedback: far-water streaks, one plane, paths onto the hill, references
+- The far-water streaks and the dark band at the horizon came from the mirror, two ways. (1) Babylon's mirror
+  clips geometry under the plane with `scene.clipPlane`, which StandardMaterials honour and our custom terrain
+  shader ignored — so the *seabed* was reflected up across the sea as dark slopes. The terrain shader gained a
+  `clipY` uniform and one `discard` line, set to the water level only during the mirror pass
+  (`water.mirror.onBefore/AfterRenderObservable`). (2) The reflection is sampled at the fragment's screen
+  position plus a facet nudge; at the screen's top edge that wrapped round to the bottom of the mirror texture
+  (dark water) and painted a band at the horizon. The mirror now clamps.
+- "Why is it so hard to get things on one plane": the snap window was 0.4, so a walkway beside a raised one
+  (1.2 vs ~0.9) stepped instead of joining. `WALKWAY_SNAP` is 1.2 now — a stilt deck always rises to meet its
+  highest neighbour (longer stilts) and never drops below its own stilts, so runs are level on the way down and
+  climb by a stair only where the ground itself rises past the deck. Existing decks keep their placed height.
+- Onto the island: a **Path** (2$, Streets tab, class high, floor "terrain" = ground + 0.05, network link) — a
+  slab the colour of wet sand joined like a deck, with stairs where it meets a higher deck. `touchesWalkway`
+  accepts paths, so lumber camps and the like can hang off a path on the hill. Homes (hut, house, tall house) may
+  now stand on the hill too: a numeric floor is `max(f, ground + 0.05)`, so nothing sinks into a slope and a home
+  on the flats keeps its 1.0 deck. Paths and hill homes above 0.85 never flood; between 0.6 and 0.85 a spring
+  tide cuts them, which is the game.
+- People and boats rebuilt from `reference/people` and `reference/boat` (Grady's Midjourney refs from prompts I
+  wrote — that is the intended workflow for most assets from here): the figure is a wide 8-sided straw hat over
+  a round head, a six-sided tunic flaring to the hem with stub sleeves (white vertices, so the per-instance
+  colour dresses it) over dark trousers and bare feet, split into a coloured mesh and a fixed-colour mesh that
+  share one matrix buffer. The boat is a hexagonal prism stretched 2.4× along x (six flat facets, pointed at both
+  ends) with a dark waterline band, pale gunwale, open cockpit, two thwarts, a net, mast, boom and a tall
+  triangular sail; only the upper hull takes the instance colour.
+- Boats clipped through decks because a trip's route started on the harbour's own cell; a trip now starts at the
+  boat's mooring and joins the route at its first cell outside the harbour, and moorings skip cells with
+  anything built on them (a walkway laid alongside the pier used to get a boat parked inside it).
+- Swimmers stood in the sand: they now pick the deepest water cell beside the beach, only where it is 0.3 deep,
+  and never sit below the ground.
+
 ### Chunk merge (the M12 perf pass, done for the mirror)
 - `view/buildingViews.ts` now merges every building in an 8×8-cell chunk into one mesh (`chunk:i,j`), rebuilt
   when any building in the chunk appears, leaves or changes its mesh signature. 300 buildings → 15 chunk meshes;

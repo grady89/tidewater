@@ -43,7 +43,7 @@ const FATE_TEXT: Record<Fate | "line", string> = {
   spring: "Floods at spring tides",
   always: "Floods every high tide",
 };
-const LINE_TOOL_HINT: ReadonlySet<Tool> = new Set<Tool>(["walkway", "raisedWalkway", "breakwater", "sharkNet", "seaWall"]);
+const LINE_TOOL_HINT: ReadonlySet<Tool> = new Set<Tool>(["walkway", "raisedWalkway", "path", "breakwater", "sharkNet", "seaWall"]);
 
 const RESOURCES = ["money", "fish", "shellfish", "smoked", "timber", "planks", "population", "tourists", "happiness"];
 

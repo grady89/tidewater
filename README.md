@@ -44,7 +44,9 @@ milestone and drops screenshots in `shots/`.
 ## How the town works
 
 - **Walkways** connect everything to a pier. Standard walkways stand half a metre above their cell, so on low
-  flats they flood at high tide and cut whatever lies beyond them; raised walkways never flood and cross shallows.
+  flats they flood at high tide and cut whatever lies beyond them; raised walkways never flood and bridge deep
+  water. A new walkway rises to meet the deck beside it, so streets run level. **Paths** carry the street onto
+  the dry hill, where homes can stand on the ground.
 - **Boats** sail from piers at high water and from deep docks on every tide, to the richest ground in range, and
   thin it. Oyster beds and clam camps work the exposed flats at low water. Every fourth tide is a spring tide.
 - **People** move in while there is food, work and room; they walk to work at shift change, level their homes when

@@ -168,9 +168,14 @@ try {
   console.log("Walkthrough:", JSON.stringify(walk));
   assert(!walk.hidden && walk.step === "Step 1 of 6" && /pier/i.test(walk.title ?? "") && walk.pulsing.some(t => t === "Sea") && walk.label, "the walkthrough card opens on the pier step and pulses the Sea tab");
   await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.place("walkway", -99, -99));
+  await page.mouse.move(100, 300); // over the HUD panel: no hovered cell, so the hint shows the lift itself
+  await page.waitForTimeout(100);
   await page.keyboard.press("]");
+  await page.waitForTimeout(100);
   await page.keyboard.press("]");
-  const lift = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { lift: api.placement.lift, hint: api.view.hint() }; });
+  await page.waitForTimeout(100);
+  const lift = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { lift: api.placement.lift, hint: api.view.hint(), focus: document.activeElement?.tagName }; });
+  console.log("Lift:", JSON.stringify(lift));
   await page.keyboard.press("[");
   await page.keyboard.press("[");
   assert(lift.lift === 2 && /\+0\.4 m/.test(lift.hint), "] lifts the deck two steps and the hint says so: " + lift.hint);

@@ -1,5 +1,5 @@
 // One water plane with the study's shader. Tide is the plane's Y.
-import { AbstractMesh, Mesh, MeshBuilder, MirrorTexture, Plane, RawTexture, Scene, ShaderMaterial, Vector2, Vector3 } from "@babylonjs/core";
+import { AbstractMesh, Mesh, MeshBuilder, MirrorTexture, Plane, RawTexture, Scene, ShaderMaterial, Texture, Vector2, Vector3 } from "@babylonjs/core";
 import { SIZE } from "../config";
 import { waterFS, waterVS } from "../../shaders/water";
 import { Lighting, MORNING } from "./lighting";
@@ -19,6 +19,8 @@ export interface Water {
   /** Caustics in the shallows (an additive shader term); on by default, faded with the daylight. */
   setCaustics(on: boolean): void;
   readonly caustics: boolean;
+  /** The reflection render target, for anything that must behave differently in the mirror pass. */
+  readonly mirror: MirrorTexture;
 }
 
 /** The vertex shader's surface displacement, for anything that floats. Keep in step with shaders/water.ts. */
@@ -50,6 +52,10 @@ export function createWater(scene: Scene, heightTex: RawTexture): Water {
   // only while the toggle is on.
   const mirror = new MirrorTexture("mirror", MIRROR_SIZE, scene, false);
   mirror.renderListPredicate = (m: AbstractMesh) => !NOT_MIRRORED.has(m.name);
+  // The shader samples the mirror at the fragment's screen position plus a facet nudge; at the screen edge that
+  // must clamp, not wrap, or the far horizon picks up the bottom of the mirror (dark water) as a band.
+  mirror.wrapU = Texture.CLAMP_ADDRESSMODE;
+  mirror.wrapV = Texture.CLAMP_ADDRESSMODE;
   mirror.mirrorPlane = Plane.FromPositionAndNormal(new Vector3(0, 0, 0), new Vector3(0, -1, 0));
   material.setTexture("reflectTex", mirror).setFloat("reflectMix", 0);
   let reflections = false;
@@ -57,7 +63,7 @@ export function createWater(scene: Scene, heightTex: RawTexture): Water {
   let lighting: Lighting = MORNING;
 
   const water: Water = {
-    mesh, material,
+    mesh, material, mirror,
     get reflections() { return reflections; },
     get caustics() { return caustics; },
     setCaustics(on) { caustics = on; water.setLighting(lighting); },

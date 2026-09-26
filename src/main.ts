@@ -55,6 +55,10 @@ const lights = createLights(scene);
 const terrain = createTerrain(scene);
 const water = createWater(scene, terrain.heightTex);
 const sky = createSky(scene);
+// Babylon's mirror clips StandardMaterials under the plane on its own; the terrain's custom shader needs telling,
+// or the seabed reflects up across the sea as dark streaks.
+water.mirror.onBeforeRenderObservable.add(() => terrain.material.setFloat("clipY", water.mesh.position.y));
+water.mirror.onAfterRenderObservable.add(() => terrain.material.setFloat("clipY", -999));
 
 const pipe = new DefaultRenderingPipeline("pp", false, scene, [camera]);
 pipe.fxaaEnabled = true;

@@ -5,6 +5,7 @@ import { Color4, Matrix, Mesh, MeshBuilder, Quaternion, Scene, StandardMaterial,
 import { SIZE } from "../config";
 import { BUILDINGS } from "../sim/balance";
 import { cellCenter, cellIndex, Grid } from "../sim/grid";
+import { terrainHeight } from "../sim/heightfield";
 import { Building, Cell, Phase, SimState } from "../sim/state";
 import { flatMaterial, mergeFlat, tint } from "../world/flatMesh";
 
@@ -30,6 +31,7 @@ interface Loiterer {
 
 export class Walkers {
   private readonly mesh: Mesh;
+  private readonly detail: Mesh;
   private walkers: Walker[] = [];
   private loiterers: Loiterer[] = [];
   private lastPhase: Phase | null = null;
@@ -39,21 +41,43 @@ export class Walkers {
   private rng = 1;
 
   constructor(scene: Scene, private readonly grid: Grid) {
-    const parts: Mesh[] = [];
-    const body = MeshBuilder.CreateBox("wb", { width: 0.18, height: 0.32, depth: 0.12 }, scene);
-    body.position.y = 0.16 + 0.1;
-    parts.push(tint(body, "#ffffff"));
-    const head = MeshBuilder.CreateSphere("wh", { diameter: 0.15, segments: 4 }, scene);
-    head.position.y = 0.5;
-    parts.push(tint(head, "#f4d9c6"));
-    const hat = MeshBuilder.CreateCylinder("wt", { diameterTop: 0, diameterBottom: 0.24, height: 0.12, tessellation: 5 }, scene);
-    hat.position.y = 0.6;
-    parts.push(tint(hat, "#e6d3a1"));
-    this.mesh = mergeFlat("walkers", parts, scene);
+    // The figure, after reference/people: a wide conical straw hat over a round head, a tunic that flares to the
+    // hem with stub sleeves, short dark trousers, bare feet. The tunic and sleeves are white so the per-instance
+    // colour dresses them; everything else keeps its own colour in a second mesh driven by the same matrices.
+    const tunicParts: Mesh[] = [];
+    const tunic = MeshBuilder.CreateCylinder("wb", { diameterTop: 0.15, diameterBottom: 0.27, height: 0.23, tessellation: 6 }, scene);
+    tunic.position.y = 0.295;
+    tunicParts.push(tint(tunic, "#ffffff"));
+    for (const side of [-1, 1]) {
+      // Sleeves hang from the shoulder close to the body, a touch outward as in the references.
+      const arm = MeshBuilder.CreateCylinder("wa", { diameter: 0.05, height: 0.15, tessellation: 5 }, scene);
+      arm.position.set(side * 0.125, 0.3, 0);
+      arm.rotation.z = -side * 0.1;
+      tunicParts.push(tint(arm, "#ffffff"));
+    }
+    this.mesh = mergeFlat("walkers", tunicParts, scene);
     this.mesh.material = flatMaterial(scene).clone("walkerMat") as StandardMaterial;
-    this.mesh.isPickable = false;
-    this.mesh.alwaysSelectAsActiveMesh = true;
-    this.mesh.setEnabled(false);
+
+    const fixedParts: Mesh[] = [];
+    const trousers = MeshBuilder.CreateBox("wt", { width: 0.17, height: 0.13, depth: 0.13 }, scene);
+    trousers.position.y = 0.115;
+    fixedParts.push(tint(trousers, "#4c5a66"));
+    for (const side of [-1, 1]) {
+      const foot = MeshBuilder.CreateBox("wf", { width: 0.05, height: 0.05, depth: 0.07 }, scene);
+      foot.position.set(side * 0.045, 0.025, 0.01);
+      fixedParts.push(tint(foot, "#f4d9c6"));
+      const hand = MeshBuilder.CreateSphere("wh", { diameter: 0.045, segments: 3 }, scene);
+      hand.position.set(side * 0.14, 0.215, 0);
+      fixedParts.push(tint(hand, "#f4d9c6"));
+    }
+    const head = MeshBuilder.CreateSphere("wh", { diameter: 0.17, segments: 5 }, scene);
+    head.position.y = 0.47;
+    fixedParts.push(tint(head, "#f4d9c6"));
+    const hat = MeshBuilder.CreateCylinder("wt", { diameterTop: 0, diameterBottom: 0.38, height: 0.14, tessellation: 8 }, scene);
+    hat.position.y = 0.56;
+    fixedParts.push(tint(hat, "#e6d3a1"));
+    this.detail = mergeFlat("walkerDetail", fixedParts, scene);
+    for (const m of [this.mesh, this.detail]) { m.isPickable = false; m.alwaysSelectAsActiveMesh = true; m.setEnabled(false); }
   }
 
   get count(): number { return this.walkers.length; }
@@ -179,13 +203,16 @@ export class Walkers {
     for (const s of state.swimmers) {
       const ci = Math.floor(s.k / SIZE) - SIZE / 2, cj = (s.k % SIZE) - SIZE / 2;
       const beach = { i: ci, j: cj };
-      const water = this.grid.neighbors(beach).find(n => this.grid.water[cellIndex(n.i, n.j)]);
+      // Swim off the deepest water cell beside the beach. Bodies sit so the waterline crosses the tunic, but
+      // never below the sand: in shallow water they stand at the waterline instead.
+      const water = this.grid.neighbors(beach).filter(n => this.grid.water[cellIndex(n.i, n.j)]).sort((a, b) => this.grid.heightAt(a) - this.grid.heightAt(b))[0];
       if (!water) continue;
       const count = Math.min(6, Math.round(s.n));
       for (let k = 0; k < count; k++) {
         const t = viewTime * 0.6 + k * 1.7 + s.k * 0.01;
         const x = water.i + 0.5 + Math.cos(t) * 0.3 + (k % 3 - 1) * 0.25, z = water.j + 0.5 + Math.sin(t * 0.8) * 0.3 + Math.floor(k / 3) * 0.3 - 0.15;
-        out.push({ pos: new Vector3(x, level + Math.sin(viewTime * 2 + k) * 0.04 - 0.32, z), yaw: t, color: Color4.FromHexString(COLORS[(k + 2) % COLORS.length]) });
+        const y = Math.max(level + Math.sin(viewTime * 2 + k) * 0.04 - 0.3, terrainHeight(x, z) + 0.02);
+        out.push({ pos: new Vector3(x, y, z), yaw: t, color: Color4.FromHexString(COLORS[(k + 2) % COLORS.length]) });
       }
     }
     return out;
@@ -233,10 +260,11 @@ export class Walkers {
       put(pos, t + Math.PI / 2, l.color, l.scale);
     }
     for (const s of swimmers) put(s.pos, s.yaw, s.color);
-    if (n === 0) { this.mesh.setEnabled(false); return; }
-    this.mesh.setEnabled(true);
+    if (n === 0) { this.mesh.setEnabled(false); this.detail.setEnabled(false); return; }
+    this.mesh.setEnabled(true); this.detail.setEnabled(true);
     this.mesh.thinInstanceSetBuffer("matrix", this.matrices, 16, false);
     this.mesh.thinInstanceSetBuffer("color", this.colors, 4, false);
+    this.detail.thinInstanceSetBuffer("matrix", this.matrices, 16, false);
   }
 
   clear(): void {

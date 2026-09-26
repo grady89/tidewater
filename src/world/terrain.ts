@@ -47,8 +47,9 @@ export function createTerrain(scene: Scene): Terrain {
 
   const material = new ShaderMaterial("terrain", scene, { vertexSource: terrainVS, fragmentSource: terrainFS }, {
     attributes: ["position", "normal"],
-    uniforms: ["world", "worldViewProjection", "sunDir", "sunColor", "skyAmb", "groundAmb", "fogColor", "camPos", "waterLevel", "wetLevel"],
+    uniforms: ["world", "worldViewProjection", "sunDir", "sunColor", "skyAmb", "groundAmb", "fogColor", "camPos", "waterLevel", "wetLevel", "clipY"],
   });
+  material.setFloat("clipY", -999);
   mesh.material = material;
 
   const terrain: Terrain = {

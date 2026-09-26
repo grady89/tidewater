@@ -1,4 +1,5 @@
-// Ported verbatim from reference/tidewater-study.html (terrainVS / terrainFS).
+// Ported from reference/tidewater-study.html (terrainVS / terrainFS). The only addition is the `clipY` uniform
+// and its discard at the top of the fragment shader (the water's reflection pass); the colour math is verbatim.
 import { COMMON } from "./common";
 
 export const terrainVS = `
@@ -13,7 +14,9 @@ export const terrainFS = COMMON + `
     varying vec3 vW; varying vec3 vN;
     uniform vec3 sunDir, sunColor, skyAmb, groundAmb, fogColor, camPos;
     uniform float waterLevel, wetLevel;
+    uniform float clipY; // added: the reflection pass discards everything under the water plane
     void main(){
+      if (vW.y < clipY) discard;
       float y = vW.y;
       vec3 sandDeep = vec3(0.62,0.55,0.40);
       vec3 sand     = vec3(0.90,0.83,0.63);

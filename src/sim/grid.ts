@@ -158,7 +158,7 @@ export class Grid {
   touchesWalkway(cells: Cell[]): boolean {
     return cells.some(c => this.neighbors(c).some(n => {
       const b = this.buildingAt(n);
-      return this.classAt(n) === "flat" && !!b && (b.kind === "walkway" || b.kind === "raisedWalkway");
+      return !!b && (b.kind === "walkway" || b.kind === "raisedWalkway" || b.kind === "path");
     }));
   }
 
@@ -192,9 +192,10 @@ export class Grid {
   /** Deck height for a footprint; `lift` is the player's extra height in LIFT_STEP steps (stilt decks only). */
   floorFor(kind: BuildingKind, cells: Cell[], lift = 0): number {
     const f = BUILDINGS[kind].floor;
-    if (typeof f === "number") return f;
     let h = -Infinity;
     for (const c of cells) h = Math.max(h, this.heightAt(c));
+    if (typeof f === "number") return Math.max(f, h + 0.05); // a fixed floor never sinks into a hill
+    if (f === "terrain") return h + 0.05;
     if (f !== "stilts") return Math.max(1.0, h + 0.05);
     // Stilt decks meet their neighbours: rise to the highest adjacent deck within WALKWAY_SNAP so streets run
     // level over uneven flats, never sink below the cell's own stilt height. A lift raises the deck further.

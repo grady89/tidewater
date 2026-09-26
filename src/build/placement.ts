@@ -16,7 +16,7 @@ export type Fate = "safe" | "spring" | "always";
 
 const CLICK_SLOP_PX = 5;
 /** Per-cell pieces that are laid in runs: drag from one cell to another and the whole line goes down. */
-const LINE_TOOLS: ReadonlySet<Tool> = new Set<Tool>(["walkway", "raisedWalkway", "breakwater", "sharkNet", "seaWall"]);
+const LINE_TOOLS: ReadonlySet<Tool> = new Set<Tool>(["walkway", "raisedWalkway", "path", "breakwater", "sharkNet", "seaWall"]);
 const MAX_LINE = 40;
 
 /** The cells from `a` to `b` as an L: first along the longer axis, then the other. Both ends included. */

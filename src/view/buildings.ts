@@ -189,16 +189,17 @@ function joinKey(b: Building, grid: Grid): string {
  * The deck of a one-cell street piece: the slab runs to the cell edge wherever a neighbour deck meets it (so a
  * street reads as one surface), a low kerb closes the open sides, and a short stair climbs to a higher neighbour.
  */
-function streetDeck(scene: Scene, parts: Mesh[], b: Building, grid: Grid, x: number, z: number, F: number): void {
-  parts.push(box(scene, 0.9, 0.07, 0.9, x, F - 0.035, z, PALETTE.planks));
+function streetDeck(scene: Scene, parts: Mesh[], b: Building, grid: Grid, x: number, z: number, F: number, surface = PALETTE.planks, kerb: string | null = PALETTE.wood): void {
+  parts.push(box(scene, 0.9, 0.07, 0.9, x, F - 0.035, z, surface));
   for (const j of deckJoins(b, grid)) {
     const ax = j.side.i, az = j.side.j; // unit vector toward the side
     if (j.kind === "open") {
-      parts.push(box(scene, ax ? 0.06 : 0.96, 0.05, az ? 0.06 : 0.96, x + ax * 0.45, F + 0.005, z + az * 0.45, PALETTE.wood));
+      if (kerb) parts.push(box(scene, ax ? 0.06 : 0.96, 0.05, az ? 0.06 : 0.96, x + ax * 0.45, F + 0.005, z + az * 0.45, kerb));
+      else parts.push(box(scene, ax ? 0.1 : 0.9, 0.07, az ? 0.1 : 0.9, x + ax * 0.45, F - 0.035, z + az * 0.45, surface));
       continue;
     }
     // Fill out to the edge (0.45 → 0.5); the neighbour fills its own half, so the seam vanishes.
-    parts.push(box(scene, ax ? 0.12 : 0.9, 0.07, az ? 0.12 : 0.9, x + ax * 0.45, F - 0.035, z + az * 0.45, PALETTE.planks));
+    parts.push(box(scene, ax ? 0.12 : 0.9, 0.07, az ? 0.12 : 0.9, x + ax * 0.45, F - 0.035, z + az * 0.45, surface));
     if (j.kind === "step") {
       // A solid stair against the higher deck: each tread is a block from this deck up to its own height and
       // out to the shared edge, so the flight reads as one wedge whose top tread meets the neighbour's floor.
@@ -262,6 +263,14 @@ function market(scene: Scene, b: Building): BuildingMeshes {
   parts.push(box(scene, 0.5, 0.5, 1.0, cx + 0.6, F + 0.25, cz + 0.2, PALETTE.walls[3]));
   parts.push(pyramid(scene, 2.9, 0.7, cx, F + 0.9 + 0.35, cz, PALETTE.roofs[1]));
   return { root: mergeFlat("market", parts, scene) };
+}
+
+/** A dirt track: a slab the colour of wet sand lying on the ground, joined to its neighbours like a deck. */
+function path(scene: Scene, b: Building, grid: Grid): BuildingMeshes {
+  const { x, z } = cellCenter(b.cells[0]);
+  const parts: Mesh[] = [];
+  streetDeck(scene, parts, b, grid, x, z, b.floorY, "#b9a377", null);
+  return { root: mergeFlat("path", parts, scene) };
 }
 
 function raisedWalkway(scene: Scene, b: Building, grid: Grid): BuildingMeshes {
@@ -686,6 +695,7 @@ function buildMeshes(scene: Scene, b: Building, grid: Grid): BuildingMeshes {
   switch (b.kind) {
     case "walkway": return walkway(scene, b, grid);
     case "raisedWalkway": return raisedWalkway(scene, b, grid);
+    case "path": return path(scene, b, grid);
     case "fireWatch": return fireWatch(scene, b);
     case "breakwater": return breakwater(scene, b);
     case "seaWall": return seaWall(scene, b);
@@ -726,7 +736,7 @@ export function footprintOf(kind: Building["kind"]): { w: number; d: number } {
 /** Everything about a building that changes its mesh; the view rebuilds when this changes. Street pieces also
  *  depend on what stands beside them. */
 export function meshSignature(b: Building, grid: Grid): string {
-  const joins = b.kind === "walkway" || b.kind === "raisedWalkway" ? ":" + joinKey(b, grid) : "";
+  const joins = b.kind === "walkway" || b.kind === "raisedWalkway" || b.kind === "path" ? ":" + joinKey(b, grid) : "";
   return `${b.kind}:${b.level}:${b.lantern ? 1 : 0}:${b.damaged ? 1 : 0}${joins}`;
 }
 

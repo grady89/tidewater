@@ -898,6 +898,36 @@ describe("placement (streets, docks, refunds)", () => {
     expect(placeCost("walkway", 99).money).toBe(BUILDINGS.walkway.cost.money + LIFT_MAX * LIFT_COST);
     expect(placeCost("hut", 3)).toEqual(BUILDINGS.hut.cost);
   });
+  it("paths run over dry land and join the street; homes may stand on the hill, on the ground", () => {
+    const { state, grid, town: t } = town();
+    state.resources.money += 1000;
+    // Walk uphill from a street piece: the first high cell beside a walkway takes a path, the next one too.
+    let start: Cell | null = null, high: Cell | null = null;
+    for (const w of t.walkways) for (const n of grid.neighbors(w)) if (grid.classAt(n) === "high" && !grid.buildingAt(n)) { start = w; high = n; break; }
+    if (!high) {
+      // No hill beside the starter street: lay walkways toward the nearest high cell first.
+      for (let i = -30; i < 30 && !high; i++) for (let j = -30; j < 30; j++) {
+        const c = { i, j };
+        if (grid.classAt(c) !== "high" || grid.buildingAt(c)) continue;
+        const flat = grid.neighbors(c).find(n => grid.classAt(n) === "flat" && !grid.buildingAt(n));
+        if (flat && tryPlace(state, grid, "raisedWalkway", flat)) { start = flat; high = c; break; }
+      }
+    }
+    expect(high).not.toBeNull();
+    expect(grid.canPlace("path", [start!])).toBe(false); // paths need dry land
+    const p = tryPlace(state, grid, "path", high!);
+    expect(p).not.toBeNull();
+    expect(p!.floorY).toBeCloseTo(grid.heightAt(high!) + 0.05, 6);
+    expect(grid.touchesWalkway([high!])).toBe(true);
+    const further = grid.neighbors(high!).find(n => grid.classAt(n) === "high" && !grid.buildingAt(n));
+    if (further) {
+      const hut = tryPlace(state, grid, "hut", further);
+      expect(hut).not.toBeNull();
+      expect(hut!.floorY).toBeCloseTo(Math.max(1.0, grid.heightAt(further) + 0.05), 6);
+      state.tide.override = TIDE_HI; tick(state, grid);
+      expect(p!.reached).toBe(grid.buildingAt(start!)!.reached); // the path is on the network iff its street is
+    }
+  });
   it("removing a building refunds half its money cost", () => {
     const { state, grid, town: t } = town();
     const before = state.resources.money;

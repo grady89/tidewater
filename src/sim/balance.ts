@@ -3,7 +3,7 @@ import { RAISED_FLOOR } from "../config";
 
 export type BuildingKind =
   | "hut" | "house" | "tallHouse"
-  | "walkway" | "raisedWalkway"
+  | "walkway" | "raisedWalkway" | "path"
   | "pier" | "dock" | "shipyard"
   | "market" | "oysterBed" | "clamCamp" | "lumberCamp" | "sawmill" | "smokehouse" | "netLoft" | "warehouse"
   | "outfall" | "treatmentPlant" | "well" | "bathhouse" | "tavern" | "shrine" | "marketSquare"
@@ -47,8 +47,9 @@ export interface BuildingDef {
   residents: number;
   /** Money per cycle. */
   upkeep: number;
-  /** Deck height in world Y; "stilts" = terrain + STILT_LENGTH; "ground" = on the terrain, never below 1.0. */
-  floor: number | "stilts" | "ground";
+  /** Deck height in world Y; "stilts" = terrain + STILT_LENGTH; "ground" = on the terrain, never below 1.0;
+   *  "terrain" = on the terrain exactly (paths); a number never sinks below the terrain either. */
+  floor: number | "stilts" | "ground" | "terrain";
   /** The network starts at roots (piers, docks), passes through links (walkways, markets) and ends at leaves. */
   network: "link" | "root" | "leaf";
   /** Boat slots (piers, docks). */
@@ -61,10 +62,11 @@ export interface BuildingDef {
 }
 
 export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
-  hut: { name: "Hut", category: "Homes", w: 1, d: 1, cls: "flat", cost: { money: 40 }, workers: 0, residents: 2, upkeep: 0.5, floor: 1.0, network: "leaf", desc: "2 residents" },
-  house: { name: "House", category: "Homes", w: 1, d: 1, cls: "flat", cost: { money: 80 }, workers: 0, residents: 4, upkeep: 1, floor: 1.0, network: "leaf", desc: "4 residents" },
-  tallHouse: { name: "Tall house", category: "Homes", w: 1, d: 1, cls: "flat", requires: "sawmill", cost: { money: 140, planks: 10 }, workers: 0, residents: 6, upkeep: 1.5, floor: 1.0, network: "leaf", desc: "6 residents; needs a sawmill" },
+  hut: { name: "Hut", category: "Homes", w: 1, d: 1, cls: "flatOrHigh", cost: { money: 40 }, workers: 0, residents: 2, upkeep: 0.5, floor: 1.0, network: "leaf", desc: "2 residents; on the flats or the hill" },
+  house: { name: "House", category: "Homes", w: 1, d: 1, cls: "flatOrHigh", cost: { money: 80 }, workers: 0, residents: 4, upkeep: 1, floor: 1.0, network: "leaf", desc: "4 residents; on the flats or the hill" },
+  tallHouse: { name: "Tall house", category: "Homes", w: 1, d: 1, cls: "flatOrHigh", requires: "sawmill", cost: { money: 140, planks: 10 }, workers: 0, residents: 6, upkeep: 1.5, floor: 1.0, network: "leaf", desc: "6 residents; needs a sawmill" },
   walkway: { name: "Walkway", category: "Streets", w: 1, d: 1, cls: "flat", cost: { money: 5 }, workers: 0, residents: 0, upkeep: 0, floor: "stilts", network: "link", desc: "Stilts; floods on low ground" },
+  path: { name: "Path", category: "Streets", w: 1, d: 1, cls: "high", cost: { money: 2 }, workers: 0, residents: 0, upkeep: 0, floor: "terrain", network: "link", desc: "Dirt track over dry land; joins the street to the hill" },
   raisedWalkway: { name: "Raised walkway", category: "Streets", w: 1, d: 1, cls: "flatOrDeep", cost: { money: 12 }, workers: 0, residents: 0, upkeep: 0, floor: RAISED_FLOOR, network: "link", desc: "Never floods; bridges deep water out to a dock" },
   pier: { name: "Pier", category: "Sea", w: 1, d: 2, cls: "edge", cost: { money: 60 }, workers: 0, residents: 0, upkeep: 2, floor: 1.0, network: "root", slots: 2, desc: "2 boats; sail at high water only" },
   dock: { name: "Deep dock", category: "Sea", w: 2, d: 2, cls: "deep", needsLink: true, cost: { money: 150, planks: 20 }, workers: 0, residents: 0, upkeep: 4, floor: 1.0, network: "root", slots: 4, desc: "4 boats; sail on every tide; reach it by pier or raised walkway" },
