@@ -84,8 +84,21 @@
       .palette button.unaffordable { opacity: 0.45; }
       .palette button.unaffordable .cost { color: var(--bad); }
 
-      #tutorial { position: fixed; left: 50%; top: 16px; transform: translateX(-50%); max-width: min(560px, calc(100vw - 32px)); padding: 8px 14px; font-size: 12px; color: var(--ink); cursor: pointer; }
+      #tutorial { position: fixed; left: 50%; top: 16px; transform: translateX(-50%); width: min(440px, calc(100vw - 32px)); padding: 10px 14px 12px; font-size: 12px; color: var(--ink); border-color: rgba(255, 209, 138, 0.35); }
       #tutorial[hidden] { display: none; }
+      #tutorial .tut-head { display: flex; justify-content: space-between; align-items: center; }
+      #tutorial .tut-step { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+      #tutorial .skip { font: inherit; font-size: 11px; color: var(--ink-dim); background: transparent; border: 1px solid var(--panel-line); border-radius: 6px; padding: 2px 8px; cursor: pointer; }
+      #tutorial .skip:hover { color: var(--ink); }
+      #tutorial h3 { margin: 4px 0 2px; font: 400 18px/1.1 "Instrument Serif", Georgia, serif; }
+      #tutorial p { margin: 0; line-height: 1.45; color: var(--ink); }
+      #tutorial.bare .tut-head, #tutorial.bare h3 { display: none; }
+      #tutorial.bare p { color: var(--ink-dim); }
+      #markerLabel { position: fixed; transform: translate(-50%, -140%); padding: 3px 9px; font-size: 11px; color: #1b2a33; background: var(--accent); border-radius: 6px; pointer-events: none; white-space: nowrap; }
+      #markerLabel[hidden] { display: none; }
+      .pulse { animation: pulse 1.2s ease-in-out infinite; }
+      @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(255, 209, 138, 0.0); border-color: var(--accent); } 50% { box-shadow: 0 0 0 4px rgba(255, 209, 138, 0.25); border-color: var(--accent); } }
+      @media (prefers-reduced-motion: reduce) { .pulse { animation: none; border-color: var(--accent); } }
       #speed { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); display: flex; gap: 4px; padding: 6px 8px; }
       #speed button { font: inherit; font-size: 12px; color: var(--ink-dim); background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 4px 10px; cursor: pointer; min-width: 40px; }
       #speed button:hover { color: var(--ink); }
@@ -150,6 +163,7 @@
     <div id="notes"></div>
     <div id="tutorial" class="glass"></div>
     <div id="achievement" class="glass" hidden></div>
+    <div id="markerLabel" hidden></div>
     <div id="speed" class="glass"></div>
     <div id="menu" class="glass" hidden></div>
     <div id="info" class="glass" hidden></div>

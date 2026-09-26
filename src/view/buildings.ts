@@ -200,10 +200,15 @@ function streetDeck(scene: Scene, parts: Mesh[], b: Building, grid: Grid, x: num
     // Fill out to the edge (0.45 → 0.5); the neighbour fills its own half, so the seam vanishes.
     parts.push(box(scene, ax ? 0.12 : 0.9, 0.07, az ? 0.12 : 0.9, x + ax * 0.45, F - 0.035, z + az * 0.45, PALETTE.planks));
     if (j.kind === "step") {
-      const n = 2;
+      // A solid stair against the higher deck: each tread is a block from this deck up to its own height and
+      // out to the shared edge, so the flight reads as one wedge whose top tread meets the neighbour's floor.
+      const n = Math.max(2, Math.ceil(j.dh / 0.13));
+      const depth = Math.min(0.45, 0.15 * n);
       for (let k = 1; k <= n; k++) {
-        const rise = (j.dh * k) / (n + 1), inset = 0.5 - 0.12 * k;
-        parts.push(box(scene, ax ? 0.12 : 0.6, 0.06, az ? 0.12 : 0.6, x + ax * inset, F + rise, z + az * inset, PALETTE.wood));
+        const front = 0.5 - depth * (n - k + 1) / n;
+        const len = 0.5 - front, mid = (front + 0.5) / 2;
+        const h = (j.dh * k) / n;
+        parts.push(box(scene, ax ? len : 0.7, h, az ? len : 0.7, x + ax * mid, F + h / 2, z + az * mid, k % 2 ? PALETTE.planks : PALETTE.wood));
       }
     }
   }

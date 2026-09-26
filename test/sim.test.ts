@@ -1,7 +1,7 @@
 // Sim-only unit checks. Nothing here may pull in Babylon; the hygiene test enforces that for src/sim/**.
 import { describe, expect, it } from "vitest";
 import { HIGH_WATER_MARK, LOW_WATER_MARK, SPRING_HI, SPRING_LO, STILT_LENGTH, TIDE_HI, TIDE_LO, TIDE_PERIOD, WALKWAY_SNAP } from "../src/config";
-import { BEACH_MAX_HEIGHT, BOAT_COST, BOAT_MIN_RANGE, BOAT_RANGE, BUILDINGS, CAP_BASE, DRAWDOWN_LEVEL, DRAWDOWN_SECONDS, FIRE_BURN_SECONDS, FIRE_IGNITE_THRESHOLD, FISH_CAP, HAPPY, INJURY_NATURAL_CYCLES, LEVEL_UP_HAPPINESS, MAX_LEVEL, OYSTER_POLLUTION_KILL, PLANK_ORDER_SIZE, REMOVE_REFUND, STARTING_MONEY, TRADE_EVERY, TRADE_EVERY_LIGHTHOUSE, TREATMENT_RADIUS, TREE_REGROW_CYCLES, WAREHOUSE_CAP } from "../src/sim/balance";
+import { BEACH_MAX_HEIGHT, BOAT_COST, BOAT_MIN_RANGE, BOAT_RANGE, BUILDINGS, CAP_BASE, DRAWDOWN_LEVEL, DRAWDOWN_SECONDS, FIRE_BURN_SECONDS, FIRE_IGNITE_THRESHOLD, FISH_CAP, HAPPY, INJURY_NATURAL_CYCLES, LEVEL_UP_HAPPINESS, MAX_LEVEL, OYSTER_POLLUTION_KILL, LIFT_COST, LIFT_MAX, LIFT_STEP, PLANK_ORDER_SIZE, REMOVE_REFUND, STARTING_MONEY, TRADE_EVERY, TRADE_EVERY_LIGHTHOUSE, TREATMENT_RADIUS, TREE_REGROW_CYCLES, WAREHOUSE_CAP } from "../src/sim/balance";
 import { ACHIEVEMENTS, checkAchievements } from "../src/sim/achievements";
 import { deserialize, serialize } from "../src/sim/save";
 import { DISTRICT_MIN, districtName, districtOf, districts } from "../src/sim/districts";
@@ -13,7 +13,7 @@ import { ignite } from "../src/sim/fire";
 import { addLantern, coverageAt, lanternBlocker } from "../src/sim/services";
 import { injuredCount } from "../src/sim/sharks";
 import { orderPlanks } from "../src/sim/trade";
-import { addCapped, boatPurchaseBlocker, buyBoat, capFor, removeBuilding, totalBoats, tryPlace } from "../src/sim/economy";
+import { addCapped, boatPurchaseBlocker, buyBoat, capFor, placeCost, removeBuilding, totalBoats, tryPlace } from "../src/sim/economy";
 import { buildFlow, maxOf, meanHeight, stepDrift, zeros } from "../src/sim/fields";
 import { cellIndex, Grid } from "../src/sim/grid";
 import { updateNetwork } from "../src/sim/network";
@@ -685,13 +685,14 @@ describe("storms and the tsunami (M11)", () => {
 describe("tutorial and big town (M12)", () => {
   it("the tutorial steps clear in order as the starter town takes shape", () => {
     const { state, grid } = newGame(7);
-    expect(STEPS.map(s => s.done(state))).toEqual([false, false, false, false, false]);
+    expect(STEPS.map(s => s.done(state))).toEqual([false, false, false, false, false, false]);
     starterTown(state, grid);
-    expect(STEPS.slice(0, 4).map(s => s.done(state))).toEqual([true, true, false, true]);
+    expect(STEPS.slice(0, 5).map(s => s.done(state))).toEqual([true, true, false, true, true]);
     advanceCycles(state, grid, 1);
     expect(STEPS[2].done(state)).toBe(true);
     advanceCycles(state, grid, 3);
-    expect(STEPS[4].done(state)).toBe(true);
+    expect(STEPS[5].done(state)).toBe(true);
+    for (const s of STEPS) expect(s.title.length).toBeGreaterThan(0);
   });
 
   it("the big-town script reaches 300 buildings and 30 boats and still settles a cycle", () => {
@@ -880,6 +881,22 @@ describe("placement (streets, docks, refunds)", () => {
       if (dock) break;
     }
     expect(dock).not.toBeNull();
+  });
+  it("a lift raises a stilt deck by LIFT_STEP a step and costs LIFT_COST a step; fixed-floor kinds ignore it", () => {
+    const { state, grid } = newGame(1);
+    state.resources.money += 1000;
+    let a: Cell | null = null;
+    for (let i = -30; i < 30 && !a; i++) for (let j = -30; j < 30; j++) {
+      const c = { i, j };
+      if (grid.classAt(c) === "flat" && !grid.buildingAt(c) && !grid.neighbors(c).some(n => grid.buildingAt(n))) { a = c; break; }
+    }
+    const base = grid.heightAt(a!) + STILT_LENGTH;
+    const before = state.resources.money;
+    const w = tryPlace(state, grid, "walkway", a!, 2);
+    expect(w!.floorY).toBeCloseTo(base + 2 * LIFT_STEP, 6);
+    expect(before - state.resources.money).toBe(BUILDINGS.walkway.cost.money + 2 * LIFT_COST);
+    expect(placeCost("walkway", 99).money).toBe(BUILDINGS.walkway.cost.money + LIFT_MAX * LIFT_COST);
+    expect(placeCost("hut", 3)).toEqual(BUILDINGS.hut.cost);
   });
   it("removing a building refunds half its money cost", () => {
     const { state, grid, town: t } = town();

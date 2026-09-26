@@ -3,7 +3,8 @@
 // right-click removes. Placement writes to the sim through the Grid; meshes appear when the view syncs.
 import { ArcRotateCamera, Color3, Matrix, Mesh, MeshBuilder, Quaternion, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
 import { BuildingKind, BUILDINGS, PlacementClass } from "../sim/balance";
-import { boatPurchaseBlocker, buyBoat, canAfford, removeBuilding, tryPlace } from "../sim/economy";
+import { boatPurchaseBlocker, buyBoat, canAfford, placeCost, removeBuilding, tryPlace } from "../sim/economy";
+import { LIFT_MAX } from "../sim/balance";
 import { Grid, HALF, worldToCell } from "../sim/grid";
 import { terrainHeight } from "../sim/heightfield";
 import { addLantern, lanternBlocker } from "../sim/services";
@@ -53,6 +54,15 @@ export class Placement {
 
   /** Line tools draw with the left button, so the camera must not grab the ground with it. */
   get dragsLine(): boolean { return LINE_TOOLS.has(this.tool); }
+
+  /** Extra deck height for stilt pieces, in LIFT_STEP steps ([ and ] keys). */
+  lift = 0;
+  get liftable(): boolean { return this.tool !== "boat" && this.tool !== "lanternPost" && BUILDINGS[this.tool].floor === "stilts"; }
+  adjustLift(delta: number): void {
+    this.lift = Math.max(0, Math.min(LIFT_MAX, this.lift + delta));
+    this.refresh();
+  }
+  private get toolLift(): number { return this.liftable ? this.lift : 0; }
 
   constructor(private readonly scene: Scene, private readonly camera: ArcRotateCamera, private readonly grid: Grid, canvas: HTMLCanvasElement) {
     this.ghost = MeshBuilder.CreateBox("ghost", { size: 1 }, scene);
@@ -170,7 +180,7 @@ export class Placement {
     const def = BUILDINGS[kind];
     const cells = this.grid.footprint(kind, anchor);
     if (!cells) return { cells: [anchor], blocker: def.cls === "edge" ? "Needs deep water against the shore" : "Off the map", warn: null, fate: "safe", y: this.pickY() };
-    const y = this.grid.floorFor(kind, cells);
+    const y = this.grid.floorFor(kind, cells, this.toolLift);
     const no = (blocker: string) => ({ cells, blocker, warn: null, fate: "safe" as Fate, y });
     if (!this.grid.classOk(def.cls, cells)) return no(classHint(def.cls));
     if (!this.grid.terrainOk(kind, cells)) return no(`Needs ground between ${def.terrain!.min} and ${def.terrain!.max} m`);
@@ -180,7 +190,7 @@ export class Placement {
     if (def.needsLink && !this.grid.touchesLink(cells)) return no("Must touch a pier or a raised walkway (they bridge deep water)");
     if (def.requires && !this.grid.has(def.requires)) return no(`Requires a ${BUILDINGS[def.requires].name.toLowerCase()}`);
     if (def.touches && !this.grid.touchesKind(cells, def.touches)) return no(`Must touch the ${BUILDINGS[def.touches].name.toLowerCase()}`);
-    if (!canAfford(state, def.cost)) return no(`Costs ${costLabel(kind)}`);
+    if (!canAfford(state, placeCost(kind, this.toolLift))) return no(`Costs ${costLabel(kind, this.toolLift)}`);
     // Placeable. Caution when nothing it touches is on the network: it would stand idle until a street reaches it.
     let warn: string | null = null;
     if (def.network !== "root" && !cells.some(c => this.grid.neighbors(c).some(n => { const b = this.grid.buildingAt(n); return !!b && (b.reached || BUILDINGS[b.kind].network === "root"); }))) {
@@ -192,7 +202,7 @@ export class Placement {
   /** The cells of the run being dragged, with what each would cost; blocked cells are skipped, not fatal. */
   private evaluateLine(): { cells: Cell[]; ok: boolean[]; cost: number } {
     const kind = this.tool as BuildingKind;
-    const cost = BUILDINGS[kind].cost.money;
+    const cost = placeCost(kind, this.toolLift).money;
     const ok = this.linePath.map(c => {
       const cells = this.grid.footprint(kind, c);
       return !!cells && this.grid.classOk(BUILDINGS[kind].cls, cells) && !this.grid.buildingAt(c) && (!this.grid.onIsle(cells) || this.grid.isleOpen());
@@ -203,7 +213,7 @@ export class Placement {
   /** Lay the dragged run in order, so each deck meets the one before; stop when the money runs out. */
   private placeLine(): void {
     const kind = this.tool as BuildingKind;
-    for (const c of this.linePath) tryPlace(this.grid.state, this.grid, kind, c);
+    for (const c of this.linePath) tryPlace(this.grid.state, this.grid, kind, c, this.toolLift);
     this.linePath = [];
     this.line = null;
     this.onSelect(null);
@@ -215,7 +225,7 @@ export class Placement {
     this.line = { count: ok.filter(Boolean).length, cost };
     const okM: number[] = [], badM: number[] = [];
     cells.forEach((c, k) => {
-      const y = ok[k] ? this.grid.floorFor(this.tool as BuildingKind, [c]) : this.pickY();
+      const y = ok[k] ? this.grid.floorFor(this.tool as BuildingKind, [c], this.toolLift) : this.pickY();
       Matrix.Compose(new Vector3(0.96, 1, 0.96), Quaternion.Identity(), new Vector3(c.i + 0.5, y, c.j + 0.5)).copyToArray(ok[k] ? okM : badM, (ok[k] ? okM : badM).length);
     });
     for (const [mesh, m] of [[this.lineGhosts.ok, okM], [this.lineGhosts.bad, badM]] as [Mesh, number[]][]) {
@@ -270,7 +280,7 @@ export class Placement {
     } else if (this.tool === "lanternPost") {
       result = addLantern(state, this.grid, anchor) ? this.grid.buildingAt(anchor) : null;
     } else {
-      result = tryPlace(state, this.grid, this.tool, anchor);
+      result = tryPlace(state, this.grid, this.tool, anchor, this.toolLift);
     }
     this.refresh();
     return result;
@@ -286,8 +296,8 @@ export class Placement {
   }
 }
 
-export function costLabel(kind: BuildingKind): string {
-  const c = BUILDINGS[kind].cost;
+export function costLabel(kind: BuildingKind, lift = 0): string {
+  const c = placeCost(kind, lift);
   const parts = [`${c.money}$`];
   if (c.planks) parts.push(`${c.planks} planks`);
   if (c.timber) parts.push(`${c.timber} timber`);

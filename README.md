@@ -28,6 +28,7 @@ milestone and drops screenshots in `shots/`.
 | Pick a building | the tabs in the panel (Tab cycles them), or the number keys shown on the buttons |
 | Place | click a cell — the ghost is green when it fits, amber if spring tides will flood it, red if every high tide will, grey when it can't go there (the line under the palette says why) |
 | Lay a run | with a walkway, raised walkway, breakwater, net or sea wall selected, drag from one cell to another; the hint prices the run |
+| Deck height | with a walkway selected, `]` raises the deck 0.2 m (+2$ a step), `[` lowers it; the ghost's colour tells you what the tide will do |
 | Inspect | click any building; Esc closes the panel |
 | Remove | right-click — half the money comes back |
 | First pier | the gold ring on the water shows where it fits; docks need a pier or raised walkway alongside |

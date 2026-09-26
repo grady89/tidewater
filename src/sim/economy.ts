@@ -12,7 +12,7 @@ import {
 } from "./balance";
 import { at } from "./fields";
 import { active, damageNear, fireSources, repairDamage, rollIgnitions } from "./fire";
-import { REMOVE_REFUND } from "./balance";
+import { LIFT_COST, LIFT_MAX, REMOVE_REFUND } from "./balance";
 import { Grid } from "./grid";
 import { depleteGround, fishAt, pollutionAt, routeWaste, settleFields } from "./pollution";
 import { chooseGround } from "./sea";
@@ -40,12 +40,19 @@ export function buildingCost(kind: BuildingKind): Cost {
 }
 
 /** Validate, pay, and place a building anchored at `anchor`. Null (and nothing paid) when it can't go there. */
-export function tryPlace(state: SimState, grid: Grid, kind: BuildingKind, anchor: Cell): Building | null {
+/** What a placement costs, lift included. */
+export function placeCost(kind: BuildingKind, lift = 0): Cost {
+  const c = BUILDINGS[kind].cost;
+  return lift > 0 && BUILDINGS[kind].floor === "stilts" ? { ...c, money: c.money + Math.min(LIFT_MAX, lift) * LIFT_COST } : c;
+}
+
+export function tryPlace(state: SimState, grid: Grid, kind: BuildingKind, anchor: Cell, lift = 0): Building | null {
   const cells = grid.footprint(kind, anchor);
-  if (!cells || !grid.canPlace(kind, cells) || !canAfford(state, BUILDINGS[kind].cost)) return null;
-  pay(state, BUILDINGS[kind].cost);
+  const cost = placeCost(kind, lift);
+  if (!cells || !grid.canPlace(kind, cells) || !canAfford(state, cost)) return null;
+  pay(state, cost);
   const firstHarbor = kind === "harbor" && !grid.isleOpen();
-  const b = grid.place(kind, cells);
+  const b = grid.place(kind, cells, BUILDINGS[kind].floor === "stilts" ? lift : 0);
   if (firstHarbor) notify(state, "The ferry runs: the isle across the water is open to build on");
   return b;
 }

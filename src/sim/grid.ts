@@ -1,7 +1,7 @@
 // Cell model over the terrain, occupancy index, and placement rules. Buildings live in SimState; the Grid is the
 // spatial index over them (rebuilt from state on load) plus the fixed terrain classification.
 import { SIZE, STILT_LENGTH, TIDE_HI, TIDE_LO, WALKWAY_SNAP } from "../config";
-import { BEACH_MAX_HEIGHT, BuildingKind, BUILDINGS, PlacementClass } from "./balance";
+import { BEACH_MAX_HEIGHT, BuildingKind, BUILDINGS, LIFT_MAX, LIFT_STEP, PlacementClass } from "./balance";
 import { terrainHeight } from "./heightfield";
 import { isleCell } from "./isle";
 import { Building, Cell, SimState } from "./state";
@@ -189,16 +189,17 @@ export class Grid {
   }
 
   /** Deck height a building of `kind` gets on these cells. */
-  floorFor(kind: BuildingKind, cells: Cell[]): number {
+  /** Deck height for a footprint; `lift` is the player's extra height in LIFT_STEP steps (stilt decks only). */
+  floorFor(kind: BuildingKind, cells: Cell[], lift = 0): number {
     const f = BUILDINGS[kind].floor;
     if (typeof f === "number") return f;
     let h = -Infinity;
     for (const c of cells) h = Math.max(h, this.heightAt(c));
     if (f !== "stilts") return Math.max(1.0, h + 0.05);
     // Stilt decks meet their neighbours: rise to the highest adjacent deck within WALKWAY_SNAP so streets run
-    // level over uneven flats, never sink below the cell's own stilt height.
+    // level over uneven flats, never sink below the cell's own stilt height. A lift raises the deck further.
     const base = h + STILT_LENGTH;
-    let floor = base;
+    let floor = base + Math.max(0, Math.min(LIFT_MAX, lift)) * LIFT_STEP;
     for (const c of cells) for (const n of this.neighbors(c)) {
       const b = this.buildingAt(n);
       if (!b || cells.some(x => x.i === n.i && x.j === n.j)) continue;
@@ -207,10 +208,10 @@ export class Grid {
     return floor;
   }
 
-  place(kind: BuildingKind, cells: Cell[]): Building {
+  place(kind: BuildingKind, cells: Cell[], lift = 0): Building {
     const s = this.state;
     const b: Building = {
-      id: s.nextId++, kind, cells, floorY: this.floorFor(kind, cells), cut: false, reached: false,
+      id: s.nextId++, kind, cells, floorY: this.floorFor(kind, cells, lift), cut: false, reached: false,
       workers: 0, residents: 0, boats: 0, atSea: false, ground: null, output: 0, happiness: 1, progress: 0, stress: 0,
       level: 1, streak: 0, lantern: false, injured: 0, shock: 0, fire: 0, damaged: false,
     };

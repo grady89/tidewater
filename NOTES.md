@@ -472,6 +472,23 @@ What other builders do and what was taken from each:
 - Why people weren't coming in that playtest: immigration needs a home *reached* from a pier (walkway path to a
   pier with a boat) and food in stock; the seed money is 500$ and it had all gone on unconnected pieces.
 
+### Third hands-on feedback: horizon artifacts, stairs, deck height, walkthrough
+- The "water artifacts when the tide goes down" were the study's sky bug seen twice: `skyFS` clamped d.y to
+  −0.05 and `pow` of a negative gave a black band just under the horizon; with reflections on, the mirror painted
+  that band across the sea as dark streaks along the wave facets. One number changed in the shader (clamp floor
+  0.0) — the first deliberate edit to settled shader math, recorded here for that reason.
+- Stairs were backwards (the top tread sat away from the higher deck) and then floated. They are now a solid
+  flight: n = ⌈dh / 0.13⌉ treads (≥ 2), each a block from the lower deck up to its own height and out to the
+  shared edge, alternating plank/wood, so the top tread meets the higher floor and the flight is a wedge.
+- Deck height is now the player's: with a walkway selected, `]` / `[` lift the deck in `LIFT_STEP` (0.2 m) steps
+  up to `LIFT_MAX` (4) for `LIFT_COST` (2$) a step; the ghost, the fate tint, the hint and the drag-run price all
+  follow. It sits on top of the neighbour snap (`floorFor(kind, cells, lift)`) and `tryPlace` charges for it.
+  This is the tide game's real lever — the question "how high?" was already the whole design, so it deserved a key.
+  Kinds with a fixed floor ignore the lift; `placeCost` is the one place that knows the price.
+- The walkthrough is a card (step N of 6, title, instruction, a Skip button — the old banner skipped on any
+  click, which is how the first playtest lost it), each step points at its tab and tool and the HUD pulses them,
+  and the pier ring carries a DOM label "Pier goes here" pinned via `screenOf`. Steps clear themselves as before.
+
 ### Chunk merge (the M12 perf pass, done for the mirror)
 - `view/buildingViews.ts` now merges every building in an 8×8-cell chunk into one mesh (`chunk:i,j`), rebuilt
   when any building in the chunk appears, leaves or changes its mesh signature. 300 buildings → 15 chunk meshes;

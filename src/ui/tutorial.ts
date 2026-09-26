@@ -1,30 +1,47 @@
-// A five-step tutorial and the empty-state hints, told through one persistent line above the notifications.
-// Progress lives in localStorage (it's UI state, not ledger state); each step clears itself when the town has done
-// the thing. Read-only over the sim.
-import { BUILDINGS } from "../sim/balance";
+// A six-step walkthrough card, then empty-state hints, told through one persistent card above the notifications.
+// Each step says what to build, points at the tab and tool for it (the HUD pulses them), and clears itself when
+// the town has done the thing. Progress lives in localStorage (UI state, not ledger state). Read-only over the sim.
+import { BUILDINGS, Category } from "../sim/balance";
 import { population, SimState } from "../sim/state";
+import { Tool } from "../build/placement";
 
 const KEY = "tidewater.tutorial";
 
-interface Step { text: string; done(state: SimState): boolean }
+export interface Step {
+  title: string;
+  text: string;
+  /** What to point at while the step is open. */
+  tab?: Category;
+  tool?: Tool;
+  done(state: SimState): boolean;
+}
 
 const has = (state: SimState, kind: string) => Object.values(state.buildings).some(b => b.kind === kind);
+const count = (state: SimState, kind: string) => Object.values(state.buildings).filter(b => b.kind === kind).length;
 const boats = (state: SimState) => Object.values(state.buildings).reduce((n, b) => n + b.boats, 0);
 
 export const STEPS: Step[] = [
-  { text: "1 · Build a pier: open the Sea tab and click deep water against the shore.", done: s => has(s, "pier") },
-  { text: "2 · Buy a boat: pick Boat in the Sea tab and click your pier.", done: s => boats(s) > 0 },
-  { text: "3 · Lay walkways (Streets tab) from the pier to your hut. Low ground floods — the ghost turns amber or red; use raised walkways there.", done: s => Object.values(s.buildings).some(b => b.kind === "hut" && b.reached) },
-  { text: "4 · Build a fish market (Production tab) on the walkways so the catch can be sold, and more huts for the crew.", done: s => has(s, "market") },
-  { text: "5 · Watch the tide clock: boats sail at high water and the market settles at the peak. Residents arrive while there is food, work and room.", done: s => s.tide.cycle >= 3 && population(s) >= 4 },
+  { title: "Build a pier", text: "Open the Sea tab, pick Pier and click the gold ring by your hut. Piers stand in deep water against the shore; boats fish from them.", tab: "Sea", tool: "pier", done: s => has(s, "pier") },
+  { title: "Buy a boat", text: "Sea tab → Boat, then click the pier. Boats sail at high water and bring back fish.", tab: "Sea", tool: "boat", done: s => boats(s) > 0 },
+  { title: "Lay a street", text: "Streets → Walkway, then drag from the pier to your hut. An amber or red ghost means the tide will flood it: press ] to raise the deck, or use a raised walkway.", tab: "Streets", tool: "walkway", done: s => Object.values(s.buildings).some(b => b.kind === "hut" && b.reached) },
+  { title: "Sell the catch", text: "Production → Fish market, on the street. It sells fish at every high-tide peak; that is your income.", tab: "Production", tool: "market", done: s => has(s, "market") },
+  { title: "Make room", text: "Homes → Hut, beside the street. Residents move in while there is food, work and a free bed.", tab: "Homes", tool: "hut", done: s => count(s, "hut") + count(s, "house") >= 2 },
+  { title: "Watch a tide", text: "Boats sail at high water; the ledger settles at the peak. Next: a well and a sewage outfall (Services) keep people happy.", done: s => s.tide.cycle >= 3 && population(s) >= 4 },
 ];
 
 export class Tutorial {
   private step = 0;
+  private readonly stepEl: HTMLElement;
+  private readonly titleEl: HTMLElement;
+  private readonly textEl: HTMLElement;
 
   constructor(private readonly el: HTMLElement) {
+    el.innerHTML = `<div class="tut-head"><span class="tut-step"></span><button type="button" class="skip" title="Skip the walkthrough">Skip</button></div><h3></h3><p></p>`;
+    this.stepEl = el.querySelector<HTMLElement>(".tut-step")!;
+    this.titleEl = el.querySelector("h3")!;
+    this.textEl = el.querySelector("p")!;
     try { this.step = Math.min(STEPS.length, parseInt(localStorage.getItem(KEY) ?? "0", 10) || 0); } catch { this.step = 0; }
-    el.addEventListener("click", () => this.skip());
+    el.querySelector("button")!.addEventListener("click", () => this.skip());
   }
 
   private persist(): void {
@@ -41,7 +58,16 @@ export class Tutorial {
     this.persist();
   }
 
-  /** The empty-state hint once the tutorial is over: what the town is missing most. */
+  /** The open step's pointers, for the HUD to pulse. */
+  get current(): { tab?: Category; tool?: Tool } | null {
+    if (this.step >= STEPS.length) return null;
+    const s = STEPS[this.step];
+    return { tab: s.tab, tool: s.tool };
+  }
+
+  get stepIndex(): number { return this.step; }
+
+  /** The empty-state hint once the walkthrough is over: what the town is missing most. */
   private hint(state: SimState): string {
     const bs = Object.values(state.buildings);
     if (!bs.some(b => b.kind === "pier" || b.kind === "dock" || b.kind === "harbor")) return "No pier: nothing can fish. Sea tab.";
@@ -57,13 +83,20 @@ export class Tutorial {
     const bs = Object.values(state.buildings);
     if (bs.some(b => b.kind === "pier" || b.kind === "dock" || b.kind === "harbor")) return null;
     if (state.resources.money >= BUILDINGS.pier.cost.money) return null;
-    return `Stuck: no pier and not enough for one (${BUILDINGS.pier.cost.money}$). Right-click a building to remove it — half its cost comes back.`;
+    return `No pier and not enough for one (${BUILDINGS.pier.cost.money}$). Right-click a building to remove it — half its cost comes back.`;
   }
 
   update(state: SimState): void {
     while (this.step < STEPS.length && STEPS[this.step].done(state)) { this.step++; this.persist(); }
-    const text = Tutorial.stuck(state) ?? (this.step < STEPS.length ? STEPS[this.step].text + "  (click to skip)" : this.hint(state));
-    if (this.el.textContent !== text) this.el.textContent = text;
+    const stuck = Tutorial.stuck(state);
+    let step = "", title = "", text = "";
+    if (stuck) { step = "Stuck"; title = "Nothing can earn"; text = stuck; }
+    else if (this.step < STEPS.length) { const s = STEPS[this.step]; step = `Step ${this.step + 1} of ${STEPS.length}`; title = s.title; text = s.text; }
+    else text = this.hint(state);
+    if (this.stepEl.textContent !== step) this.stepEl.textContent = step;
+    if (this.titleEl.textContent !== title) this.titleEl.textContent = title;
+    if (this.textEl.textContent !== text) this.textEl.textContent = text;
+    this.el.classList.toggle("bare", title === "");
     this.el.hidden = text === "";
   }
 }

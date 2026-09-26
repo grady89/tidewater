@@ -155,6 +155,26 @@ try {
   });
   assert(marker.marker !== null && marker.n === laid.n - 1, "a fresh town shows the pier suggestion; the starter town came back");
 
+  // Walkthrough card and deck lift: a fresh town opens on step 1 with the Sea tab pulsing; ] lifts the deck.
+  const walk = await page.evaluate(() => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    const town = api.saveJson();
+    api.newTown(); api.tickSeconds(0.2);
+    const el = document.getElementById("tutorial")!;
+    const out = { hidden: el.hidden, step: el.querySelector(".tut-step")?.textContent, title: el.querySelector("h3")?.textContent, pulsing: [...document.querySelectorAll("#hud .pulse")].map(b => b.textContent?.trim().split("\n")[0]), label: !document.getElementById("markerLabel")!.hidden };
+    api.load(town);
+    return out;
+  });
+  console.log("Walkthrough:", JSON.stringify(walk));
+  assert(!walk.hidden && walk.step === "Step 1 of 6" && /pier/i.test(walk.title ?? "") && walk.pulsing.some(t => t === "Sea") && walk.label, "the walkthrough card opens on the pier step and pulses the Sea tab");
+  await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.place("walkway", -99, -99));
+  await page.keyboard.press("]");
+  await page.keyboard.press("]");
+  const lift = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { lift: api.placement.lift, hint: api.view.hint() }; });
+  await page.keyboard.press("[");
+  await page.keyboard.press("[");
+  assert(lift.lift === 2 && /\+0\.4 m/.test(lift.hint), "] lifts the deck two steps and the hint says so: " + lift.hint);
+
   const ran = await page.evaluate(() => {
     const api = (window as unknown as { __tidewater: Api }).__tidewater;
     api.advance(4);

@@ -97,6 +97,10 @@ export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
 
 /** Share of a building's money cost returned when the player removes it (planks and timber are not returned). */
 export const REMOVE_REFUND = 0.5;
+/** Stilt decks can be built higher than their stilts: LIFT_STEP metres per step, up to LIFT_MAX steps, LIFT_COST $ each. */
+export const LIFT_STEP = 0.2;
+export const LIFT_MAX = 4;
+export const LIFT_COST = 2;
 
 // Storms
 export const STORM_FIRST_CYCLE = 6;

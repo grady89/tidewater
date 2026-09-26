@@ -19,6 +19,7 @@ import { InfoPanel } from "./ui/infoPanel";
 import { SaveMenu } from "./ui/saveMenu";
 import { Speed, SpeedControls } from "./ui/speed";
 import { AchievementPopup } from "./ui/achievements";
+import { MarkerLabel } from "./ui/markerLabel";
 import { Tutorial } from "./ui/tutorial";
 import { Audio } from "./view/audio";
 import { Boats } from "./view/boats";
@@ -94,6 +95,7 @@ const hud = new Hud(document.getElementById("hud")!, document.getElementById("re
 const info = new InfoPanel(document.getElementById("info")!, grid);
 const tutorial = new Tutorial(document.getElementById("tutorial")!);
 const achievements = new AchievementPopup(document.getElementById("achievement")!);
+const markerLabel = new MarkerLabel(document.getElementById("markerLabel")!, "Pier goes here");
 achievements.adopt(state);
 placement.onSelect = b => info.select(b);
 cameraControl.onHome = () => api.frameTown(30);
@@ -140,6 +142,7 @@ window.addEventListener("keydown", e => {
   if (e.target instanceof HTMLInputElement) return;
   if (e.key === "Escape") { if (menu.open) menu.toggle(false); else if (info.selectedId !== null) info.select(null); else menu.toggle(true); return; }
   if (e.key === " ") { speed = speed === 0 ? 1 : 0; e.preventDefault(); return; }
+  if (e.key === "]" || e.key === "[") { placement.adjustLift(e.key === "]" ? 1 : -1); e.preventDefault(); return; }
   if (cameraControl.keyDown(e.key)) { e.preventDefault(); return; }
   if (hud.key(e.key)) e.preventDefault();
 });
@@ -179,9 +182,11 @@ function syncView(): void {
   terrain.update(camera.position, state.tide.level, state.tide.wetLevel);
   water.update(viewTime, camera.position, state.tide.level);
   cameraControl.leftDrag = !placement.dragsLine;
-  hud.update({ tool: placement.tool, blocker: placement.blocker, warn: placement.warn, line: placement.line, fate: placement.fate, state });
+  hud.update({ tool: placement.tool, blocker: placement.blocker, warn: placement.warn, line: placement.line, lift: placement.liftable ? placement.lift : null, fate: placement.fate, state });
   info.update(state);
   tutorial.update(state);
+  hud.highlight(tutorial.current);
+  markerLabel.update(pierMarker.cell ? api.screenOf(pierMarker.cell.i + 0.5, pierMarker.cell.j + 0.5, state.tide.level + 0.2) : null);
   achievements.update(state, viewTime);
   speedControls.update(speed, audio.muted, water.reflections);
   audio.sync(state, stormMix);
@@ -274,8 +279,8 @@ const api = {
     cameraControl.jumpTo(x / n, z / n, radius, -0.8, 0.95);
   },
   /** View only: aim the camera at a world point. */
-  frameAt(x: number, z: number, radius = 16) {
-    cameraControl.jumpTo(x, z, radius, -0.8, 0.95);
+  frameAt(x: number, z: number, radius = 16, yaw = -0.8, beta = 0.95) {
+    cameraControl.jumpTo(x, z, radius, yaw, beta);
   },
   /** The screen position (client pixels) of a world point at height `y`, for pointer-driven checks. Placement
    *  picks against the tool's deck height, so pass that to land on a cell. */

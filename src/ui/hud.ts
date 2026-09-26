@@ -1,7 +1,7 @@
 // The UI: resource bar, build menu by category, tide clock, last-cycle ledger, notifications. Plain DOM over the
 // canvas, read-only over the sim.
 import { Fate, Tool } from "../build/placement";
-import { BOAT_COST, BUILDING_KINDS, BuildingKind, BUILDINGS, CATEGORIES, Category, LANTERN_COST, PLANK_ORDER_SIZE, TRADE_PLANK_PRICE } from "../sim/balance";
+import { BOAT_COST, BUILDING_KINDS, BuildingKind, BUILDINGS, CATEGORIES, Category, LANTERN_COST, LIFT_COST, LIFT_STEP, PLANK_ORDER_SIZE, TRADE_PLANK_PRICE } from "../sim/balance";
 import { canAfford } from "../sim/economy";
 import { Grid } from "../sim/grid";
 import { population, SimState } from "../sim/state";
@@ -15,6 +15,8 @@ export interface HudState {
   blocker: string | null;
   warn: string | null;
   line: { count: number; cost: number } | null;
+  /** Deck lift steps for the current tool, or null when the tool has no lift. */
+  lift: number | null;
   fate: Fate;
   state: SimState;
 }
@@ -162,6 +164,12 @@ export class Hud {
 
   get category(): Category { return this._category; }
 
+  /** Pulse the tab and tool the walkthrough points at (null clears). */
+  highlight(h: { tab?: Category; tool?: Tool } | null): void {
+    for (const [c, b] of this.tabs) b.classList.toggle("pulse", !!h?.tab && c === h.tab);
+    for (const [t, b] of this.buttons) b.classList.toggle("pulse", !!h?.tool && t === h.tool);
+  }
+
   showCategory(cat: Category): void {
     this._category = cat;
     for (const [c, b] of this.tabs) b.classList.toggle("active", c === cat);
@@ -256,7 +264,10 @@ export class Hud {
 
     const lineText = s.line ? `${s.line.count} × ${TOOLS.find(t => t.tool === s.tool)?.label.toLowerCase() ?? s.tool} · ${s.line.cost}$ — release to lay them` : null;
     const fateText = s.fate !== "safe" ? FATE_TEXT[s.fate] : null;
-    this.hint.textContent = s.blocker ?? lineText ?? s.warn ?? fateText ?? (LINE_TOOL_HINT.has(s.tool) ? FATE_TEXT.line : FATE_TEXT.safe);
+    const liftText = s.lift !== null ? (s.lift > 0 ? `Deck +${(s.lift * LIFT_STEP).toFixed(1)} m (+${s.lift * LIFT_COST}$) · [ ] to change` : "[ ] raises the deck (+0.2 m, +2$ a step)") : null;
+    const base = LINE_TOOL_HINT.has(s.tool) ? FATE_TEXT.line : FATE_TEXT.safe;
+    const cautions = [s.warn, fateText, liftText].filter((t): t is string => t !== null);
+    this.hint.textContent = s.blocker ?? lineText ?? (cautions.length ? cautions.join(" · ") : base);
     this.hint.classList.toggle("blocked", s.blocker !== null);
     this.hint.classList.toggle("warn", s.blocker === null && !s.line && (s.warn !== null || s.fate !== "safe"));
 
