@@ -1,0 +1,430 @@
+<title>Tidewater Study</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=IBM+Plex+Sans:wght@400;500&display=swap">
+<style>
+  :root {
+    --sky: #cfe6f2;
+    --panel: rgba(18, 34, 46, 0.72);
+    --panel-line: rgba(255,255,255,0.10);
+    --ink: #f3f1ea;
+    --ink-dim: rgba(243,241,234,0.62);
+    --accent: #ffd18a;
+    --track: rgba(255,255,255,0.18);
+    color-scheme: dark;
+  }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--sky); overflow: hidden; font-family: "IBM Plex Sans", system-ui, sans-serif; color: var(--ink); }
+  #c { width: 100%; height: 100%; display: block; outline: none; touch-action: none; }
+  .panel {
+    position: fixed; left: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    width: min(300px, calc(100vw - 32px));
+    background: var(--panel); border: 1px solid var(--panel-line);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border-radius: 10px; padding: 14px 16px 16px; box-sizing: border-box;
+    display: grid; gap: 12px;
+  }
+  .panel h1 { font: 400 26px/1 "Instrument Serif", Georgia, serif; margin: 0; letter-spacing: 0.01em; }
+  .panel p { margin: 0; font-size: 12px; color: var(--ink-dim); line-height: 1.45; }
+  .row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; }
+  label { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-dim); }
+  .val { font-size: 11px; color: var(--accent); font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; grid-column: 1 / -1; accent-color: var(--accent); margin: 0; }
+  .toggle { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink); }
+  .toggle input { accent-color: var(--accent); margin: 0; }
+  .hint { position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); font-size: 11px; color: rgba(20,40,50,0.6); }
+  @media (max-width: 480px) { .hint { display: none; } }
+  @media (prefers-reduced-motion: reduce) { .panel { transition: none; } }
+</style>
+
+<canvas id="c"></canvas>
+
+<div class="panel">
+  <h1>Tidewater</h1>
+  <p>Stylized water and tide study. Flat-shaded procedural terrain, one water plane, one shader. Drag to orbit, scroll to zoom.</p>
+  <div class="row">
+    <label for="tide">Tide</label><span class="val" id="tideVal">+0.00</span>
+    <input type="range" id="tide" min="0" max="1" step="0.001" value="0.5">
+  </div>
+  <div class="row">
+    <label for="day">Time of day</label><span class="val" id="dayVal">Noon</span>
+    <input type="range" id="day" min="0" max="1" step="0.001" value="0.15">
+  </div>
+  <div class="row">
+    <span class="toggle"><input type="checkbox" id="auto" checked><label for="auto" style="text-transform:none;letter-spacing:0;color:var(--ink)">Let the tide run</label></span>
+    <span class="toggle"><input type="checkbox" id="orbit" checked><label for="orbit" style="text-transform:none;letter-spacing:0;color:var(--ink)">Slow orbit</label></span>
+  </div>
+</div>
+<div class="hint">WebGL · Babylon.js</div>
+
+<script src="https://cdn.jsdelivr.net/npm/babylonjs@7.54.3/babylon.js"></script>
+<script>
+(function () {
+  const SIZE = 64;          // world units across
+  const TIDE_LO = -0.35, TIDE_HI = 0.60;
+  const TIDE_PERIOD = 80;   // seconds for a full cycle
+
+  // ---------- procedural terrain ----------
+  function hash(ix, iz) {
+    let n = Math.imul(ix, 374761393) + Math.imul(iz, 668265263);
+    n = Math.imul(n ^ (n >>> 13), 1274126177);
+    n = n ^ (n >>> 16);
+    return (n >>> 0) / 4294967295;
+  }
+  function vnoise(x, z) {
+    const ix = Math.floor(x), iz = Math.floor(z);
+    let fx = x - ix, fz = z - iz;
+    fx = fx * fx * (3 - 2 * fx); fz = fz * fz * (3 - 2 * fz);
+    const a = hash(ix, iz), b = hash(ix + 1, iz), c = hash(ix, iz + 1), d = hash(ix + 1, iz + 1);
+    return (a + (b - a) * fx) * (1 - fz) + (c + (d - c) * fx) * fz;
+  }
+  function fbm(x, z, oct, f0) {
+    let s = 0, amp = 0.5, f = f0, norm = 0;
+    for (let i = 0; i < oct; i++) { s += vnoise(x * f + i * 17.3, z * f - i * 9.1) * amp; norm += amp; amp *= 0.5; f *= 2; }
+    return s / norm;
+  }
+  function H(x, z) {
+    let e = (fbm(x + 40, z - 20, 5, 1 / 22) - 0.5) * 2.2;
+    const r = Math.sqrt(x * x + z * z) / 32;
+    e -= r * r * r * 1.3;
+    e += 0.12;
+    const detail = (fbm(x * 3 + 7, z * 3 - 3, 3, 1 / 6) - 0.5) * 0.25;
+    let h;
+    if (e < 0) h = e * 4.0;
+    else if (e < 0.3) h = (e / 0.3) * 0.5;
+    else h = 0.5 + (e - 0.3) * 9.0;
+    return h + detail * (e > 0.3 ? 1.6 : 0.6);
+  }
+
+  // ---------- scene ----------
+  const canvas = document.getElementById("c");
+  const engine = new BABYLON.Engine(canvas, true, { antialias: true, adaptToDeviceRatio: true });
+  const scene = new BABYLON.Scene(engine);
+  scene.clearColor = new BABYLON.Color4(0.81, 0.90, 0.95, 1);
+
+  const camera = new BABYLON.ArcRotateCamera("cam", -0.95, 1.05, 46, new BABYLON.Vector3(0, 0.6, 0), scene);
+  camera.lowerRadiusLimit = 14; camera.upperRadiusLimit = 95;
+  camera.upperBetaLimit = 1.45; camera.lowerBetaLimit = 0.25;
+  camera.wheelPrecision = 18; camera.panningSensibility = 0;
+  camera.minZ = 0.5; camera.maxZ = 900;
+  camera.attachControl(canvas, true);
+  camera.useAutoRotationBehavior = true;
+  camera.autoRotationBehavior.idleRotationSpeed = 0.045;
+  camera.autoRotationBehavior.idleRotationWaitTime = 2500;
+  camera.autoRotationBehavior.idleRotationSpinupTime = 2500;
+
+  const sun = new BABYLON.DirectionalLight("sun", new BABYLON.Vector3(-0.5, -1, 0.4), scene);
+  const hemi = new BABYLON.HemisphericLight("hemi", new BABYLON.Vector3(0, 1, 0), scene);
+
+  // heightmap texture (16-bit split across r,g) for the water shader
+  const TW = 256;
+  const hdata = new Uint8Array(TW * TW * 4);
+  for (let row = 0; row < TW; row++) for (let col = 0; col < TW; col++) {
+    const x = (col / (TW - 1) - 0.5) * SIZE, z = (row / (TW - 1) - 0.5) * SIZE;
+    let v = (H(x, z) + 5) / 12; v = Math.min(1, Math.max(0, v));
+    const q = Math.round(v * 65535);
+    const i = (row * TW + col) * 4;
+    hdata[i] = q >> 8; hdata[i + 1] = q & 255; hdata[i + 2] = 0; hdata[i + 3] = 255;
+  }
+  const heightTex = BABYLON.RawTexture.CreateRGBATexture(hdata, TW, TW, scene, false, false, BABYLON.Texture.BILINEAR_SAMPLINGMODE);
+  heightTex.wrapU = heightTex.wrapV = BABYLON.Texture.CLAMP_ADDRESSMODE;
+
+  // ---------- shaders ----------
+  const COMMON = `
+    precision highp float;
+    float hash21(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }
+    float vnoise(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.-2.*f);
+      return mix(mix(hash21(i),hash21(i+vec2(1,0)),f.x), mix(hash21(i+vec2(0,1)),hash21(i+vec2(1,1)),f.x), f.y); }
+  `;
+
+  const terrainVS = `
+    precision highp float;
+    attribute vec3 position; attribute vec3 normal;
+    uniform mat4 world; uniform mat4 worldViewProjection;
+    varying vec3 vW; varying vec3 vN;
+    void main(){ vec4 w = world*vec4(position,1.0); vW = w.xyz; vN = normalize((world*vec4(normal,0.0)).xyz); gl_Position = worldViewProjection*vec4(position,1.0); }
+  `;
+  const terrainFS = COMMON + `
+    varying vec3 vW; varying vec3 vN;
+    uniform vec3 sunDir, sunColor, skyAmb, groundAmb, fogColor, camPos;
+    uniform float waterLevel, wetLevel;
+    void main(){
+      float y = vW.y;
+      vec3 sandDeep = vec3(0.62,0.55,0.40);
+      vec3 sand     = vec3(0.90,0.83,0.63);
+      vec3 grassLo  = vec3(0.66,0.78,0.47);
+      vec3 grassHi  = vec3(0.45,0.66,0.36);
+      vec3 rock     = vec3(0.56,0.54,0.51);
+      vec3 col = mix(sandDeep, sand, smoothstep(-1.2, 0.0, y));
+      col = mix(col, grassLo, smoothstep(0.55, 0.95, y));
+      col = mix(col, grassHi, smoothstep(1.4, 3.2, y));
+      col = mix(col, rock, smoothstep(4.2, 5.6, y));
+      col = mix(col, rock, smoothstep(0.80, 0.62, vN.y) * step(0.5, y));
+      // submerged and wet sand
+      col *= mix(1.0, 0.72, smoothstep(waterLevel + 0.02, waterLevel - 0.02, y));
+      float wet = smoothstep(waterLevel - 0.01, waterLevel + 0.03, y) * (1.0 - smoothstep(wetLevel - 0.05, wetLevel + 0.08, y));
+      col *= mix(1.0, 0.70, wet);
+      // lighting
+      float nd = max(dot(vN, sunDir), 0.0);
+      vec3 amb = mix(groundAmb, skyAmb, vN.y*0.5+0.5);
+      vec3 lit = col * (sunColor * nd * 1.05 + amb);
+      float d = distance(camPos, vW);
+      lit = mix(lit, fogColor, smoothstep(45.0, 140.0, d));
+      gl_FragColor = vec4(lit, 1.0);
+    }
+  `;
+
+  const waterVS = `
+    precision highp float;
+    attribute vec3 position;
+    uniform mat4 world; uniform mat4 worldViewProjection; uniform float time;
+    varying vec3 vW;
+    void main(){
+      vec4 w = world*vec4(position,1.0);
+      float y = 0.045*sin(w.x*0.9 + time*1.1) + 0.035*sin((w.x*0.6 + w.z*0.8)*1.3 - time*0.9) + 0.025*sin(w.z*1.7 + time*1.6);
+      w.y += y; vW = w.xyz;
+      gl_Position = worldViewProjection*vec4(position.x, position.y + y, position.z, 1.0);
+    }
+  `;
+  const waterFS = `
+    #extension GL_OES_standard_derivatives : enable
+  ` + COMMON + `
+    varying vec3 vW;
+    uniform sampler2D heightTex;
+    uniform vec3 sunDir, sunColor, skyColor, fogColor, camPos;
+    uniform float time, dusk;
+    void main(){
+      vec2 uv = vW.xz / ${SIZE}.0 + 0.5;
+      vec4 t = texture2D(heightTex, uv);
+      float terrainH = (t.r*255.0*256.0 + t.g*255.0)/65535.0 * 12.0 - 5.0;
+      float depth = vW.y - terrainH;
+      if (depth < 0.0) discard;
+      vec3 n = normalize(cross(dFdx(vW), dFdy(vW)));
+      if (n.y < 0.0) n = -n;
+      vec3 V = normalize(camPos - vW);
+      vec3 shallow = vec3(0.58,0.86,0.82), mid = vec3(0.22,0.63,0.70), deep = vec3(0.09,0.34,0.52);
+      vec3 col = mix(shallow, mid, smoothstep(0.0, 0.9, depth));
+      col = mix(col, deep, smoothstep(0.8, 3.2, depth));
+      col = mix(col, vec3(0.10,0.24,0.42), dusk*0.55);
+      float alpha = mix(0.34, 0.92, smoothstep(0.0, 1.4, depth));
+      // fresnel toward sky
+      float fres = pow(1.0 - max(dot(n, V), 0.0), 3.0);
+      col = mix(col, skyColor, fres*0.55);
+      alpha = mix(alpha, 0.97, fres*0.6);
+      // foam: a crisp edge line plus broken rings drifting toward the shore
+      float band = 1.0 - smoothstep(0.0, 0.32, depth);
+      float nz = vnoise(uv*120.0 + vec2(time*0.09, time*0.06))*0.6 + vnoise(uv*260.0 - vec2(time*0.13, time*0.04))*0.4;
+      float ph = fract(depth*4.5 + time*0.22);
+      float ring = smoothstep(0.80, 0.90, ph) * (1.0 - smoothstep(0.93, 1.0, ph));
+      float foam = ring * band * smoothstep(0.42, 0.62, nz);
+      float edge = 1.0 - smoothstep(0.0, 0.045, depth);
+      foam = max(foam, edge*0.9);
+      // faint streaks on open water
+      float glint = smoothstep(0.86, 0.94, vnoise(uv*vec2(260.0, 70.0) + vec2(time*0.04, -time*0.07))) * 0.05 * (1.0-band);
+      col = mix(col, vec3(0.97,0.99,0.99), foam) + glint;
+      alpha = mix(alpha, 0.98, foam);
+      // sun
+      vec3 Hh = normalize(sunDir + V);
+      float spec = pow(max(dot(n, Hh), 0.0), 140.0);
+      col += sunColor * spec * 1.6;
+      float lambert = 0.75 + 0.25*max(dot(n, sunDir), 0.0);
+      col *= lambert;
+      float d = distance(camPos, vW);
+      col = mix(col, fogColor, smoothstep(45.0, 140.0, d));
+      gl_FragColor = vec4(col, alpha);
+    }
+  `;
+
+  const skyVS = `
+    precision highp float; attribute vec3 position; uniform mat4 worldViewProjection; varying vec3 vP;
+    void main(){ vP = position; gl_Position = worldViewProjection*vec4(position,1.0); }
+  `;
+  const skyFS = `
+    precision highp float; varying vec3 vP; uniform vec3 zenith, horizon, sunDir, sunColor; uniform float dusk;
+    void main(){
+      vec3 d = normalize(vP);
+      float h = clamp(d.y, -0.05, 1.0);
+      vec3 col = mix(horizon, zenith, pow(h, 0.4));
+      float s = pow(max(dot(d, sunDir), 0.0), 220.0);
+      float halo = pow(max(dot(d, sunDir), 0.0), 8.0);
+      col += sunColor * (s*1.2 + halo*0.18*(0.4+dusk));
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `;
+
+  // ---------- meshes ----------
+  const ground = BABYLON.MeshBuilder.CreateGround("ground", { width: SIZE, height: SIZE, subdivisions: 170 }, scene);
+  {
+    const pos = ground.getVerticesData(BABYLON.VertexBuffer.PositionKind);
+    for (let i = 0; i < pos.length; i += 3) pos[i + 1] = H(pos[i], pos[i + 2]);
+    ground.updateVerticesData(BABYLON.VertexBuffer.PositionKind, pos);
+    ground.convertToFlatShadedMesh();
+  }
+  const terrainMat = new BABYLON.ShaderMaterial("terrain", scene, { vertexSource: terrainVS, fragmentSource: terrainFS }, {
+    attributes: ["position", "normal"],
+    uniforms: ["world", "worldViewProjection", "sunDir", "sunColor", "skyAmb", "groundAmb", "fogColor", "camPos", "waterLevel", "wetLevel"]
+  });
+  ground.material = terrainMat;
+
+  const water = BABYLON.MeshBuilder.CreateGround("water", { width: SIZE * 3.2, height: SIZE * 3.2, subdivisions: 260 }, scene);
+  const waterMat = new BABYLON.ShaderMaterial("water", scene, { vertexSource: waterVS, fragmentSource: waterFS }, {
+    attributes: ["position"],
+    uniforms: ["world", "worldViewProjection", "time", "sunDir", "sunColor", "skyColor", "fogColor", "camPos", "dusk"],
+    samplers: ["heightTex"],
+    needAlphaBlending: true
+  });
+  waterMat.setTexture("heightTex", heightTex);
+  waterMat.backFaceCulling = false;
+  water.material = waterMat;
+  water.alphaIndex = 10;
+
+  const skyDome = BABYLON.MeshBuilder.CreateSphere("sky", { diameter: 600, segments: 24, sideOrientation: BABYLON.Mesh.BACKSIDE }, scene);
+  const skyMat = new BABYLON.ShaderMaterial("sky", scene, { vertexSource: skyVS, fragmentSource: skyFS }, {
+    attributes: ["position"], uniforms: ["worldViewProjection", "zenith", "horizon", "sunDir", "sunColor", "dusk"]
+  });
+  skyMat.disableDepthWrite = true; skyMat.backFaceCulling = false;
+  skyDome.material = skyMat; skyDome.infiniteDistance = true; skyDome.isPickable = false;
+
+  // ---------- props: stilt houses, walkways, lanterns, trees ----------
+  function flatMat(name, hex, emissive) {
+    const m = new BABYLON.StandardMaterial(name, scene);
+    m.diffuseColor = BABYLON.Color3.FromHexString(hex);
+    m.specularColor = new BABYLON.Color3(0.03, 0.03, 0.03);
+    if (emissive) m.emissiveColor = BABYLON.Color3.FromHexString(emissive);
+    return m;
+  }
+  const wallMats = ["#f2ece0", "#f4d9c6", "#d5e6ea", "#ece3c3", "#f7e7d3"].map((h, i) => flatMat("wall" + i, h));
+  const roofMats = ["#c9674f", "#4c5a66", "#b9543f", "#5d6d7a"].map((h, i) => flatMat("roof" + i, h));
+  const woodMat = flatMat("wood", "#5a4636");
+  const plankMat = flatMat("plank", "#8a6f52");
+  const lanternMat = flatMat("lantern", "#3a2a1a");
+  lanternMat.emissiveColor = new BABYLON.Color3(0, 0, 0);
+  const trunkMat = flatMat("trunk", "#5b4634");
+  const leafMats = ["#4a8a55", "#5a9a5c", "#3f7f4d"].map((h, i) => flatMat("leaf" + i, h));
+
+  let seed = 7;
+  const rnd = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
+
+  const FLOOR = 1.0;
+  const houses = [];
+  for (let tries = 0; tries < 4000 && houses.length < 12; tries++) {
+    const x = (rnd() - 0.5) * 44, z = (rnd() - 0.5) * 44;
+    const h = H(x, z);
+    if (h < 0.02 || h > 0.42) continue;
+    if (houses.some(p => Math.hypot(p.x - x, p.z - z) < 4.2)) continue;
+    houses.push({ x, z, h });
+  }
+  houses.forEach((p, i) => {
+    const root = new BABYLON.TransformNode("house" + i, scene);
+    root.position.set(p.x, 0, p.z);
+    root.rotation.y = rnd() * Math.PI;
+    const w = 1.5 + rnd() * 0.6, d = 1.5 + rnd() * 0.6, hh = 1.0 + rnd() * 0.3;
+    const box = BABYLON.MeshBuilder.CreateBox("b" + i, { width: w, depth: d, height: hh }, scene);
+    box.position.y = FLOOR + hh / 2; box.parent = root; box.material = wallMats[i % wallMats.length];
+    const roof = BABYLON.MeshBuilder.CreateCylinder("r" + i, { diameterTop: 0, diameterBottom: Math.max(w, d) * 1.55, height: 0.75, tessellation: 4 }, scene);
+    roof.rotation.y = Math.PI / 4; roof.position.y = FLOOR + hh + 0.375; roof.parent = root; roof.material = roofMats[i % roofMats.length];
+    roof.convertToFlatShadedMesh();
+    const deck = BABYLON.MeshBuilder.CreateBox("d" + i, { width: w + 1.0, depth: d + 1.0, height: 0.1 }, scene);
+    deck.position.y = FLOOR - 0.05; deck.parent = root; deck.material = plankMat;
+    for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+      const lx = sx * (w / 2 + 0.3), lz = sz * (d / 2 + 0.3);
+      // stilt bottom must sit in terrain: sample world height at the rotated position
+      const c = Math.cos(root.rotation.y), s = Math.sin(root.rotation.y);
+      const wx = p.x + lx * c + lz * s, wz = p.z - lx * s + lz * c;
+      const gh = H(wx, wz) - 0.3;
+      const st = BABYLON.MeshBuilder.CreateCylinder("s", { diameter: 0.16, height: FLOOR - gh, tessellation: 6 }, scene);
+      st.position.set(lx, gh + (FLOOR - gh) / 2, lz); st.parent = root; st.material = woodMat;
+    }
+    const post = BABYLON.MeshBuilder.CreateCylinder("lp", { diameter: 0.07, height: 0.9, tessellation: 5 }, scene);
+    post.position.set(w / 2 + 0.35, FLOOR + 0.45, d / 2 + 0.35); post.parent = root; post.material = woodMat;
+    const lamp = BABYLON.MeshBuilder.CreateSphere("l", { diameter: 0.2, segments: 6 }, scene);
+    lamp.position.set(w / 2 + 0.35, FLOOR + 0.95, d / 2 + 0.35); lamp.parent = root; lamp.material = lanternMat;
+  });
+  // walkways: connect each house to its nearest neighbor
+  houses.forEach((a, i) => {
+    let best = null, bd = 1e9;
+    houses.forEach((b, j) => { if (i === j) return; const dd = Math.hypot(a.x - b.x, a.z - b.z); if (dd < bd) { bd = dd; best = b; } });
+    if (!best || bd > 12) return;
+    const len = bd - 1.6;
+    const plank = BABYLON.MeshBuilder.CreateBox("walk" + i, { width: 0.55, height: 0.07, depth: len }, scene);
+    plank.position.set((a.x + best.x) / 2, FLOOR - 0.06, (a.z + best.z) / 2);
+    plank.rotation.y = Math.atan2(best.x - a.x, best.z - a.z);
+    plank.material = plankMat;
+    for (let k = 0; k <= Math.floor(len / 2.5); k++) {
+      const t = (k + 0.5) / (Math.floor(len / 2.5) + 1);
+      const x = a.x + (best.x - a.x) * t, z = a.z + (best.z - a.z) * t, gh = H(x, z) - 0.3;
+      const st = BABYLON.MeshBuilder.CreateCylinder("ws", { diameter: 0.12, height: FLOOR - gh, tessellation: 5 }, scene);
+      st.position.set(x, gh + (FLOOR - gh) / 2, z); st.material = woodMat;
+    }
+  });
+  // trees on the high ground
+  let trees = 0;
+  for (let tries = 0; tries < 3000 && trees < 70; tries++) {
+    const x = (rnd() - 0.5) * 56, z = (rnd() - 0.5) * 56;
+    const h = H(x, z);
+    if (h < 1.3 || h > 5.2) continue;
+    const slope = Math.abs(H(x + 0.6, z) - H(x - 0.6, z)) + Math.abs(H(x, z + 0.6) - H(x, z - 0.6));
+    if (slope > 1.1) continue;
+    const s = 0.8 + rnd() * 0.7;
+    const trunk = BABYLON.MeshBuilder.CreateCylinder("t", { diameter: 0.22 * s, height: 0.9 * s, tessellation: 5 }, scene);
+    trunk.position.set(x, h + 0.45 * s - 0.05, z); trunk.material = trunkMat;
+    const cone = BABYLON.MeshBuilder.CreateCylinder("c", { diameterTop: 0, diameterBottom: 1.3 * s, height: 2.3 * s, tessellation: 6 }, scene);
+    cone.position.set(x, h + 0.9 * s + 1.15 * s - 0.05, z); cone.material = leafMats[trees % 3];
+    cone.rotation.y = rnd() * Math.PI; cone.convertToFlatShadedMesh();
+    trees++;
+  }
+
+  // ---------- post ----------
+  const pipe = new BABYLON.DefaultRenderingPipeline("pp", false, scene, [camera]);
+  pipe.fxaaEnabled = true;
+  pipe.bloomEnabled = true; pipe.bloomThreshold = 0.9; pipe.bloomWeight = 0.15; pipe.bloomKernel = 48; pipe.bloomScale = 0.5;
+
+  // ---------- controls & animation ----------
+  const tideEl = document.getElementById("tide"), tideVal = document.getElementById("tideVal");
+  const dayEl = document.getElementById("day"), dayVal = document.getElementById("dayVal");
+  const autoEl = document.getElementById("auto"), orbitEl = document.getElementById("orbit");
+  let tidePhase = Math.PI * 0.5, waterLevel = 0, wetLevel = 0, t = 0;
+  tideEl.addEventListener("input", () => { autoEl.checked = false; });
+  orbitEl.addEventListener("change", () => { camera.useAutoRotationBehavior = orbitEl.checked; });
+
+  const lerp3 = (a, b, k) => new BABYLON.Vector3(a.x + (b.x - a.x) * k, a.y + (b.y - a.y) * k, a.z + (b.z - a.z) * k);
+  const c3 = h => { const c = BABYLON.Color3.FromHexString(h); return new BABYLON.Vector3(c.r, c.g, c.b); };
+  const NOON = { sun: c3("#fff5e2"), zen: c3("#6fb0de"), hor: c3("#dbeef8"), skyAmb: c3("#a9c8dc"), grAmb: c3("#7d6f58"), fog: c3("#cfe3ef"), water: c3("#bfe0f0") };
+  const DUSK = { sun: c3("#ff9855"), zen: c3("#4a3f7e"), hor: c3("#f2a878"), skyAmb: c3("#6a5a8e"), grAmb: c3("#3b2e44"), fog: c3("#d99a7d"), water: c3("#c98f86") };
+
+  engine.runRenderLoop(() => {
+    const dt = Math.min(engine.getDeltaTime() / 1000, 0.1);
+    t += dt;
+    if (autoEl.checked) {
+      tidePhase += dt * (2 * Math.PI / TIDE_PERIOD);
+      tideEl.value = (0.5 + 0.5 * Math.sin(tidePhase)).toFixed(3);
+    }
+    const tv = parseFloat(tideEl.value);
+    waterLevel = TIDE_LO + (TIDE_HI - TIDE_LO) * tv;
+    wetLevel = Math.max(waterLevel, wetLevel - dt * 0.012);
+    tideVal.textContent = (waterLevel >= 0 ? "+" : "") + waterLevel.toFixed(2) + " m";
+
+    const dusk = parseFloat(dayEl.value);
+    dayVal.textContent = dusk < 0.25 ? "Noon" : dusk < 0.6 ? "Afternoon" : dusk < 0.85 ? "Golden hour" : "Dusk";
+    const elev = (65 - 57 * dusk) * Math.PI / 180, az = (-40 + 30 * dusk) * Math.PI / 180;
+    const sunDir = new BABYLON.Vector3(Math.cos(elev) * Math.sin(az), Math.sin(elev), Math.cos(elev) * Math.cos(az)).normalize();
+    const k = Math.pow(dusk, 0.8);
+    const sunC = lerp3(NOON.sun, DUSK.sun, k), zen = lerp3(NOON.zen, DUSK.zen, k), hor = lerp3(NOON.hor, DUSK.hor, k);
+    const skyAmb = lerp3(NOON.skyAmb, DUSK.skyAmb, k), grAmb = lerp3(NOON.grAmb, DUSK.grAmb, k), fog = lerp3(NOON.fog, DUSK.fog, k), wsky = lerp3(NOON.water, DUSK.water, k);
+    const sunI = 1.0 - 0.35 * k;
+
+    sun.direction = sunDir.scale(-1); sun.diffuse = new BABYLON.Color3(sunC.x, sunC.y, sunC.z); sun.intensity = 1.1 * sunI;
+    hemi.diffuse = new BABYLON.Color3(skyAmb.x, skyAmb.y, skyAmb.z); hemi.groundColor = new BABYLON.Color3(grAmb.x, grAmb.y, grAmb.z); hemi.intensity = 0.9;
+    const lamp = Math.pow(Math.max(0, (dusk - 0.45) / 0.55), 1.5) * 2.2;
+    lanternMat.emissiveColor = new BABYLON.Color3(1.0 * lamp, 0.72 * lamp, 0.35 * lamp);
+
+    const cp = camera.position;
+    terrainMat.setVector3("sunDir", sunDir).setVector3("sunColor", sunC.scale(sunI)).setVector3("skyAmb", skyAmb).setVector3("groundAmb", grAmb)
+      .setVector3("fogColor", fog).setVector3("camPos", cp).setFloat("waterLevel", waterLevel).setFloat("wetLevel", wetLevel);
+    water.position.y = waterLevel;
+    waterMat.setFloat("time", t).setVector3("sunDir", sunDir).setVector3("sunColor", sunC.scale(sunI)).setVector3("skyColor", wsky)
+      .setVector3("fogColor", fog).setVector3("camPos", cp).setFloat("dusk", k);
+    skyMat.setVector3("zenith", zen).setVector3("horizon", hor).setVector3("sunDir", sunDir).setVector3("sunColor", sunC).setFloat("dusk", k);
+    scene.render();
+  });
+  window.addEventListener("resize", () => engine.resize());
+})();
+</script>
