@@ -1,5 +1,7 @@
 // Seeded value noise and the analytic terrain height. Pure functions; the sim and the view both read them.
+// The second island (backlog 6) is blended in at the end; the main island's heights are untouched.
 import { TERRAIN_SEED } from "../config";
+import { isleHeight, isleWeight } from "./isle";
 
 function hash(ix: number, iz: number): number {
   let n = Math.imul(ix, 374761393) + Math.imul(iz, 668265263) + Math.imul(TERRAIN_SEED, 0x27d4eb2f);
@@ -31,5 +33,8 @@ export function terrainHeight(x: number, z: number): number {
   if (e < 0) h = e * 4.0;
   else if (e < 0.3) h = (e / 0.3) * 0.5;
   else h = 0.5 + (e - 0.3) * 9.0;
-  return h + detail * (e > 0.3 ? 1.6 : 0.6);
+  h += detail * (e > 0.3 ? 1.6 : 0.6);
+  const w = isleWeight(x, z);
+  if (w > 0) h = h * (1 - w) + (isleHeight(x, z) + detail * 0.5) * w;
+  return h;
 }

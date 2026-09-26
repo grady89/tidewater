@@ -3,6 +3,9 @@ import { describe, expect, it } from "vitest";
 import { HIGH_WATER_MARK, LOW_WATER_MARK, SPRING_HI, SPRING_LO, STILT_LENGTH, TIDE_HI, TIDE_LO, TIDE_PERIOD } from "../src/config";
 import { BEACH_MAX_HEIGHT, BOAT_COST, BOAT_MIN_RANGE, BOAT_RANGE, BUILDINGS, CAP_BASE, DRAWDOWN_LEVEL, DRAWDOWN_SECONDS, FIRE_BURN_SECONDS, FIRE_IGNITE_THRESHOLD, FISH_CAP, HAPPY, INJURY_NATURAL_CYCLES, LEVEL_UP_HAPPINESS, MAX_LEVEL, OYSTER_POLLUTION_KILL, PLANK_ORDER_SIZE, STARTING_MONEY, TRADE_EVERY, TRADE_EVERY_LIGHTHOUSE, TREATMENT_RADIUS, TREE_REGROW_CYCLES, WAREHOUSE_CAP } from "../src/sim/balance";
 import { DISTRICT_MIN, districtName, districtOf, districts } from "../src/sim/districts";
+import { ISLE } from "../src/sim/isle";
+import { startCell } from "../src/sim/start";
+import { TREE_SITES } from "../src/sim/trees";
 import { sheltered, shielded, startStorm, startTsunami, waveDirection } from "../src/sim/events";
 import { ignite } from "../src/sim/fire";
 import { addLantern, coverageAt, lanternBlocker } from "../src/sim/services";
@@ -21,7 +24,7 @@ import { floodFate, isRising, phaseProgress, tickTide, tideNormalized } from "..
 import { grownTreesNear } from "../src/sim/trees";
 import { assignWorkers } from "../src/sim/workers";
 import { STEPS } from "../src/ui/tutorial";
-import { beachesNear, bigTown, growStreet, pierByBeach, placeByWalkway, placeEdge, placeHarbor, placeLumberCamp, placeSecondPier, placeShipyard, reachHill, shelterHarbours, starterTown } from "./scenario";
+import { beachesNear, bigTown, growStreet, pierByBeach, placeByWalkway, placeEdge, placeHarbor, placeLumberCamp, placeSecondPier, placeShipyard, reachHill, settleIsle, shelterHarbours, starterTown } from "./scenario";
 
 const simSources = import.meta.glob("../src/sim/**/*.ts", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
 
@@ -746,6 +749,47 @@ describe("districts (backlog 5)", () => {
     expect(d.residents).toBeGreaterThan(0);
     expect(d.happiness).toBeGreaterThan(0);
     expect(d.happiness).toBeLessThanOrEqual(1);
+  });
+});
+
+describe("second island (backlog 6)", () => {
+  it("adds a low isle of flats in the south-east and leaves the main island, its start and its trees alone", () => {
+    const { grid } = newGame(1);
+    let isleLand = 0, mainLand = 0, isleHigh = 0;
+    for (let i = -32; i < 32; i++) for (let j = -32; j < 32; j++) {
+      const c = { i, j };
+      if (grid.classAt(c) === "deep") continue;
+      if (grid.onIsle([c])) { isleLand++; if (grid.classAt(c) === "high") isleHigh++; } else mainLand++;
+    }
+    expect(mainLand).toBe(750); // the class map before the isle existed
+    expect(isleLand).toBeGreaterThan(80);
+    expect(isleHigh).toBeGreaterThan(0);
+    expect(isleHigh).toBeLessThan(isleLand / 3);
+    expect(grid.onIsle([startCell(grid)])).toBe(false);
+    for (const s of TREE_SITES) expect(Math.hypot(s.x - ISLE.x, s.z - ISLE.z)).toBeGreaterThan(ISLE.r);
+  });
+  it("is locked until a harbor stands, then takes a pier, walkways and huts", () => {
+    const { state, grid, town: t } = town();
+    const isleFlat = { i: 22, j: 17 };
+    expect(grid.classAt(isleFlat)).toBe("flat");
+    expect(grid.canPlace("hut", [isleFlat])).toBe(false);
+    expect(placeEdge(state, grid, "pier", { i: 22, j: 22 })).toBeNull();
+    state.resources.money += 5000; state.resources.planks += 200;
+    const harbor = placeHarbor(state, grid, t.pier.cells[0]);
+    expect(harbor).not.toBeNull();
+    expect(grid.isleOpen()).toBe(true);
+    expect(state.log[state.log.length - 1]).toMatch(/ferry/);
+    expect(grid.canPlace("hut", [isleFlat])).toBe(true);
+    const isle = settleIsle(state, grid);
+    expect(isle.pier).not.toBeNull();
+    expect(grid.onIsle(isle.pier!.cells)).toBe(true);
+    expect(isle.walkways.length).toBeGreaterThan(0);
+    expect(isle.huts.length).toBeGreaterThan(0);
+    state.tide.override = TIDE_HI;
+    tick(state, grid);
+    expect(isle.huts.every(h => h.reached)).toBe(true);
+    const round = new Grid(JSON.parse(JSON.stringify(state)) as SimState);
+    expect(round.isleOpen()).toBe(true);
   });
 });
 

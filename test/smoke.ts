@@ -374,6 +374,32 @@ try {
   console.log("M9 tourism:", JSON.stringify(m9tour));
   assert(m9tour.tourists > 0 && m9tour.tourism > 0, "tourists came and spent");
 
+  // Backlog 6: the isle is locked until a harbor stands; then the ferry runs and a settlement goes up on it.
+  await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.newTown());
+  const b6 = await page.evaluate(async () => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    const url = "/test/scenario.ts";
+    const sc = (await import(url)) as typeof import("./scenario");
+    const s = api.sim, grid = api.grid;
+    const t = sc.starterTown(s, grid);
+    const lockedBlocker = api.blockerAt("hut", 22, 17);
+    const lockedFerry = api.view.ferry();
+    api.grant(5000, 300, 100);
+    const harbor = sc.placeHarbor(s, grid, t.pier.cells[0]);
+    const isle = sc.settleIsle(s, grid);
+    api.advance(2);
+    api.tickSeconds(20);
+    api.frameAt(22.5, 21, 16);
+    return { lockedBlocker, lockedFerry, harbor: !!harbor, open: api.view.isleOpen(), pier: !!isle.pier, walkways: isle.walkways.length, huts: isle.huts.length, ferry: api.view.ferry(), reached: isle.huts.filter((h: any) => h.reached).length, log: s.log.slice(-4) };
+  });
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: "shots/b6-isle.png" });
+  console.log("B6 isle:", JSON.stringify(b6));
+  assert(/harbor/.test(b6.lockedBlocker ?? "") && b6.lockedFerry === null, "isle locked and no ferry before a harbor");
+  assert(b6.harbor && b6.open, "a harbor opens the isle");
+  assert(b6.pier && b6.walkways > 0 && b6.huts > 0, "pier, walkways and huts on the isle");
+  assert(b6.ferry && ["out", "landed", "back", "berthed"].includes(b6.ferry.leg), "the ferry is running");
+
   // M10: a smokehouse catches fire — flames and smoke — burns out damaged, and the repair fund fixes it.
   await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.newTown());
   const m10 = await page.evaluate(async () => {

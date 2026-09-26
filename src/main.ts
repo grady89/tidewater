@@ -24,6 +24,7 @@ import { Boats } from "./view/boats";
 import { roofShape } from "./view/buildings";
 import { BuildingViews } from "./view/buildingViews";
 import { Effects } from "./view/effects";
+import { Ferry } from "./view/ferry";
 import { OverlayKind, Overlays } from "./view/overlays";
 import { Ship } from "./view/ship";
 import { Trees } from "./view/trees";
@@ -86,6 +87,7 @@ const overlays = new Overlays(scene, grid);
 const effects = new Effects(scene);
 const ship = new Ship(scene, grid);
 const wildlife = new Wildlife(scene, grid);
+const ferry = new Ferry(scene, grid);
 const placement = new Placement(scene, camera, grid, canvas);
 const hud = new Hud(document.getElementById("hud")!, document.getElementById("resources")!, document.getElementById("notes")!, grid, tool => placement.setTool(tool), kind => overlays.show(kind), () => orderPlanks(state));
 const info = new InfoPanel(document.getElementById("info")!, grid);
@@ -164,6 +166,7 @@ function syncView(): void {
   effects.sync(state, viewTime);
   ship.sync(state, viewTime);
   wildlife.sync(state, viewTime);
+  ferry.sync(state, viewTime);
   terrain.update(camera.position, state.tide.level, state.tide.wetLevel);
   water.update(viewTime, camera.position, state.tide.level);
   hud.update({ tool: placement.tool, blocker: placement.blocker, fate: placement.fate, state });
@@ -282,6 +285,8 @@ const api = {
     caustics: () => water.caustics,
     gulls: () => wildlife.gullCount,
     crabs: () => wildlife.crabCount,
+    ferry: () => ferry.pose,
+    isleOpen: () => grid.isleOpen(),
     /** How many homes wear each roof shape. */
     roofs: () => {
       const out: Record<string, number> = { pyramid: 0, gable: 0, hipped: 0 };
@@ -291,6 +296,11 @@ const api = {
   },
   /** The reflections quality toggle (remembered). */
   setReflections,
+  /** Why the current tool can't go at (i, j), or null when it can. */
+  blockerAt(type: Tool, i: number, j: number) {
+    placement.setTool(type);
+    return placement.check({ i, j });
+  },
   /** The district of the building at (i, j), if any. */
   district(i: number, j: number) {
     const b = grid.buildingAt({ i, j });

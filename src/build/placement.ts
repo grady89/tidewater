@@ -110,6 +110,11 @@ export class Placement {
     return worldToCell(x, z);
   }
 
+  /** The blocker for the current tool at `anchor` (null = it can go there). */
+  check(anchor: Cell): string | null {
+    return this.evaluate(anchor).blocker;
+  }
+
   /** Footprint, blocker and flood fate for placing the current tool at `anchor`. */
   private evaluate(anchor: Cell): { cells: Cell[]; blocker: string | null; fate: Fate; y: number } {
     const state = this.grid.state;
@@ -129,6 +134,7 @@ export class Placement {
     if (!this.grid.classOk(def.cls, cells)) return { cells, blocker: classHint(def.cls), fate: "safe", y };
     if (!this.grid.terrainOk(kind, cells)) return { cells, blocker: `Needs ground between ${def.terrain!.min} and ${def.terrain!.max} m`, fate: "safe", y };
     if (cells.some(c => this.grid.buildingAt(c))) return { cells, blocker: "Occupied", fate: "safe", y };
+    if (this.grid.onIsle(cells) && !this.grid.isleOpen()) return { cells, blocker: "Across the water: a harbor's ferry opens the isle", fate: "safe", y };
     if (def.needsWalkway && !this.grid.touchesWalkway(cells)) return { cells, blocker: "Must touch a walkway on the flats", fate: "safe", y };
     if (def.requires && !this.grid.has(def.requires)) return { cells, blocker: `Requires a ${BUILDINGS[def.requires].name.toLowerCase()}`, fate: "safe", y };
     if (def.touches && !this.grid.touchesKind(cells, def.touches)) return { cells, blocker: `Must touch the ${BUILDINGS[def.touches].name.toLowerCase()}`, fate: "safe", y };

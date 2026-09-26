@@ -10,7 +10,7 @@ export function startCell(grid: Grid): Cell {
   let best: Cell | null = null, bd = Infinity;
   for (let i = -32; i < 32; i++) for (let j = -32; j < 32; j++) {
     const c = { i, j };
-    if (grid.classAt(c) !== "flat") continue;
+    if (grid.classAt(c) !== "flat" || grid.onIsle([c])) continue;
     const h = grid.heightAt(c);
     if (h < START_TERRAIN.min || h > START_TERRAIN.max) continue;
     const d = Math.hypot(i, j);
@@ -20,7 +20,7 @@ export function startCell(grid: Grid): Cell {
     // Islands without such ground: any flat cell nearest the centre.
     for (let i = -32; i < 32; i++) for (let j = -32; j < 32; j++) {
       const c = { i, j };
-      if (grid.classAt(c) !== "flat") continue;
+      if (grid.classAt(c) !== "flat" || grid.onIsle([c])) continue;
       const d = Math.hypot(i, j);
       if (d < bd) { bd = d; best = c; }
     }

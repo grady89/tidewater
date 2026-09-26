@@ -385,6 +385,25 @@ Decisions and findings that CLAUDE.md does not cover. Newest at the bottom of ea
   bottom of the info panel for whatever is clicked; clusters under 3 read "Outlying". The BFS runs each frame the
   panel is open, over at most a few hundred buildings.
 
+### Backlog 6 second island
+- The world stays one 64 × 64 grid; the isle is blended into the heightfield (`sim/isle.ts`: centre (22.5, 22.5),
+  radius 8.5, in the deep water off the south-east where the class map was all deep) as a dome — a small high knob
+  at the centre, flats most of the way out, deep at the rim — with the blend weight fading over the outer 18 % so
+  there is no seam. The main island's heights are untouched: the sim test counts 750 non-deep cells off the isle,
+  the number the map had before, and checks the start hut and every tree site stay off it (the dome tops out at
+  0.85, under the 1.3 tree line, by design).
+- "Unlock via harbor": `grid.canPlace` refuses any footprint touching the isle's circle until the town has a
+  harbor (`grid.isleOpen()`), the ghost says "Across the water: a harbor's ferry opens the isle", and the first
+  harbor placed notifies "The ferry runs…". Nothing is stored; a loaded town with a harbor is open.
+- The ferry is view only (`view/ferry.ts`): a small steamer on a 70 s timetable along the sea BFS route from the
+  harbor to the isle's nearest shore cell, out / landed / back / berthed. It carries nobody in the ledger: the
+  isle's settlement stands on its own pier (piers are network roots), so its walkways, homes and jobs work as a
+  second town sharing the same money, food and immigration. Workers do not cross — the walkway graph has no edge
+  over the water — which keeps `distanceField` and the storm/tsunami rules exactly as they were.
+- `scenario.settleIsle` builds the first foothold (pier on the isle's shore, raised walkways toward the centre,
+  huts alongside); the smoke asserts the lock, the unlock, the settlement and a running ferry, and shoots
+  `shots/b6-isle.png`.
+
 ### Chunk merge (the M12 perf pass, done for the mirror)
 - `view/buildingViews.ts` now merges every building in an 8×8-cell chunk into one mesh (`chunk:i,j`), rebuilt
   when any building in the chunk appears, leaves or changes its mesh signature. 300 buildings → 15 chunk meshes;

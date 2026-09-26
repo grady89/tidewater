@@ -3,6 +3,7 @@
 import { SIZE, STILT_LENGTH, TIDE_HI, TIDE_LO } from "../config";
 import { BEACH_MAX_HEIGHT, BuildingKind, BUILDINGS, PlacementClass } from "./balance";
 import { terrainHeight } from "./heightfield";
+import { isleCell } from "./isle";
 import { Building, Cell, SimState } from "./state";
 
 /** deep: always underwater. flat: the tidal flats, buildable. high: dry land above the tide. */
@@ -36,12 +37,15 @@ export class Grid {
   readonly water = new Uint8Array(SIZE * SIZE);
   /** Cell index → beach? Sand just above the tide line that touches water. Derived, never built. */
   readonly beach = new Uint8Array(SIZE * SIZE);
+  /** Cell index → on the second island (locked until the town has a harbor)? */
+  readonly isle = new Uint8Array(SIZE * SIZE);
 
   constructor(public state: SimState) {
     for (let i = -HALF; i < HALF; i++) for (let j = -HALF; j < HALF; j++) {
       const h = terrainHeight(i + 0.5, j + 0.5);
       const k = cellIndex(i, j);
       this.heights[k] = h;
+      this.isle[k] = isleCell({ i, j }) ? 1 : 0;
       this.classes[k] = h < TIDE_LO ? "deep" : h <= TIDE_HI ? "flat" : "high";
       this.deep[k] = h < TIDE_LO ? 1 : 0;
       this.water[k] = h <= TIDE_HI ? 1 : 0;
@@ -56,6 +60,17 @@ export class Grid {
 
   isBeach(c: Cell): boolean {
     return inBounds(c.i, c.j) && this.beach[cellIndex(c.i, c.j)] === 1;
+  }
+
+  /** Does any of `cells` lie on the second island? */
+  onIsle(cells: Cell[]): boolean {
+    return cells.some(c => inBounds(c.i, c.j) && this.isle[cellIndex(c.i, c.j)] === 1);
+  }
+
+  /** The isle opens when the town has a harbor: that is where the ferry runs from. */
+  isleOpen(): boolean {
+    for (const b of Object.values(this.state.buildings)) if (b.kind === "harbor") return true;
+    return false;
   }
 
   /** Point the index at a (loaded) state and rebuild occupancy from its buildings. */
@@ -154,7 +169,8 @@ export class Grid {
     const def = BUILDINGS[kind];
     return this.classOk(def.cls, cells) && this.terrainOk(kind, cells) && cells.every(c => !this.buildingAt(c))
       && (!def.needsWalkway || this.touchesWalkway(cells)) && (!def.requires || this.has(def.requires))
-      && (!def.touches || this.touchesKind(cells, def.touches));
+      && (!def.touches || this.touchesKind(cells, def.touches))
+      && (!this.onIsle(cells) || this.isleOpen());
   }
 
   /** Home capacity: the catalog's residents plus one per level above the first. */

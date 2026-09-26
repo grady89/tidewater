@@ -43,7 +43,10 @@ export function tryPlace(state: SimState, grid: Grid, kind: BuildingKind, anchor
   const cells = grid.footprint(kind, anchor);
   if (!cells || !grid.canPlace(kind, cells) || !canAfford(state, BUILDINGS[kind].cost)) return null;
   pay(state, BUILDINGS[kind].cost);
-  return grid.place(kind, cells);
+  const firstHarbor = kind === "harbor" && !grid.isleOpen();
+  const b = grid.place(kind, cells);
+  if (firstHarbor) notify(state, "The ferry runs: the isle across the water is open to build on");
+  return b;
 }
 
 export function totalBoats(state: SimState): number {
