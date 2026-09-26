@@ -20,7 +20,7 @@ function paint(layer: number[], cells: Cell[], radius: number, value: number): v
 /** Coverage a service building provides right now, 0..1. */
 export function serviceStrength(state: SimState, b: Building): number {
   const def = BUILDINGS[b.kind];
-  if (!def.service || !b.reached || b.cut) return 0;
+  if (!def.service || !b.reached || b.cut || b.damaged) return 0;
   const s = def.workers > 0 ? staffing(b) : 1;
   if (b.kind === "tavern") {
     if (state.resources.smoked >= TAVERN_SMOKED_PER_CYCLE) { state.resources.smoked -= TAVERN_SMOKED_PER_CYCLE; return s; }

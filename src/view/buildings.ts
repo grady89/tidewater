@@ -1,6 +1,6 @@
 // Mesh factories for every building kind. Each building merges to one mesh; homes add a lantern that is lit while
 // the home is reached. View only: nothing here changes a number in the sim.
-import { Color3, Mesh, MeshBuilder, Scene, StandardMaterial } from "@babylonjs/core";
+import { Color3, Mesh, MeshBuilder, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
 import { STILT_SINK } from "../config";
 import { BUILDINGS } from "../sim/balance";
 import { cellCenter } from "../sim/grid";
@@ -489,6 +489,46 @@ function lighthouse(scene: Scene, b: Building): BuildingMeshes {
   return { root: mergeFlat("lighthouse", parts, scene), lantern: lamp };
 }
 
+function fireWatch(scene: Scene, b: Building): BuildingMeshes {
+  const { x, z } = cellCenter(b.cells[0]);
+  const F = b.floorY;
+  const parts: Mesh[] = [];
+  deck(scene, parts, x, z, 1, 1, F);
+  // A tall lookout with a bell under a little roof.
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) parts.push(box(scene, 0.07, 1.8, 0.07, x + sx * 0.3, F + 0.9, z + sz * 0.3, PALETTE.wood));
+  parts.push(box(scene, 0.8, 0.06, 0.8, x, F + 1.8, z, PALETTE.planks));
+  parts.push(box(scene, 0.7, 0.35, 0.7, x, F + 1.83 + 0.17, z, PALETTE.walls[1]));
+  parts.push(pyramid(scene, 1.1, 0.35, x, F + 2.18 + 0.17, z, PALETTE.roofs[0]));
+  const bell = MeshBuilder.CreateCylinder("bell", { diameterTop: 0.1, diameterBottom: 0.2, height: 0.2, tessellation: 6 }, scene);
+  bell.position.set(x, F + 1.2, z + 0.42);
+  parts.push(tint(bell, PALETTE.lantern));
+  return { root: mergeFlat("fireWatch", parts, scene) };
+}
+
+const damagedMats = new WeakMap<Scene, StandardMaterial>();
+/** Shared material for damaged buildings: the vertex colours come through, but darkened. */
+export function damagedMaterial(scene: Scene): StandardMaterial {
+  let m = damagedMats.get(scene);
+  if (!m) {
+    m = new StandardMaterial("damaged", scene);
+    m.diffuseColor = new Color3(0.45, 0.42, 0.4);
+    m.specularColor = Color3.Black();
+    damagedMats.set(scene, m);
+  }
+  return m;
+}
+
+/** Damage shows as a lean and a scorched tint. */
+function applyDamage(scene: Scene, b: Building, m: BuildingMeshes): BuildingMeshes {
+  if (!b.damaged) return m;
+  const { cx, cz } = bounds(b.cells);
+  m.root.setPivotPoint(new Vector3(cx, b.floorY, cz));
+  m.root.rotation.z = 0.09;
+  m.root.rotation.x = -0.05;
+  m.root.material = damagedMaterial(scene);
+  return m;
+}
+
 function outfall(scene: Scene, b: Building): BuildingMeshes {
   const { x, z } = cellCenter(b.cells[0]);
   const F = b.floorY;
@@ -522,7 +562,12 @@ function treatmentPlant(scene: Scene, b: Building): BuildingMeshes {
 }
 
 export function createBuildingMeshes(scene: Scene, b: Building): BuildingMeshes {
+  return applyDamage(scene, b, buildMeshes(scene, b));
+}
+
+function buildMeshes(scene: Scene, b: Building): BuildingMeshes {
   switch (b.kind) {
+    case "fireWatch": return fireWatch(scene, b);
     case "outfall": return outfall(scene, b);
     case "treatmentPlant": return treatmentPlant(scene, b);
     case "clinic": return clinic(scene, b);
@@ -561,10 +606,10 @@ export function footprintOf(kind: Building["kind"]): { w: number; d: number } {
 
 /** Everything about a building that changes its mesh; the view rebuilds when this changes. */
 export function meshSignature(b: Building): string {
-  return `${b.kind}:${b.level}:${b.lantern ? 1 : 0}`;
+  return `${b.kind}:${b.level}:${b.lantern ? 1 : 0}:${b.damaged ? 1 : 0}`;
 }
 
 /** Whether the building's lantern should glow: homes need residents, everything else just a connection. */
 export function lanternOn(b: Building): boolean {
-  return b.reached && !b.cut && (BUILDINGS[b.kind].residents === 0 || b.residents > 0);
+  return b.reached && !b.cut && !b.damaged && (BUILDINGS[b.kind].residents === 0 || b.residents > 0);
 }

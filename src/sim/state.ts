@@ -54,6 +54,10 @@ export interface Building {
   injured: number;
   /** Cycles left of grief after an incident nearby (homes). */
   shock: number;
+  /** Seconds of fire left; 0 when not burning. */
+  fire: number;
+  /** Burnt, storm-struck or wave-struck: produces nothing until repaired. */
+  damaged: boolean;
 }
 
 export interface Swimmers { k: number; n: number }
@@ -69,6 +73,8 @@ export interface Fields {
   coverage: Record<ServiceKind, number[]>;
   /** Shark risk per water cell. */
   shark: number[];
+  /** Fire risk per cell. */
+  fire: number[];
 }
 
 export interface TideState {
@@ -134,6 +140,11 @@ export interface SimState {
   emitters: Emitter[];
   /** Shark-risk sources for the current cycle, likewise. */
   sharkEmitters: Emitter[];
+  /** Fire-risk sources for the current cycle, likewise. */
+  fireEmitters: Emitter[];
+  /** Fires started so far, and buildings burnt out. */
+  fires: number;
+  burnt: number;
   /** Waste with no outfall to go to, last cycle. */
   wasteBacklog: number;
   /** Who is in the water this shift, per beach cell. */
@@ -165,9 +176,12 @@ export function createState(seed = 1): SimState {
     nextId: 1,
     assignments: [],
     trees: initialTrees(),
-    fields: { pollution: zeros(), fish: filled(FISH_CAP), coverage: emptyCoverage(), shark: zeros() },
+    fields: { pollution: zeros(), fish: filled(FISH_CAP), coverage: emptyCoverage(), shark: zeros(), fire: zeros() },
     emitters: [],
     sharkEmitters: [],
+    fireEmitters: [],
+    fires: 0,
+    burnt: 0,
     wasteBacklog: 0,
     swimmers: [],
     incidents: 0,

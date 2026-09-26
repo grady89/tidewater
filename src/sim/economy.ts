@@ -11,6 +11,7 @@ import {
   WASTE_BACKLOG_PENALTY_MAX, WASTE_BACKLOG_PENALTY_PER_UNIT,
 } from "./balance";
 import { at } from "./fields";
+import { active, damageNear, fireSources, repairDamage, rollIgnitions } from "./fire";
 import { Grid } from "./grid";
 import { depleteGround, fishAt, pollutionAt, routeWaste, settleFields } from "./pollution";
 import { chooseGround } from "./sea";
@@ -110,7 +111,7 @@ export function netLoftBonus(state: SimState, harbour: Building): number {
 /** Shift start: boats leave for the richest ground in range, low-water crews walk out. */
 export function shiftStart(state: SimState, grid: Grid, phase: Phase): void {
   for (const b of buildingList(state)) {
-    if (!b.reached || b.cut) continue;
+    if (!active(b)) continue;
     if (isHarbour(b) && b.boats > 0 && sailsIn(b, phase) && staffing(b) > 0) {
       b.ground = chooseGround(grid, b, state.fields.fish);
       b.atSea = b.ground !== null;
@@ -131,7 +132,7 @@ export function shiftEnd(state: SimState, grid: Grid, phase: Phase): void {
       state.last.fishCaught += fish;
       continue;
     }
-    if (phase !== "low" || !b.reached || b.cut) continue;
+    if (phase !== "low" || !active(b)) continue;
     if (b.kind === "oysterBed") {
       b.output += addCapped(state, "shellfish", OYSTER_YIELD * staffing(b) * (springLow ? SPRING_LOW_BONUS : 1));
     } else if (b.kind === "clamCamp") {
@@ -145,7 +146,7 @@ export function shiftEnd(state: SimState, grid: Grid, phase: Phase): void {
 function produce(state: SimState, grid: Grid, buildings: Building[]): void {
   const r = state.resources;
   for (const b of buildings) {
-    if (!b.reached || b.cut || staffing(b) === 0) continue;
+    if (!active(b) || staffing(b) === 0) continue;
     const s = staffing(b);
     switch (b.kind) {
       case "lumberCamp": {
@@ -189,16 +190,18 @@ function dist(a: Building, b: Building): number {
 }
 
 /** The happiness formula (balance.HAPPY). Injury and damage terms arrive with M8 and M10. */
-export function homeHappiness(state: SimState, home: Building, fed: number, jobs: number): number {
+export function homeHappiness(state: SimState, home: Building, fed: number, jobs: number, grid: Grid): number {
   const c = home.cells[0];
   const cov = state.fields.coverage;
   const foul = Math.min(1, pollutionAt(state, c) / POLLUTION_HAPPY_SCALE);
   const backlog = Math.min(WASTE_BACKLOG_PENALTY_MAX, state.wasteBacklog * WASTE_BACKLOG_PENALTY_PER_UNIT);
   const injury = home.shock > 0 || home.injured > 0 ? HAPPY.injury : 0;
+  const damage = home.damaged || damageNear(grid, c, DAMAGE_GRIEF_RADIUS) ? HAPPY.damage : 0;
   const h = HAPPY.base + HAPPY.fed * fed + HAPPY.jobs * jobs + HAPPY.water * at(cov.water, c) + HAPPY.leisure * at(cov.leisure, c)
-    + HAPPY.night * at(cov.night, c) - HAPPY.pollution * foul - backlog - injury;
+    + HAPPY.night * at(cov.night, c) - HAPPY.pollution * foul - backlog - injury - damage;
   return Math.max(0, Math.min(1, h));
 }
+const DAMAGE_GRIEF_RADIUS = 3;
 
 /** The cycle settlement, run once at every high-tide peak. */
 export function settleCycle(state: SimState, grid: Grid): void {
@@ -220,7 +223,7 @@ export function settleCycle(state: SimState, grid: Grid): void {
     const more = Math.min(r.shellfish, need - ate); r.shellfish -= more; ate += more;
     const fed = need > 0 ? ate / need : 1;
     const jobs = b.reached ? employed(state, b) / Math.max(1, b.residents - b.injured) : 0;
-    b.happiness = homeHappiness(state, b, fed, jobs);
+    b.happiness = homeHappiness(state, b, fed, jobs, grid);
     happySum += b.happiness; houses++;
     // Growth: a run of good cycles adds a storey.
     if (b.happiness >= LEVEL_UP_HAPPINESS) b.streak++; else b.streak = 0;
@@ -234,7 +237,7 @@ export function settleCycle(state: SimState, grid: Grid): void {
   for (const b of buildings) {
     if (b.kind !== "market") { if (BUILDINGS[b.kind].residents === 0) b.output = 0; continue; }
     b.output = 0;
-    if (!b.reached || b.cut) continue;
+    if (!active(b)) continue;
     let capacity = MARKET_SELL_PER_CYCLE * staffing(b);
     const fish = Math.max(0, Math.min(r.fish - reserve, capacity));
     r.fish -= fish; capacity -= fish; stats.income += fish * PRICE_FISH; stats.fishSold += fish;
@@ -249,6 +252,9 @@ export function settleCycle(state: SimState, grid: Grid): void {
   settleFields(state, grid);
   routeWaste(state);
   state.sharkEmitters = sharkSources(state);
+  state.fireEmitters = fireSources(state);
+  rollIgnitions(state);
+  repairDamage(state);
   healInjuries(state);
 
   // Upkeep.

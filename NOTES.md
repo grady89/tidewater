@@ -262,6 +262,27 @@ Decisions and findings that CLAUDE.md does not cover. Newest at the bottom of ea
   `highOrEdge` class (high cells, or the pier rule).
 - `__tidewater.orderPlanks()` and the "Order 20 planks" button queue a delivery; the tide clock shows the ship's ETA.
 
+### M10 fire
+- **Fire risk** is a field like the others but with no tide advection and very little diffusion (0.5 %/s): the
+  steady state per cell is roughly emission ÷ (120 × (decay + 4·diffuse)), so a staffed smokehouse (6/cycle over
+  2 cells) settles near 0.8, two adjacent pass the ignition threshold of 1.0, three reach ~1.5. Taverns add 3,
+  lantern posts 0.3 each. My first cut (2/cycle, 2 %/s diffusion) never got a cluster above 0.3 — diffusion is the
+  knob that matters, as with pollution.
+- **Ignition** rolls once a cycle per building: chance = 0.05 + 0.05 × (effective risk − 1), only above the
+  threshold. A staffed fire watch cuts effective risk by 97 % within 8 cells, which keeps a watched cluster below
+  the threshold entirely — that is what makes "with a fire watch it doesn't burn" a hard guarantee rather than
+  a probability. Rain (M11 storms) will zero the field.
+- **Burning** is per tick: 24 s of fire, and each second a 1.5 % chance to light every orthogonal neighbour
+  (the first cut at 4 % chain-reacted down a whole street). At burn-out the building is damaged unless fire-watch
+  coverage at its cell is ≥ 0.5, in which case it is "saved".
+- **Damage** (`building.damaged`, shared with storms and the tsunami): `active()` = reached ∧ dry ∧ intact gates
+  production, boats, services and sales. Repair costs 50 % of the build price plus 5 timber per 100$ and is paid
+  automatically at settlement, oldest damage first; production in that same settlement has already run, so a
+  repaired building works from the next cycle. Homes within 3 of damage lose 0.15 happiness.
+- View: damaged buildings get the shared dark material and lean 5° about their footprint centre (pivot set on the
+  merged mesh). Flames are self-lit cones and smoke is grey spheres, both thin instances over burning buildings.
+- `__tidewater.ignite(i, j)` and `tickSeconds(s)` exist so a scenario can watch a fire between shifts.
+
 ## Findings on the v1 questions
 
 (placement and connectivity exist now; play a few cycles and write answers here)

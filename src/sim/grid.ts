@@ -177,7 +177,7 @@ export class Grid {
     const b: Building = {
       id: s.nextId++, kind, cells, floorY: this.floorFor(kind, cells), cut: false, reached: false,
       workers: 0, residents: 0, boats: 0, atSea: false, ground: null, output: 0, happiness: 1, progress: 0, stress: 0,
-      level: 1, streak: 0, lantern: false, injured: 0, shock: 0,
+      level: 1, streak: 0, lantern: false, injured: 0, shock: 0, fire: 0, damaged: false,
     };
     for (const c of cells) this.occupancy[cellIndex(c.i, c.j)] = b;
     s.buildings[b.id] = b;

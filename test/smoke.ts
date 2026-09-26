@@ -361,6 +361,44 @@ try {
   console.log("M9 tourism:", JSON.stringify(m9tour));
   assert(m9tour.tourists > 0 && m9tour.tourism > 0, "tourists came and spent");
 
+  // M10: a smokehouse catches fire — flames and smoke — burns out damaged, and the repair fund fixes it.
+  await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.newTown());
+  const m10 = await page.evaluate(async () => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    const url = "/test/scenario.ts";
+    const sc = (await import(url)) as typeof import("./scenario");
+    const s = api.sim, grid = api.grid;
+    sc.starterTown(s, grid);
+    api.grant(3000, 0, 50);
+    sc.growStreet(s, grid, 6);
+    const smokehouse = sc.placeByWalkway(s, grid, "smokehouse", 1)[0];
+    if (!smokehouse) throw new Error("no smokehouse");
+    api.advance(2);
+    api.setOverlay("fire");
+    api.ignite(smokehouse.cells[0].i, smokehouse.cells[0].j);
+    api.tickSeconds(6);
+    api.frameAt(smokehouse.cells[0].i + 1, smokehouse.cells[0].j + 0.5, 12);
+    return { burning: api.view.burning(), fire: smokehouse.fire, id: smokehouse.id, cell: smokehouse.cells[0] };
+  });
+  console.log("M10 burning:", JSON.stringify(m10));
+  assert(m10.burning >= 1 && m10.fire > 0, "the smokehouse is burning with flames in view");
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: "shots/m10-fire.png" });
+  const m10b = await page.evaluate((id: number) => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    api.tickSeconds(30);
+    const b = api.sim.buildings[id];
+    const damaged = b.damaged;
+    api.advance(1);
+    return { damaged, repaired: !b.damaged, log: api.sim.log.filter((m: string) => /burnt|Repaired/.test(m)) };
+  }, m10.id);
+  console.log("M10 aftermath:", JSON.stringify(m10b));
+  assert(m10b.damaged, "the smokehouse burnt out damaged");
+  assert(m10b.repaired, "the repair fund fixed it at the next settlement");
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: "shots/m10-repaired.png" });
+  await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.setOverlay(null));
+
   // M1: save, reload the page, every building is back and the clock kept its place.
   const before = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; api.save(); return { n: Object.keys(api.sim.buildings).length, cycle: api.sim.tide.cycle, money: api.sim.resources.money }; });
   await page.reload();

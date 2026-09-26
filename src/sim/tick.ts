@@ -1,6 +1,7 @@
 // One fixed-timestep step of the ledger. Frame rate never enters here.
 import { HIGH_WATER_MARK, LOW_WATER_MARK, SIM_TICK, TIDE_PERIOD } from "../config";
 import { settleCycle, shiftEnd, shiftStart } from "./economy";
+import { tickFire } from "./fire";
 import { Grid } from "./grid";
 import { updateNetwork } from "./network";
 import { tickPollution } from "./pollution";
@@ -19,6 +20,7 @@ export function tick(state: SimState, grid: Grid, dt = SIM_TICK): void {
   updateNetwork(state, grid, state.tide.level);
   tickPollution(state, grid, dt);
   tickSharks(state, grid, dt, state.sharkEmitters);
+  tickFire(state, grid, dt);
 
   const phase = phaseFor(state.tide.level);
   if (phase !== state.phase) {

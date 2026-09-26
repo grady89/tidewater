@@ -8,7 +8,7 @@ export type BuildingKind =
   | "market" | "oysterBed" | "clamCamp" | "lumberCamp" | "sawmill" | "smokehouse" | "netLoft" | "warehouse"
   | "outfall" | "treatmentPlant" | "well" | "bathhouse" | "tavern" | "shrine" | "marketSquare"
   | "clinic" | "lifeguard" | "sharkNet"
-  | "harbor" | "inn" | "lighthouse";
+  | "harbor" | "inn" | "lighthouse" | "fireWatch";
 
 /** Service coverage layers; each building that provides one writes its staffed fraction within `radius`. */
 export type ServiceKind = "water" | "leisure" | "night" | "treatment" | "lifeguard" | "firewatch";
@@ -87,7 +87,33 @@ export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
   harbor: { name: "Harbor", category: "Sea", w: 3, d: 3, cls: "deep", terrain: { min: -99, max: -1.5 }, cost: { money: 600, planks: 60 }, workers: 0, residents: 0, upkeep: 6, floor: 1.0, network: "root", slots: 6, desc: "Trade ship berth; 6 boats; needs water deeper than 1.5" },
   inn: { name: "Inn", category: "Leisure", w: 2, d: 2, cls: "flat", cost: { money: 250, planks: 20 }, workers: 2, residents: 0, upkeep: 2, floor: 1.0, network: "leaf", desc: "Tourists off the trade ship stay and spend" },
   lighthouse: { name: "Lighthouse", category: "Sea", w: 1, d: 1, cls: "highOrEdge", cost: { money: 400 }, workers: 0, residents: 0, upkeep: 2, floor: "ground", network: "leaf", desc: "Boats ride out storms; the trade ship calls every 2 tides" },
+  fireWatch: { name: "Fire watch", category: "Services", w: 1, d: 1, cls: "flatOrHigh", cost: { money: 120 }, workers: 2, residents: 0, upkeep: 1.5, floor: "ground", network: "leaf", service: { kind: "firewatch", radius: 8 }, desc: "Damps fire risk and puts out fires within 8" },
 };
+
+// Fire (risk field units per cell; steady state ≈ emission / (120 × (decay + 4 × diffuse)) per cell: a lone
+// smokehouse settles near 0.8, two side by side pass 1, three reach ~1.5)
+export const FIRE_SMOKEHOUSE = 6;
+export const FIRE_TAVERN = 3;
+export const FIRE_LANTERN = 0.3;
+export const FIRE_DECAY = 0.01;
+export const FIRE_DIFFUSE = 0.005;
+/** Fire risk doesn't move with the tide. */
+export const FIRE_ADVECT_NONE = 0;
+/** A staffed fire watch cuts effective risk by this much within its radius. */
+export const FIRE_WATCH_CUT = 0.97;
+/** No ignition below this effective risk. */
+export const FIRE_IGNITE_THRESHOLD = 1.0;
+/** Ignition chance per cycle per unit of effective risk above the threshold. */
+export const FIRE_IGNITE_CHANCE = 0.05;
+export const FIRE_BURN_SECONDS = 24;
+/** Chance per second that a burning building lights each orthogonal neighbour (~30 % over a full burn). */
+export const FIRE_SPREAD_PER_S = 0.015;
+/** Fire-watch coverage at or above this saves a burning building from damage. */
+export const FIRE_SAVE_COVERAGE = 0.5;
+
+// Repair (shared with storms and the tsunami)
+export const REPAIR_FRACTION = 0.5;
+export const REPAIR_TIMBER_PER_100 = 5;
 
 // Trade and tourism
 export const TRADE_EVERY = 3;

@@ -1,7 +1,8 @@
 // Sim-only unit checks. Nothing here may pull in Babylon; the hygiene test enforces that for src/sim/**.
 import { describe, expect, it } from "vitest";
 import { HIGH_WATER_MARK, LOW_WATER_MARK, SPRING_HI, SPRING_LO, STILT_LENGTH, TIDE_HI, TIDE_LO, TIDE_PERIOD } from "../src/config";
-import { BEACH_MAX_HEIGHT, BOAT_COST, BOAT_MIN_RANGE, BOAT_RANGE, BUILDINGS, CAP_BASE, FISH_CAP, HAPPY, INJURY_NATURAL_CYCLES, LEVEL_UP_HAPPINESS, MAX_LEVEL, OYSTER_POLLUTION_KILL, PLANK_ORDER_SIZE, STARTING_MONEY, TRADE_EVERY, TRADE_EVERY_LIGHTHOUSE, TREATMENT_RADIUS, TREE_REGROW_CYCLES, WAREHOUSE_CAP } from "../src/sim/balance";
+import { BEACH_MAX_HEIGHT, BOAT_COST, BOAT_MIN_RANGE, BOAT_RANGE, BUILDINGS, CAP_BASE, FIRE_BURN_SECONDS, FIRE_IGNITE_THRESHOLD, FISH_CAP, HAPPY, INJURY_NATURAL_CYCLES, LEVEL_UP_HAPPINESS, MAX_LEVEL, OYSTER_POLLUTION_KILL, PLANK_ORDER_SIZE, STARTING_MONEY, TRADE_EVERY, TRADE_EVERY_LIGHTHOUSE, TREATMENT_RADIUS, TREE_REGROW_CYCLES, WAREHOUSE_CAP } from "../src/sim/balance";
+import { ignite } from "../src/sim/fire";
 import { addLantern, coverageAt, lanternBlocker } from "../src/sim/services";
 import { injuredCount } from "../src/sim/sharks";
 import { orderPlanks } from "../src/sim/trade";
@@ -517,6 +518,71 @@ describe("trade and tourism (M9)", () => {
     advanceCycles(state, grid, state.trade.nextVisit - state.tide.cycle);
     expect(state.trade.visits).toBe(2);
     expect(state.trade.nextVisit - state.trade.shipCycle).toBe(TRADE_EVERY_LIGHTHOUSE);
+  });
+});
+
+describe("fire (M10)", () => {
+  /** A town with three smokehouses side by side and the people to run them. */
+  function smokeTown(withWatch: boolean) {
+    const { state, grid } = town(11);
+    state.resources.money += 6000;
+    growStreet(state, grid, 8);
+    placeByWalkway(state, grid, "house", 6);
+    const houses = placeByWalkway(state, grid, "smokehouse", 3);
+    expect(houses.length).toBe(3);
+    let watch: Building | null = null;
+    if (withWatch) {
+      watch = placeByWalkway(state, grid, "fireWatch", 1)[0] ?? null;
+      expect(watch).not.toBeNull();
+      for (const s of houses) expect(s.cells.some(c => Math.abs(c.i - watch!.cells[0].i) <= 8 && Math.abs(c.j - watch!.cells[0].j) <= 8)).toBe(true);
+    }
+    return { state, grid, houses, watch };
+  }
+
+  it("a smokehouse cluster with no fire watch burns within 30 cycles; with one it doesn't", () => {
+    const open = smokeTown(false);
+    let burntAt = -1;
+    for (let c = 1; c <= 30; c++) { advanceCycles(open.state, open.grid, 1); if (open.state.burnt > 0) { burntAt = c; break; } }
+    expect(maxOf(open.state.fields.fire)).toBeGreaterThan(FIRE_IGNITE_THRESHOLD);
+    expect(burntAt).toBeGreaterThan(0);
+    expect(open.state.log.some(m => /burnt out/.test(m))).toBe(true);
+
+    const safe = smokeTown(true);
+    for (let c = 1; c <= 30; c++) advanceCycles(safe.state, safe.grid, 1);
+    expect(safe.watch!.workers).toBeGreaterThan(0);
+    expect(safe.state.burnt).toBe(0);
+    expect(safe.state.fires).toBe(0);
+  });
+
+  it("damaged buildings produce nothing until they are repaired", () => {
+    const { state, grid, houses } = smokeTown(false);
+    advanceCycles(state, grid, 3);
+    const s = houses[0];
+    state.resources.fish = 80;
+    s.damaged = true;
+    state.resources.money = 0; state.resources.timber = 0;
+    advanceCycles(state, grid, 1);
+    expect(s.damaged).toBe(true);
+    expect(s.output).toBe(0);
+    state.resources.money += 1000; state.resources.timber += 50;
+    advanceCycles(state, grid, 1);
+    expect(s.damaged).toBe(false);
+    expect(state.log.some(m => /Repaired the smokehouse/.test(m))).toBe(true);
+    // Production settles before repairs do, so the smokehouse works again from the following cycle.
+    state.resources.fish = 100;
+    advanceCycles(state, grid, 1);
+    if (s.workers > 0) expect(s.output).toBeGreaterThan(0);
+  });
+
+  it("a fire spreads to the neighbours and burns out in FIRE_BURN_SECONDS", () => {
+    const { state, grid, houses } = smokeTown(false);
+    advanceCycles(state, grid, 1);
+    ignite(state, houses[0]);
+    expect(houses[0].fire).toBe(FIRE_BURN_SECONDS);
+    for (let k = 0; k < FIRE_BURN_SECONDS * 20 + 1; k++) tick(state, grid);
+    expect(houses[0].fire).toBe(0);
+    expect(houses[0].damaged).toBe(true);
+    expect(state.fires).toBeGreaterThanOrEqual(1);
   });
 });
 

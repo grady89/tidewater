@@ -2,6 +2,7 @@
 import { ArcRotateCamera, Color4, DefaultRenderingPipeline, Engine, Scene, Vector3 } from "@babylonjs/core";
 import { Placement, Tool } from "./build/placement";
 import { SIM_TICK, TIDE_PERIOD } from "./config";
+import { ignite } from "./sim/fire";
 import { Grid } from "./sim/grid";
 import { AUTOSAVE_KEY, deserialize, serialize } from "./sim/save";
 import { newGame } from "./sim/start";
@@ -204,10 +205,22 @@ const api = {
     swimmers: () => walkers.swimmerCount(state),
     fins: () => effects.finCount,
     ship: () => ship.pose,
+    burning: () => effects.burning,
     dusk: () => duskAt(state.time),
   },
   orderPlanks() {
     return orderPlanks(state);
+  },
+  /** Set fire to the building at (i, j). */
+  ignite(i: number, j: number) {
+    const b = grid.buildingAt({ i, j });
+    if (b) ignite(state, b);
+  },
+  /** Tick the ledger for `seconds` of game time (for effects that live between shifts). */
+  tickSeconds(seconds: number) {
+    const n = Math.round(seconds / SIM_TICK);
+    for (let k = 0; k < n; k++) { tick(state, grid); viewTime += SIM_TICK; }
+    syncView();
   },
   save,
   newTown,
