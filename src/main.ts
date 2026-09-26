@@ -18,6 +18,7 @@ import { InfoPanel } from "./ui/infoPanel";
 import { SaveMenu } from "./ui/saveMenu";
 import { Speed, SpeedControls } from "./ui/speed";
 import { Tutorial } from "./ui/tutorial";
+import { Audio } from "./view/audio";
 import { Boats } from "./view/boats";
 import { BuildingViews } from "./view/buildingViews";
 import { Effects } from "./view/effects";
@@ -108,7 +109,8 @@ function load(json: string): void {
 
 const menu = new SaveMenu(document.getElementById("menu")!, { serialize: () => serialize(state), cycle: () => state.tide.cycle, load, newTown });
 let speed: Speed = 1;
-const speedControls = new SpeedControls(document.getElementById("speed")!, s => { speed = s; }, () => menu.toggle());
+const audio = new Audio();
+const speedControls = new SpeedControls(document.getElementById("speed")!, s => { speed = s; }, () => menu.toggle(), () => audio.setMuted(!audio.muted));
 
 window.addEventListener("keydown", e => {
   if (e.target instanceof HTMLInputElement) return;
@@ -151,7 +153,8 @@ function syncView(): void {
   hud.update({ tool: placement.tool, blocker: placement.blocker, fate: placement.fate, state });
   info.update(state);
   tutorial.update(state);
-  speedControls.update(speed);
+  speedControls.update(speed, audio.muted);
+  audio.sync(state, stormMix);
 }
 
 engine.runRenderLoop(() => {
@@ -257,6 +260,7 @@ const api = {
     dusk: () => duskAt(state.time),
     stormMix: () => stormMix,
     drawCalls: () => scene.getActiveMeshes().length,
+    audio: () => ({ started: audio.started, state: audio.state, muted: audio.muted }),
   },
   orderPlanks() {
     return orderPlanks(state);

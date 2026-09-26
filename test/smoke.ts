@@ -509,6 +509,19 @@ try {
   assert(bigLoaded.n === m12.buildings, "big town survived the reload");
   assert(loadMs < 2000, "a 300-building town loads in under 2 s");
 
+  // M13: no sound until the first gesture; a click starts and resumes the audio context; mute is remembered.
+  const audioBefore = await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.view.audio());
+  await page.mouse.click(640, 200);
+  await page.waitForTimeout(300);
+  const audioAfter = await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.view.audio());
+  await page.click("#speed .mute");
+  const audioMuted = await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.view.audio());
+  await page.click("#speed .mute");
+  console.log("M13 audio:", JSON.stringify({ before: audioBefore, after: audioAfter, muted: audioMuted }));
+  assert(!audioBefore.started, "no audio context before the first gesture");
+  assert(audioAfter.started && audioAfter.state === "running", "audio context runs after a click");
+  assert(audioMuted.muted, "mute button mutes");
+
   // M1: save, reload the page, every building is back and the clock kept its place.
   const before = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; api.save(); return { n: Object.keys(api.sim.buildings).length, cycle: api.sim.tide.cycle, money: api.sim.resources.money }; });
   await page.reload();

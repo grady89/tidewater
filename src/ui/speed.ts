@@ -4,8 +4,9 @@ export type Speed = (typeof SPEEDS)[number];
 
 export class SpeedControls {
   private readonly buttons = new Map<Speed, HTMLButtonElement>();
+  private readonly mute: HTMLButtonElement;
 
-  constructor(root: HTMLElement, onSpeed: (s: Speed) => void, onMenu: () => void) {
+  constructor(root: HTMLElement, onSpeed: (s: Speed) => void, onMenu: () => void, onMute: () => void) {
     for (const s of SPEEDS) {
       const b = document.createElement("button");
       b.type = "button";
@@ -22,9 +23,17 @@ export class SpeedControls {
     menu.title = "Save, load, new town (Esc)";
     menu.addEventListener("click", onMenu);
     root.appendChild(menu);
+    this.mute = document.createElement("button");
+    this.mute.type = "button";
+    this.mute.className = "mute";
+    this.mute.title = "Mute";
+    this.mute.addEventListener("click", onMute);
+    root.appendChild(this.mute);
   }
 
-  update(current: number): void {
+  update(current: number, muted = false): void {
     for (const [s, b] of this.buttons) b.classList.toggle("active", s === current);
+    const label = muted ? "🔇" : "🔊";
+    if (this.mute.textContent !== label) this.mute.textContent = label;
   }
 }

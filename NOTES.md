@@ -304,6 +304,33 @@ Decisions and findings that CLAUDE.md does not cover. Newest at the bottom of ea
   counting boats, and skip a storm cycle before measuring sailings: two M4/M5 checks silently depended on calm
   weather. Forced events: `__tidewater.forceStorm()`, `forceTsunami()`.
 
+### M12 camera, polish, saves, tutorial
+- **Camera**: orbit/zoom stay Babylon's; panning is ours (`build/cameraControl.ts`) on middle-drag and WASD, in
+  the camera's ground frame, clamped to the island plus a margin. Right-drag can't pan because right-click removes.
+- **Speed**: pause / 1× / 2× / 4× buttons (space toggles pause) scale the frame time fed to the fixed-step
+  accumulator; the ledger only ever sees whole `SIM_TICK`s.
+- **Save slots**: three named slots in localStorage (`tidewater.slot.N` + `.meta`) beside the autosave; Load
+  swaps the ledger through one `adopt()` that re-attaches the grid and clears every per-building view. "New town"
+  confirms, clears the autosave and resets the tutorial. Esc opens the menu (or closes the info panel first).
+- **Tutorial** (`ui/tutorial.ts`): five steps, each clearing itself from ledger facts (pier, boat, reached hut,
+  market, 3 cycles + 4 residents); progress in localStorage because it is UI state. After it, the same line shows
+  the empty-state hint for whatever the town lacks most (no pier, no boats, no market, waste piling up, no well).
+- **Performance**: the 300-building / 30-boat / 200-walker town runs at 165 fps headless on the RTX 4060 and a
+  saved one loads in ~0.6 s, so the per-chunk static merge from the roadmap was **not** done — the target holds
+  without it and every repeated prop (trees, walkers, boats, fins, flames, smoke, overlay) is already instanced or
+  one mesh. Lantern spheres remain one small mesh per lit building. Revisit on integrated graphics.
+- The island's flats hold about 160 jobs; the 200-walker figure is reached with `__tidewater.stressWalkers(n)`,
+  which spawns extra walkers on existing routes in the view only. The 300 buildings are padded with breakwater
+  cells (real ledger entries, real meshes) once the flats are full.
+
+### M13 audio
+- `view/audio.ts`, Web Audio only: a 2 s seeded-noise loop through a low-pass is the surf (gain 0.04 + 0.08 ×
+  tide + 0.25 × storm; cutoff 350 → 1650 Hz), a 46 Hz sine with a slow frequency wobble is the tsunami thrum (up
+  during drawdown, louder for the wave), and a shift change rings two decaying sines (660 + 990 Hz). No samples.
+- The context is created on the first pointerdown/keydown anywhere and resumed if suspended; until then nothing
+  exists (`view.audio().started` is false), which is what browsers' autoplay rules need. Mute is a master gain
+  ramp and is remembered in localStorage.
+
 ## Findings on the v1 questions
 
 (placement and connectivity exist now; play a few cycles and write answers here)
