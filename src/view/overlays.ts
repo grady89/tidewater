@@ -6,17 +6,19 @@ import { CELLS } from "../sim/fields";
 import { cellIndex, Grid, HALF } from "../sim/grid";
 import { SimState } from "../sim/state";
 
-export type OverlayKind = "pollution" | "fish";
+export type OverlayKind = "pollution" | "fish" | "shark";
 
 export const OVERLAYS: { kind: OverlayKind; label: string }[] = [
   { kind: "pollution", label: "Pollution" },
   { kind: "fish", label: "Fish" },
+  { kind: "shark", label: "Sharks" },
 ];
 
 /** Colour ramps: [r, g, b] at full strength; alpha scales with the value. */
 const RAMPS: Record<OverlayKind, { color: [number, number, number]; scale: number; deepOnly: boolean }> = {
   pollution: { color: [0.55, 0.22, 0.45], scale: 1.5, deepOnly: false },
   fish: { color: [0.25, 0.85, 0.75], scale: 1, deepOnly: true },
+  shark: { color: [0.85, 0.3, 0.2], scale: 1.5, deepOnly: false },
 };
 
 export class Overlays {

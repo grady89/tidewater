@@ -1,8 +1,9 @@
 // Sim-only unit checks. Nothing here may pull in Babylon; the hygiene test enforces that for src/sim/**.
 import { describe, expect, it } from "vitest";
 import { HIGH_WATER_MARK, LOW_WATER_MARK, SPRING_HI, SPRING_LO, STILT_LENGTH, TIDE_HI, TIDE_LO, TIDE_PERIOD } from "../src/config";
-import { BOAT_COST, BOAT_MIN_RANGE, BOAT_RANGE, BUILDINGS, CAP_BASE, FISH_CAP, HAPPY, LEVEL_UP_HAPPINESS, MAX_LEVEL, OYSTER_POLLUTION_KILL, STARTING_MONEY, TREATMENT_RADIUS, TREE_REGROW_CYCLES, WAREHOUSE_CAP } from "../src/sim/balance";
+import { BEACH_MAX_HEIGHT, BOAT_COST, BOAT_MIN_RANGE, BOAT_RANGE, BUILDINGS, CAP_BASE, FISH_CAP, HAPPY, INJURY_NATURAL_CYCLES, LEVEL_UP_HAPPINESS, MAX_LEVEL, OYSTER_POLLUTION_KILL, STARTING_MONEY, TREATMENT_RADIUS, TREE_REGROW_CYCLES, WAREHOUSE_CAP } from "../src/sim/balance";
 import { addLantern, coverageAt, lanternBlocker } from "../src/sim/services";
+import { injuredCount } from "../src/sim/sharks";
 import { addCapped, boatPurchaseBlocker, buyBoat, capFor, totalBoats, tryPlace } from "../src/sim/economy";
 import { buildFlow, maxOf, meanHeight, stepDrift, zeros } from "../src/sim/fields";
 import { cellIndex, Grid } from "../src/sim/grid";
@@ -15,7 +16,7 @@ import { advanceCycles, tick } from "../src/sim/tick";
 import { floodFate, isRising, phaseProgress, tickTide, tideNormalized } from "../src/sim/tide";
 import { grownTreesNear } from "../src/sim/trees";
 import { assignWorkers } from "../src/sim/workers";
-import { growStreet, placeByWalkway, placeLumberCamp, placeSecondPier, placeShipyard, reachHill, starterTown } from "./scenario";
+import { beachesNear, growStreet, pierByBeach, placeByWalkway, placeLumberCamp, placeSecondPier, placeShipyard, reachHill, starterTown } from "./scenario";
 
 const simSources = import.meta.glob("../src/sim/**/*.ts", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
 
@@ -380,6 +381,69 @@ describe("happiness, services, leveling (M7)", () => {
     expect(addLantern(state, grid, w.cells[0])).toBe(false);
     advanceCycles(state, grid, 1);
     expect(coverageAt(state, "night", w.cells[0])).toBe(1);
+  });
+});
+
+describe("beaches and sharks (M8)", () => {
+  it("derives beaches: sand above the tide line that touches water", () => {
+    const { grid } = town();
+    let n = 0;
+    for (let i = -32; i < 32; i++) for (let j = -32; j < 32; j++) {
+      const c = { i, j };
+      if (!grid.isBeach(c)) continue;
+      n++;
+      expect(grid.classAt(c)).toBe("high");
+      expect(grid.heightAt(c)).toBeLessThanOrEqual(BEACH_MAX_HEIGHT);
+      expect(grid.neighbors(c).some(x => grid.classAt(x) !== "high")).toBe(true);
+    }
+    expect(n).toBeGreaterThan(10);
+  });
+
+  it("a beach by a busy pier with no lifeguard sees an incident within 10 cycles; nets and a lifeguard stop it", () => {
+    const run = (protect: boolean) => {
+      const { state, grid } = town(7);
+      state.resources.money += 3000;
+      // A bigger town so the beach is busy.
+      growStreet(state, grid, 6);
+      placeByWalkway(state, grid, "house", 6);
+      const beaches = beachesNear(state, grid);
+      expect(beaches.length).toBeGreaterThan(0);
+      const site = pierByBeach(state, grid);
+      expect(site).not.toBeNull();
+      if (protect) {
+        let nets = 0;
+        for (const b of beaches) for (const n of grid.neighbors(b)) {
+          if (grid.water[cellIndex(n.i, n.j)] && !grid.buildingAt(n) && tryPlace(state, grid, "sharkNet", n)) nets++;
+        }
+        const tower = tryPlace(state, grid, "lifeguard", site!.beach) ?? tryPlace(state, grid, "lifeguard", beaches[0]);
+        expect(tower).not.toBeNull();
+        expect(nets).toBeGreaterThan(0);
+      }
+      let swimmersSeen = 0;
+      for (let c = 0; c < 10; c++) { advanceCycles(state, grid, 1); swimmersSeen += state.swimmers.length; }
+      return { incidents: state.incidents, swimmersSeen, injured: injuredCount(state), risk: maxOf(state.fields.shark) };
+    };
+    const open = run(false);
+    expect(open.risk).toBeGreaterThan(0);
+    expect(open.incidents).toBeGreaterThanOrEqual(1);
+    expect(open.injured).toBeGreaterThanOrEqual(0);
+    const safe = run(true);
+    expect(safe.incidents).toBe(0);
+  });
+
+  it("injured residents stay home until they heal", () => {
+    const { state, grid, town: t } = town();
+    advanceCycles(state, grid, 3);
+    const home = t.huts.find(h => h.residents > 0)!;
+    const before = state.assignments.filter(a => a.home === home.id).reduce((n, a) => n + a.n, 0);
+    expect(before).toBeGreaterThan(0);
+    home.injured = home.residents;
+    advanceCycles(state, grid, 1);
+    expect(state.assignments.filter(a => a.home === home.id).reduce((n, a) => n + a.n, 0)).toBe(0);
+    state.resources.money += 500;
+    placeByWalkway(state, grid, "clinic", 1);
+    advanceCycles(state, grid, INJURY_NATURAL_CYCLES + 2);
+    expect(home.injured).toBe(0);
   });
 });
 

@@ -278,6 +278,43 @@ try {
   await page.screenshot({ path: "shots/m7.png" });
   await page.keyboard.press("Escape");
 
+  // M8: swimmers at the beach at high water, a fin in the risky water off the market, an incident within 12 cycles.
+  await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.newTown());
+  const m8 = await page.evaluate(async () => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    const url = "/test/scenario.ts";
+    const sc = (await import(url)) as typeof import("./scenario");
+    const s = api.sim, grid = api.grid;
+    sc.starterTown(s, grid);
+    api.grant(2000);
+    sc.growStreet(s, grid, 6);
+    sc.placeByWalkway(s, grid, "house", 6);
+    const site = sc.pierByBeach(s, grid); // a busy pier beside the swimming beach
+    if (!site) throw new Error("no pier site by a beach");
+    api.setOverlay("shark");
+    let firstIncident = -1, maxSwimmers = 0, fins = 0;
+    for (let c = 1; c <= 12; c++) {
+      api.advanceTo(0.65); api.advanceTo(0.85);
+      maxSwimmers = Math.max(maxSwimmers, api.view.swimmers());
+      fins = Math.max(fins, api.view.fins());
+      api.advance(1);
+      if (s.incidents > 0 && firstIncident < 0) firstIncident = c;
+    }
+    // Frame a beach with people on it at high water.
+    api.advanceTo(0.65); api.advanceTo(0.9);
+    const sw = s.swimmers[0];
+    if (sw) api.frameAt(Math.floor(sw.k / 64) - 32 + 0.5, (sw.k % 64) - 32 + 0.5, 14);
+    let risk = 0; for (const v of api.fields.shark) if (v > risk) risk = v;
+    return { firstIncident, incidents: s.incidents, maxSwimmers, fins, risk, swimmersNow: api.view.swimmers(), log: s.log.filter((m: string) => /shark/.test(m)).slice(-1) };
+  });
+  console.log("M8:", JSON.stringify(m8));
+  assert(m8.maxSwimmers > 0, "swimmers appear at the beach at high water");
+  assert(m8.risk > 0 && m8.fins > 0, "shark risk builds off the market and a fin patrols it");
+  assert(m8.incidents >= 1, "an unguarded beach sees an incident");
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: "shots/m8.png" });
+  await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.setOverlay(null));
+
   // M1: save, reload the page, every building is back and the clock kept its place.
   const before = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; api.save(); return { n: Object.keys(api.sim.buildings).length, cycle: api.sim.tide.cycle, money: api.sim.resources.money }; });
   await page.reload();

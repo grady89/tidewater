@@ -12,6 +12,7 @@ import { Hud } from "./ui/hud";
 import { InfoPanel } from "./ui/infoPanel";
 import { Boats } from "./view/boats";
 import { BuildingViews } from "./view/buildingViews";
+import { Effects } from "./view/effects";
 import { OverlayKind, Overlays } from "./view/overlays";
 import { Trees } from "./view/trees";
 import { Walkers } from "./view/walkers";
@@ -68,6 +69,7 @@ const boats = new Boats(scene, grid);
 const walkers = new Walkers(scene, grid);
 const trees = new Trees(scene);
 const overlays = new Overlays(scene, grid);
+const effects = new Effects(scene);
 const placement = new Placement(scene, camera, grid, canvas);
 const hud = new Hud(document.getElementById("hud")!, document.getElementById("resources")!, document.getElementById("notes")!, grid, tool => placement.setTool(tool), kind => overlays.show(kind));
 const info = new InfoPanel(document.getElementById("info")!, grid);
@@ -102,6 +104,7 @@ function syncView(): void {
   overlays.sync(state);
   boats.sync(state, viewTime);
   walkers.sync(state, viewTime);
+  effects.sync(state, viewTime);
   terrain.update(camera.position, state.tide.level, state.tide.wetLevel);
   water.update(viewTime, camera.position, state.tide.level);
   hud.update({ tool: placement.tool, blocker: placement.blocker, fate: placement.fate, state });
@@ -194,6 +197,8 @@ const api = {
   view: {
     boats: () => boats.poses,
     walkers: () => walkers.count,
+    swimmers: () => walkers.swimmerCount(state),
+    fins: () => effects.finCount,
     dusk: () => duskAt(state.time),
   },
   save,

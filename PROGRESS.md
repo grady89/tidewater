@@ -11,8 +11,8 @@ Live status. Update after every milestone (and mid-milestone if you compact). On
 | M4 Town looks alive | DONE | c76ee7d · boats (hull+sail thin instances, sea BFS paths, phase-progress trips, heel on the mud), walkers (thin-instance figures on BFS routes at shift change, market loiterers), day/night from the study lerp with lanterns; smoke: 4 boats out at high, 4 moored at low, 9 walkers, shots/m4-*.png · headless 165 fps |
 | M5 Production chain | DONE | a83af92 · trees as a ledger field (fell/regrow, thin-instance view), lumber camp, sawmill, shipyard (boat at cycle 10 in the scripted town), warehouse caps, net loft, smokehouse, tall house w/ prereq, build menu by category with reasons; market food reserve fix · headless 165 fps |
 | M6 Pollution | DONE | f5b3039 · fields.ts (decay/diffuse/tide-advect), waste → outfall emitters, treatment plant, oyster die-off (bed beside an outfall dies in 3 cycles; survives with a plant), fish density + richest-ground boats + depletion/regen, overlay mesh + toggle; 25 sim tests, shots/m6.png · headless 165 fps |
-| M7 Happiness & services | IN PROGRESS | sub-task: sim (coverage fields, happiness formula, leveling, lantern posts, service catalog) |
-| M8 Beaches & sharks | TODO | |
+| M7 Happiness & services | DONE | 9aa1dcb · HAPPY formula w/ coverage layers (water/leisure/night/treatment…), well/bathhouse/tavern/shrine/market square, lantern posts on walkways, homes level 1→3 (+capacity, roof/chimney), info panel on click, accumulating waste backlog; 28 sim tests, shots/m7.png · headless 165 fps |
+| M8 Beaches & sharks | IN PROGRESS | sub-task: sim (daylight, beach cells, shark field, swimmers, incidents, clinic/lifeguard/nets) |
 | M9 Trade & tourism | TODO | |
 | M10 Fire | TODO | |
 | M11 Storms & tsunami | TODO | |
@@ -21,7 +21,7 @@ Live status. Update after every milestone (and mid-milestone if you compact). On
 | M14 Ship it | TODO | |
 
 ## Current focus
-M7 Happiness & services — sub-task: sim (coverage fields, happiness, leveling, lanterns). Last thing that worked: M6 green (build/test/smoke, 25 tests); palette category CSS verified in shots/m6.png.
+M8 Beaches & sharks — sub-task: sim. Last thing that worked: M7 green (build/test/smoke, 28 tests).
 
 ## Blocked
 (milestone, why, what was tried, what would unblock)
@@ -35,3 +35,4 @@ M7 Happiness & services — sub-task: sim (coverage fields, happiness, leveling,
 - 2026-09-26 03:15 · M4 · c76ee7d · headless 165 fps
 - 2026-09-26 03:55 · M5 · a83af92 · headless 165 fps
 - 2026-09-26 04:30 · M6 · f5b3039 · headless 165 fps
+- 2026-09-26 05:20 · M7 · 9aa1dcb · headless 165 fps

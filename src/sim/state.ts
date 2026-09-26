@@ -50,7 +50,13 @@ export interface Building {
   streak: number;
   /** A lantern post stands on this walkway. */
   lantern: boolean;
+  /** Residents hurt and off work (homes). */
+  injured: number;
+  /** Cycles left of grief after an incident nearby (homes). */
+  shock: number;
 }
+
+export interface Swimmers { k: number; n: number }
 
 export interface Emitter { k: number; rate: number }
 
@@ -61,6 +67,8 @@ export interface Fields {
   fish: number[];
   /** Service coverage 0..1 per cell, one layer per ServiceKind; rebuilt at every settlement. */
   coverage: Record<ServiceKind, number[]>;
+  /** Shark risk per water cell. */
+  shark: number[];
 }
 
 export interface TideState {
@@ -109,8 +117,14 @@ export interface SimState {
   fields: Fields;
   /** Pollution sources for the current cycle: per-tick rates at cells (rebuilt at every settlement). */
   emitters: Emitter[];
+  /** Shark-risk sources for the current cycle, likewise. */
+  sharkEmitters: Emitter[];
   /** Waste with no outfall to go to, last cycle. */
   wasteBacklog: number;
+  /** Who is in the water this shift, per beach cell. */
+  swimmers: Swimmers[];
+  /** Shark incidents so far. */
+  incidents: number;
   /** Town happiness 0..1, averaged over occupied houses (1 when empty). */
   happiness: number;
   /** Last completed cycle's ledger, for the HUD. */
@@ -133,9 +147,12 @@ export function createState(seed = 1): SimState {
     nextId: 1,
     assignments: [],
     trees: initialTrees(),
-    fields: { pollution: zeros(), fish: filled(FISH_CAP), coverage: emptyCoverage() },
+    fields: { pollution: zeros(), fish: filled(FISH_CAP), coverage: emptyCoverage(), shark: zeros() },
     emitters: [],
+    sharkEmitters: [],
     wasteBacklog: 0,
+    swimmers: [],
+    incidents: 0,
     happiness: 1,
     last: { cycle: 0, fishCaught: 0, fishSold: 0, shellfishSold: 0, income: 0, expenses: 0, immigrants: 0 },
     log: [],

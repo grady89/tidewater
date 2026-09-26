@@ -1,14 +1,13 @@
 // Time of day: the study's NOON → DUSK lerp, driven by sim time. Every light-dependent uniform is derived from one
 // `dusk` value in 0..1; the shaders themselves are untouched (they already take these uniforms).
 import { Color3, DirectionalLight, HemisphericLight, Scene, Vector3 } from "@babylonjs/core";
-import { DAY_CYCLES, TIDE_PERIOD } from "../config";
+import { DUSK_MIN, duskAt } from "../sim/daylight";
+
+export { DUSK_MIN, duskAt };
 
 const c3 = (h: string) => { const c = Color3.FromHexString(h); return new Vector3(c.r, c.g, c.b); };
 const NOON = { sun: c3("#fff5e2"), zen: c3("#6fb0de"), hor: c3("#dbeef8"), skyAmb: c3("#a9c8dc"), grAmb: c3("#7d6f58"), fog: c3("#cfe3ef"), water: c3("#bfe0f0") };
 const DUSK = { sun: c3("#ff9855"), zen: c3("#4a3f7e"), hor: c3("#f2a878"), skyAmb: c3("#6a5a8e"), grAmb: c3("#3b2e44"), fog: c3("#d99a7d"), water: c3("#c98f86") };
-
-/** The study's default slider position: late morning. Used as the daytime floor. */
-export const DUSK_MIN = 0.15;
 
 export interface Lighting {
   /** The study's blend factor k = dusk^0.8. */
@@ -30,12 +29,6 @@ export interface Lighting {
 }
 
 const lerp3 = (a: Vector3, b: Vector3, k: number) => new Vector3(a.x + (b.x - a.x) * k, a.y + (b.y - a.y) * k, a.z + (b.z - a.z) * k);
-
-/** Dusk in 0..1 for a sim time: late morning at the start of a day, full dusk half a day later. */
-export function duskAt(time: number): number {
-  const d = (time / (DAY_CYCLES * TIDE_PERIOD)) % 1;
-  return DUSK_MIN + (1 - DUSK_MIN) * (0.5 - 0.5 * Math.cos(2 * Math.PI * (d - 0.25)));
-}
 
 export function computeLighting(dusk: number): Lighting {
   const elev = (65 - 57 * dusk) * Math.PI / 180, az = (-40 + 30 * dusk) * Math.PI / 180;

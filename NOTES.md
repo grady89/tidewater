@@ -224,6 +224,28 @@ Decisions and findings that CLAUDE.md does not cover. Newest at the bottom of ea
   footprint, so 1×1 buildings could land one cell *off* the street and stay unreached. It now bounds the offsets
   by the kind's footprint; scripts that need room call `growStreet` first.
 
+### M8 beaches and sharks
+- **Beaches are derived** in the Grid: high cells with terrain ≤ `BEACH_MAX_HEIGHT` (0.95, where the terrain
+  shader is still sand) that touch a water cell (flat or deep). `cls: "beach"` is the lifeguard tower's class.
+- **Daylight moved into the sim** (`sim/daylight.ts`); the view's `duskAt` re-exports it. A day is 2 tide
+  cycles, so high water alternates day/night and people swim every other cycle.
+- **Shark risk** is a field over water cells fed by staffed markets (8/cycle) and piers/docks with boats
+  (4/boat/cycle), using the same `stepDrift` as pollution but tuned wide and thin (decay 0.003/s, diffusion
+  8 %/s → e-folding ≈ 5 cells). The first tuning (0.008 / 5 %) gave a plume that died within 2 cells and never
+  reached a beach. Nets zero their cell every tick; risk is zeroed on land.
+- **Only open water counts**: a beach cell's swimmable water is its water neighbours with nothing built on them.
+  Netted, pier'd or walkway'd cells aren't swum in and aren't read for risk, which is what makes "nets + lifeguard
+  → 0 incidents" hold exactly.
+- Incident roll at the end of each high-water shift: chance = risk beside the beach × swimmers there × 0.25 (×2 at
+  night, ×0.2 under lifeguard coverage), capped 0.9, from the seeded RNG. A hit injures one resident of the
+  fullest home in reach and sets `shock` on homes within 6 for 3 cycles (−0.2 happiness). Injured residents don't
+  work; clinics heal 2 per cycle per staffed clinic, otherwise one per home every 6 cycles.
+- Shark sources live in `state.sharkEmitters` (rebuilt at settlement) rather than a cache: a WeakMap cache keyed
+  by state broke the JSON round-trip determinism test.
+- View: swimmers are the walker figure bobbing in the open water beside each busy beach; fins are a thin-instance
+  triangle circling the three riskiest water cells above 0.25. Shark-net floats sit at a fixed y (0.15); they
+  look odd at spring low. Overlay "Sharks" shows the field.
+
 ## Findings on the v1 questions
 
 (placement and connectivity exist now; play a few cycles and write answers here)

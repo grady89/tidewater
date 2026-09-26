@@ -204,5 +204,6 @@ function classHint(cls: PlacementClass): string {
     case "flatOrDeep": return "Needs the flats or shallows";
     case "shore": return "Needs the shore";
     case "edge": return "Needs deep water against the shore";
+    case "beach": return "Needs a beach: sand above the tide line";
   }
 }

@@ -6,7 +6,8 @@ export type BuildingKind =
   | "walkway" | "raisedWalkway"
   | "pier" | "dock" | "shipyard"
   | "market" | "oysterBed" | "clamCamp" | "lumberCamp" | "sawmill" | "smokehouse" | "netLoft" | "warehouse"
-  | "outfall" | "treatmentPlant" | "well" | "bathhouse" | "tavern" | "shrine" | "marketSquare";
+  | "outfall" | "treatmentPlant" | "well" | "bathhouse" | "tavern" | "shrine" | "marketSquare"
+  | "clinic" | "lifeguard" | "sharkNet";
 
 /** Service coverage layers; each building that provides one writes its staffed fraction within `radius`. */
 export type ServiceKind = "water" | "leisure" | "night" | "treatment" | "lifeguard" | "firewatch";
@@ -18,7 +19,7 @@ export const CATEGORIES: Category[] = ["Homes", "Streets", "Sea", "Production", 
  * spring tide. shore: flat cell orthogonally adjacent to a high cell. edge: deep cells against the shore (piers
  * and shipyards extend seaward from the anchor).
  */
-export type PlacementClass = "flat" | "deep" | "high" | "flatOrHigh" | "flatOrDeep" | "shore" | "edge";
+export type PlacementClass = "flat" | "deep" | "high" | "flatOrHigh" | "flatOrDeep" | "shore" | "edge" | "beach";
 export type ResourceKind = "money" | "fish" | "shellfish" | "smoked" | "timber" | "planks";
 export type GoodKind = Exclude<ResourceKind, "money">;
 
@@ -79,7 +80,33 @@ export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
   tavern: { name: "Tavern", category: "Leisure", w: 2, d: 1, cls: "flat", cost: { money: 150 }, workers: 2, residents: 0, upkeep: 2, floor: 1.0, network: "leaf", service: { kind: "leisure", radius: 10 }, desc: "Leisure within 10; pours smoked goods" },
   shrine: { name: "Shrine", category: "Leisure", w: 1, d: 1, cls: "flat", cost: { money: 60 }, workers: 0, residents: 0, upkeep: 0.25, floor: 1.0, network: "leaf", service: { kind: "leisure", radius: 4 }, desc: "A little calm within 4" },
   marketSquare: { name: "Market square", category: "Leisure", w: 2, d: 2, cls: "flat", touches: "market", cost: { money: 100 }, workers: 0, residents: 0, upkeep: 0.5, floor: 1.0, network: "link", service: { kind: "leisure", radius: 6 }, desc: "Leisure within 6; must touch the fish market" },
+  clinic: { name: "Clinic", category: "Services", w: 2, d: 1, cls: "flat", cost: { money: 200 }, workers: 3, residents: 0, upkeep: 2, floor: 1.0, network: "leaf", desc: "Heals the injured so they can work again" },
+  lifeguard: { name: "Lifeguard tower", category: "Services", w: 1, d: 1, cls: "beach", cost: { money: 90 }, workers: 1, residents: 0, upkeep: 1, floor: "ground", network: "leaf", service: { kind: "lifeguard", radius: 5 }, desc: "On a beach; shark incidents within 5 drop 80%" },
+  sharkNet: { name: "Shark net", category: "Sea", w: 1, d: 1, cls: "flatOrDeep", cost: { money: 20 }, workers: 0, residents: 0, upkeep: 0.1, floor: 1.0, network: "leaf", desc: "Per water cell; shark risk can't cross" },
 };
+
+// Beaches and sharks
+/** Sand above the tide line up to this height counts as beach when it touches water. */
+export const BEACH_MAX_HEIGHT = 0.95;
+export const SWIM_RADIUS = 10;
+/** Share of nearby residents on the beach at high water in daytime. */
+export const SWIM_FRACTION = 0.3;
+export const SHARK_MARKET = 8;
+export const SHARK_DOCK = 4;
+/** Per second. Low, so the plume reaches a few cells (e-folding ≈ sqrt(diffuse/decay) ≈ 5 cells). */
+export const SHARK_DECAY = 0.003;
+export const SHARK_DIFFUSE = 0.08;
+export const SHARK_ADVECT = 0.03;
+/** Incident chance per high-water shift at a beach = risk × swimmers × this (× 2 at night, × 0.2 under a lifeguard). */
+export const INCIDENT_SCALE = 0.25;
+export const NIGHT_RISK = 2;
+export const LIFEGUARD_CUT = 0.8;
+/** Cycles an injury keeps a resident off work without a clinic. */
+export const INJURY_NATURAL_CYCLES = 6;
+export const CLINIC_HEAL_PER_CYCLE = 2;
+/** Cycles a nearby incident weighs on homes within INJURY_RADIUS. */
+export const INJURY_MEMORY = 3;
+export const INJURY_RADIUS = 6;
 
 /** Lantern posts go on a walkway cell rather than taking one. */
 export const LANTERN_COST = 8;

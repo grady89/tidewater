@@ -11,7 +11,7 @@ export function jobsAt(b: Building): number {
 
 export function assignWorkers(state: SimState, grid: Grid): void {
   const buildings = Object.values(state.buildings).sort((a, b) => a.id - b.id);
-  const homes = buildings.filter(b => b.reached && b.residents > 0);
+  const homes = buildings.filter(b => b.reached && b.residents - b.injured > 0);
   const works = buildings.filter(b => b.reached && jobsAt(b) > 0);
   for (const b of buildings) b.workers = 0;
   state.assignments = [];
@@ -30,7 +30,7 @@ export function assignWorkers(state: SimState, grid: Grid): void {
   }
   pairs.sort((a, b) => a.d - b.d || a.work.id - b.work.id || a.home.id - b.home.id);
 
-  const free = new Map<number, number>(homes.map(h => [h.id, h.residents]));
+  const free = new Map<number, number>(homes.map(h => [h.id, h.residents - h.injured]));
   const slots = new Map<number, number>(works.map(w => [w.id, jobsAt(w)]));
   const out: Assignment[] = [];
   for (const p of pairs) {

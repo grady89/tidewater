@@ -398,6 +398,47 @@ function marketSquare(scene: Scene, b: Building): BuildingMeshes {
   return { root: mergeFlat("marketSquare", parts, scene) };
 }
 
+function clinic(scene: Scene, b: Building): BuildingMeshes {
+  const { cx, cz, w, d } = bounds(b.cells);
+  const F = b.floorY;
+  const parts: Mesh[] = [];
+  deck(scene, parts, cx, cz, w, d, F);
+  shed(scene, parts, cx, cz, 1.5, 0.8, 0.72, F, PALETTE.walls[0], PALETTE.roofs[1]);
+  // The cross on the roof ridge.
+  parts.push(box(scene, 0.36, 0.1, 0.1, cx, F + 0.8 + 0.5, cz, PALETTE.roofs[0]));
+  parts.push(box(scene, 0.1, 0.36, 0.1, cx, F + 0.8 + 0.5, cz, PALETTE.roofs[0]));
+  return { root: mergeFlat("clinic", parts, scene) };
+}
+
+function lifeguard(scene: Scene, b: Building): BuildingMeshes {
+  const { x, z } = cellCenter(b.cells[0]);
+  const F = b.floorY;
+  const parts: Mesh[] = [];
+  // A tall stand on four legs with a cabin and a flag.
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) parts.push(box(scene, 0.07, 1.4, 0.07, x + sx * 0.28, F + 0.7, z + sz * 0.28, PALETTE.wood));
+  parts.push(box(scene, 0.8, 0.06, 0.8, x, F + 1.4, z, PALETTE.planks));
+  parts.push(box(scene, 0.55, 0.45, 0.5, x, F + 1.43 + 0.22, z, PALETTE.walls[4]));
+  parts.push(pyramid(scene, 0.95, 0.3, x, F + 1.88 + 0.15, z, PALETTE.roofs[0]));
+  parts.push(box(scene, 0.04, 0.6, 0.04, x + 0.32, F + 2.1, z + 0.32, PALETTE.wood));
+  parts.push(box(scene, 0.3, 0.18, 0.02, x + 0.47, F + 2.3, z + 0.32, PALETTE.roofs[2]));
+  return { root: mergeFlat("lifeguard", parts, scene) };
+}
+
+function sharkNet(scene: Scene, b: Building): BuildingMeshes {
+  const { x, z } = cellCenter(b.cells[0]);
+  const parts: Mesh[] = [];
+  // Floats on the surface and the net hanging below; the surface sits at mid tide.
+  const y = 0.15;
+  for (const t of [-0.35, 0, 0.35]) {
+    const buoy = MeshBuilder.CreateSphere("buoy", { diameter: 0.18, segments: 4 }, scene);
+    buoy.position.set(x + t, y, z);
+    parts.push(tint(buoy, PALETTE.roofs[0]));
+  }
+  parts.push(box(scene, 0.96, 0.02, 0.02, x, y, z, PALETTE.wood));
+  parts.push(box(scene, 0.96, 0.9, 0.02, x, y - 0.46, z, PALETTE.sail));
+  return { root: mergeFlat("sharkNet", parts, scene) };
+}
+
 function outfall(scene: Scene, b: Building): BuildingMeshes {
   const { x, z } = cellCenter(b.cells[0]);
   const F = b.floorY;
@@ -434,6 +475,9 @@ export function createBuildingMeshes(scene: Scene, b: Building): BuildingMeshes 
   switch (b.kind) {
     case "outfall": return outfall(scene, b);
     case "treatmentPlant": return treatmentPlant(scene, b);
+    case "clinic": return clinic(scene, b);
+    case "lifeguard": return lifeguard(scene, b);
+    case "sharkNet": return sharkNet(scene, b);
     case "well": return well(scene, b);
     case "bathhouse": return bathhouse(scene, b);
     case "tavern": return tavern(scene, b);

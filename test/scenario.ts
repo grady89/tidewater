@@ -1,6 +1,6 @@
 // Scripted towns shared by the unit tests and the smoke scenario (which imports this module into the page
 // through the Vite dev server). Sim-only: no Babylon.
-import { BuildingKind, BUILDINGS } from "../src/sim/balance";
+import { BuildingKind, BUILDINGS, SWIM_RADIUS } from "../src/sim/balance";
 import { buyBoat, tryPlace } from "../src/sim/economy";
 import { Grid } from "../src/sim/grid";
 import { Building, buildingList, Cell, SimState } from "../src/sim/state";
@@ -142,6 +142,38 @@ export function placeEdge(state: SimState, grid: Grid, kind: BuildingKind, near:
 /** Another pier (a berth for shipyard boats), on the nearest free shore site to `near`. */
 export function placeSecondPier(state: SimState, grid: Grid, near: Cell): Building | null {
   return placeEdge(state, grid, "pier", near, 2);
+}
+
+/** Beach cells within swimming reach of the town's homes. */
+export function beachesNear(state: SimState, grid: Grid): Cell[] {
+  const homes = buildingList(state).filter(b => BUILDINGS[b.kind].residents > 0);
+  const out: Cell[] = [];
+  for (let i = -32; i < 32; i++) for (let j = -32; j < 32; j++) {
+    const c = { i, j };
+    if (grid.isBeach(c) && homes.some(h => h.cells.some(x => Math.abs(x.i - i) <= SWIM_RADIUS && Math.abs(x.j - j) <= SWIM_RADIUS))) out.push(c);
+  }
+  return out;
+}
+
+/** A pier full of boats as close as possible to a beach the residents swim from: fish waste where the swimmers are. */
+export function pierByBeach(state: SimState, grid: Grid): { pier: Building; beach: Cell } | null {
+  const beaches = beachesNear(state, grid);
+  let best: { c: Cell; beach: Cell; d: number } | null = null;
+  for (const beach of beaches) {
+    for (let di = -6; di <= 6; di++) for (let dj = -6; dj <= 6; dj++) {
+      const c = { i: beach.i + di, j: beach.j + dj };
+      if (grid.classAt(c) !== "deep") continue;
+      const fp = grid.footprint("pier", c);
+      if (!fp || !grid.canPlace("pier", fp)) continue;
+      const d = Math.max(Math.abs(di), Math.abs(dj));
+      if (!best || d < best.d) best = { c, beach, d };
+    }
+  }
+  if (!best) return null;
+  const pier = tryPlace(state, grid, "pier", best.c);
+  if (!pier) return null;
+  pier.boats = BUILDINGS.pier.slots ?? 2; // the shipyard would fill it in time; the ledger takes it directly here
+  return { pier, beach: best.beach };
 }
 
 /** Deep cells against the shore that take a shipyard, nearest the street. */

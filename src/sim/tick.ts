@@ -4,6 +4,7 @@ import { settleCycle, shiftEnd, shiftStart } from "./economy";
 import { Grid } from "./grid";
 import { updateNetwork } from "./network";
 import { tickPollution } from "./pollution";
+import { rollIncidents, tickSharks, updateSwimmers } from "./sharks";
 import { notify, Phase, SimState } from "./state";
 import { isSpringCycle, tickTide } from "./tide";
 
@@ -17,13 +18,16 @@ export function tick(state: SimState, grid: Grid, dt = SIM_TICK): void {
   tickTide(state.tide, dt);
   updateNetwork(state, grid, state.tide.level);
   tickPollution(state, grid, dt);
+  tickSharks(state, grid, dt, state.sharkEmitters);
 
   const phase = phaseFor(state.tide.level);
   if (phase !== state.phase) {
     const prev = state.phase;
     state.phase = phase;
     if (prev !== "slack") shiftEnd(state, grid, prev);
+    if (prev === "high") { rollIncidents(state, grid); state.swimmers = []; }
     if (phase !== "slack") shiftStart(state, grid, phase);
+    if (phase === "high") updateSwimmers(state, grid);
   }
   if (state.tide.peaked) {
     if (isSpringCycle(state.tide.cycle)) notify(state, "Spring tide: the water runs higher and lower than usual");

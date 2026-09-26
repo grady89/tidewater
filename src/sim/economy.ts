@@ -15,6 +15,7 @@ import { Grid } from "./grid";
 import { depleteGround, fishAt, pollutionAt, routeWaste, settleFields } from "./pollution";
 import { chooseGround } from "./sea";
 import { announceLevel, rebuildCoverage } from "./services";
+import { healInjuries, sharkSources } from "./sharks";
 import { Building, buildingList, Cell, notify, Phase, SimState } from "./state";
 import { fellTrees, regrowTrees } from "./trees";
 import { assignWorkers, employed, staffing } from "./workers";
@@ -191,8 +192,9 @@ export function homeHappiness(state: SimState, home: Building, fed: number, jobs
   const cov = state.fields.coverage;
   const foul = Math.min(1, pollutionAt(state, c) / POLLUTION_HAPPY_SCALE);
   const backlog = Math.min(WASTE_BACKLOG_PENALTY_MAX, state.wasteBacklog * WASTE_BACKLOG_PENALTY_PER_UNIT);
+  const injury = home.shock > 0 || home.injured > 0 ? HAPPY.injury : 0;
   const h = HAPPY.base + HAPPY.fed * fed + HAPPY.jobs * jobs + HAPPY.water * at(cov.water, c) + HAPPY.leisure * at(cov.leisure, c)
-    + HAPPY.night * at(cov.night, c) - HAPPY.pollution * foul - backlog;
+    + HAPPY.night * at(cov.night, c) - HAPPY.pollution * foul - backlog - injury;
   return Math.max(0, Math.min(1, h));
 }
 
@@ -215,7 +217,7 @@ export function settleCycle(state: SimState, grid: Grid): void {
     let ate = Math.min(r.fish, need); r.fish -= ate;
     const more = Math.min(r.shellfish, need - ate); r.shellfish -= more; ate += more;
     const fed = need > 0 ? ate / need : 1;
-    const jobs = b.reached ? employed(state, b) / b.residents : 0;
+    const jobs = b.reached ? employed(state, b) / Math.max(1, b.residents - b.injured) : 0;
     b.happiness = homeHappiness(state, b, fed, jobs);
     happySum += b.happiness; houses++;
     // Growth: a run of good cycles adds a storey.
@@ -244,6 +246,8 @@ export function settleCycle(state: SimState, grid: Grid): void {
   regrowTrees(state);
   settleFields(state, grid);
   routeWaste(state);
+  state.sharkEmitters = sharkSources(state);
+  healInjuries(state);
 
   // Upkeep.
   for (const b of buildings) stats.expenses += BUILDINGS[b.kind].upkeep;

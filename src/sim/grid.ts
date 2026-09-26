@@ -1,7 +1,7 @@
 // Cell model over the terrain, occupancy index, and placement rules. Buildings live in SimState; the Grid is the
 // spatial index over them (rebuilt from state on load) plus the fixed terrain classification.
 import { SIZE, STILT_LENGTH, TIDE_HI, TIDE_LO } from "../config";
-import { BuildingKind, BUILDINGS, PlacementClass } from "./balance";
+import { BEACH_MAX_HEIGHT, BuildingKind, BUILDINGS, PlacementClass } from "./balance";
 import { terrainHeight } from "./heightfield";
 import { Building, Cell, SimState } from "./state";
 
@@ -32,6 +32,10 @@ export class Grid {
   private readonly occupancy: (Building | null)[] = new Array(SIZE * SIZE).fill(null);
   /** Cell index → deep? for the field code's hot loops. */
   readonly deep = new Uint8Array(SIZE * SIZE);
+  /** Cell index → water at high tide (deep or flat)? */
+  readonly water = new Uint8Array(SIZE * SIZE);
+  /** Cell index → beach? Sand just above the tide line that touches water. Derived, never built. */
+  readonly beach = new Uint8Array(SIZE * SIZE);
 
   constructor(public state: SimState) {
     for (let i = -HALF; i < HALF; i++) for (let j = -HALF; j < HALF; j++) {
@@ -40,8 +44,18 @@ export class Grid {
       this.heights[k] = h;
       this.classes[k] = h < TIDE_LO ? "deep" : h <= TIDE_HI ? "flat" : "high";
       this.deep[k] = h < TIDE_LO ? 1 : 0;
+      this.water[k] = h <= TIDE_HI ? 1 : 0;
+    }
+    for (let i = -HALF; i < HALF; i++) for (let j = -HALF; j < HALF; j++) {
+      const k = cellIndex(i, j);
+      if (this.classes[k] !== "high" || this.heights[k] > BEACH_MAX_HEIGHT) continue;
+      if (this.neighbors({ i, j }).some(n => this.water[cellIndex(n.i, n.j)])) this.beach[k] = 1;
     }
     this.rebuild();
+  }
+
+  isBeach(c: Cell): boolean {
+    return inBounds(c.i, c.j) && this.beach[cellIndex(c.i, c.j)] === 1;
   }
 
   /** Point the index at a (loaded) state and rebuild occupancy from its buildings. */
@@ -76,6 +90,7 @@ export class Grid {
       case "flatOrDeep": return cells.every(c => base(c) === "flat" || base(c) === "deep");
       case "shore": return cells.every(c => base(c) === "flat") && cells.some(c => this.touches(c, "high"));
       case "edge": return cells.every(c => base(c) === "deep") && cells.some(c => this.touches(c, "flat"));
+      case "beach": return cells.every(c => this.isBeach(c));
     }
   }
 
@@ -161,7 +176,7 @@ export class Grid {
     const b: Building = {
       id: s.nextId++, kind, cells, floorY: this.floorFor(kind, cells), cut: false, reached: false,
       workers: 0, residents: 0, boats: 0, atSea: false, ground: null, output: 0, happiness: 1, progress: 0, stress: 0,
-      level: 1, streak: 0, lantern: false,
+      level: 1, streak: 0, lantern: false, injured: 0, shock: 0,
     };
     for (const c of cells) this.occupancy[cellIndex(c.i, c.j)] = b;
     s.buildings[b.id] = b;
