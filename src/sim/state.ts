@@ -1,6 +1,7 @@
 // The ledger. Everything the game knows is in one plain JSON-serializable object; the view only reads it.
 import { TIDE_HI } from "../config";
 import { BuildingKind, ResourceKind, STARTING_FISH, STARTING_MONEY } from "./balance";
+import { initialTrees } from "./trees";
 
 export type { BuildingKind } from "./balance";
 
@@ -32,6 +33,8 @@ export interface Building {
   output: number;
   /** Fed and employed fraction last cycle, 0..1 (houses). */
   happiness: number;
+  /** Work accumulated toward the next boat (shipyards), in staffed cycles. */
+  progress: number;
 }
 
 export interface TideState {
@@ -75,6 +78,8 @@ export interface SimState {
   buildings: Record<number, Building>;
   nextId: number;
   assignments: Assignment[];
+  /** Age of every tree site, 0..1 (see trees.ts). */
+  trees: number[];
   /** Town happiness 0..1, averaged over occupied houses (1 when empty). */
   happiness: number;
   /** Last completed cycle's ledger, for the HUD. */
@@ -96,6 +101,7 @@ export function createState(seed = 1): SimState {
     buildings: {},
     nextId: 1,
     assignments: [],
+    trees: initialTrees(),
     happiness: 1,
     last: { cycle: 0, fishCaught: 0, fishSold: 0, shellfishSold: 0, income: 0, expenses: 0, immigrants: 0 },
     log: [],

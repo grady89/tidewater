@@ -69,13 +69,29 @@ function bounds(cells: Cell[]): { cx: number; cz: number; w: number; d: number }
   return { cx: (minI + maxI + 1) / 2, cz: (minJ + maxJ + 1) / 2, w: maxI - minI + 1, d: maxJ - minJ + 1 };
 }
 
-/** Deck with a stilt near each corner; the base of every building. */
+/** Deck with a stilt near each corner; the base of every building. Buildings on the ground get no stilts. */
 function deck(scene: Scene, parts: Mesh[], cx: number, cz: number, w: number, d: number, F: number, inset = 0.12): void {
   parts.push(box(scene, w - 0.02, 0.08, d - 0.02, cx, F - 0.04, cz, PALETTE.planks));
   const hx = w / 2 - inset, hz = d / 2 - inset;
+  if (F - terrainHeight(cx, cz) < 0.2) return;
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) parts.push(stilt(scene, cx + sx * hx, cz + sz * hz, F - 0.08, 0.12, 6));
   if (w >= 2) for (const sz of [-1, 1]) parts.push(stilt(scene, cx, cz + sz * hz, F - 0.08, 0.12, 6));
   if (d >= 2) for (const sx of [-1, 1]) parts.push(stilt(scene, cx + sx * hx, cz, F - 0.08, 0.12, 6));
+}
+
+/** A closed shed with a pyramid roof, the workhorse of the production buildings. */
+function shed(scene: Scene, parts: Mesh[], cx: number, cz: number, w: number, h: number, d: number, F: number, wall: string, roof: string): void {
+  parts.push(box(scene, w, h, d, cx, F + h / 2, cz, wall));
+  parts.push(pyramid(scene, Math.max(w, d) * 1.55, h * 0.45, cx, F + h + h * 0.225, cz, roof));
+}
+
+function logPile(scene: Scene, parts: Mesh[], x: number, y: number, z: number, alongX: boolean): void {
+  for (const [dx, dy] of [[-0.14, 0], [0.14, 0], [0, 0.13]]) {
+    const log = MeshBuilder.CreateCylinder("log", { diameter: 0.16, height: 0.7, tessellation: 5 }, scene);
+    if (alongX) log.rotation.z = Math.PI / 2; else log.rotation.x = Math.PI / 2;
+    log.position.set(x + (alongX ? 0 : dx), y + dy + 0.08, z + (alongX ? dx : 0));
+    parts.push(tint(log, PALETTE.wood));
+  }
 }
 
 function lantern(scene: Scene, x: number, z: number, F: number): Mesh {
@@ -206,17 +222,109 @@ function clamCamp(scene: Scene, b: Building): BuildingMeshes {
   return { root: mergeFlat("clamCamp", parts, scene) };
 }
 
+function lumberCamp(scene: Scene, b: Building): BuildingMeshes {
+  const { cx, cz, w, d } = bounds(b.cells);
+  const F = b.floorY;
+  const parts: Mesh[] = [];
+  deck(scene, parts, cx, cz, w, d, F);
+  const a = cellCenter(b.cells[0]), s = cellCenter(b.cells[b.cells.length - 1]);
+  shed(scene, parts, a.x, a.z, 0.72, 0.55, 0.72, F, PALETTE.walls[3], PALETTE.roofs[3]);
+  logPile(scene, parts, s.x, F, s.z, a.z === s.z);
+  // A stump-chopping block.
+  const block = MeshBuilder.CreateCylinder("block", { diameter: 0.26, height: 0.22, tessellation: 6 }, scene);
+  block.position.set(s.x - 0.3 * Math.sign(s.x - a.x || 1), F + 0.11, s.z + 0.3);
+  parts.push(tint(block, PALETTE.wood));
+  return { root: mergeFlat("lumberCamp", parts, scene) };
+}
+
+function sawmill(scene: Scene, b: Building): BuildingMeshes {
+  const { cx, cz, w, d } = bounds(b.cells);
+  const F = b.floorY;
+  const parts: Mesh[] = [];
+  deck(scene, parts, cx, cz, w, d, F);
+  shed(scene, parts, cx - 0.2, cz, 1.3, 1.0, 1.2, F, PALETTE.walls[2], PALETTE.roofs[1]);
+  // The blade, standing on edge at the open side.
+  const blade = MeshBuilder.CreateCylinder("blade", { diameter: 0.55, height: 0.04, tessellation: 8 }, scene);
+  blade.rotation.x = Math.PI / 2;
+  blade.position.set(cx + 0.62, F + 0.4, cz - 0.3);
+  parts.push(tint(blade, "#8d8a83"));
+  logPile(scene, parts, cx + 0.55, F, cz + 0.45, true);
+  return { root: mergeFlat("sawmill", parts, scene) };
+}
+
+function smokehouse(scene: Scene, b: Building): BuildingMeshes {
+  const { cx, cz, w, d } = bounds(b.cells);
+  const F = b.floorY;
+  const parts: Mesh[] = [];
+  deck(scene, parts, cx, cz, w, d, F);
+  shed(scene, parts, cx, cz, 1.5, 0.8, 0.72, F, PALETTE.roofs[1], PALETTE.roofs[2]);
+  parts.push(box(scene, 0.18, 0.5, 0.18, cx + 0.45, F + 0.8 + 0.25, cz, "#8d8a83"));
+  return { root: mergeFlat("smokehouse", parts, scene) };
+}
+
+function netLoft(scene: Scene, b: Building): BuildingMeshes {
+  const { x, z } = cellCenter(b.cells[0]);
+  const F = b.floorY;
+  const parts: Mesh[] = [];
+  deck(scene, parts, x, z, 1, 1, F);
+  shed(scene, parts, x - 0.15, z, 0.5, 0.55, 0.6, F, PALETTE.walls[4], PALETTE.roofs[0]);
+  // Drying rack with a net slung over it.
+  for (const dz of [-0.3, 0.3]) parts.push(box(scene, 0.05, 0.7, 0.05, x + 0.35, F + 0.35, z + dz, PALETTE.wood));
+  parts.push(box(scene, 0.03, 0.03, 0.65, x + 0.35, F + 0.68, z, PALETTE.wood));
+  parts.push(box(scene, 0.02, 0.4, 0.5, x + 0.36, F + 0.45, z, PALETTE.sail));
+  return { root: mergeFlat("netLoft", parts, scene) };
+}
+
+function warehouse(scene: Scene, b: Building): BuildingMeshes {
+  const { cx, cz, w, d } = bounds(b.cells);
+  const F = b.floorY;
+  const parts: Mesh[] = [];
+  deck(scene, parts, cx, cz, w, d, F);
+  parts.push(box(scene, 1.8, 1.0, 1.5, cx, F + 0.5, cz, PALETTE.walls[0]));
+  parts.push(pyramid(scene, 2.9, 0.6, cx, F + 1.0 + 0.3, cz, PALETTE.roofs[3]));
+  parts.push(box(scene, 0.5, 0.6, 0.06, cx, F + 0.3, cz - 0.76, PALETTE.wood));
+  return { root: mergeFlat("warehouse", parts, scene) };
+}
+
+function shipyard(scene: Scene, b: Building): BuildingMeshes {
+  const { cx, cz, w, d } = bounds(b.cells);
+  const F = b.floorY;
+  const parts: Mesh[] = [box(scene, w - 0.02, 0.12, d - 0.02, cx, F - 0.06, cz, PALETTE.planks)];
+  for (let sx = -1; sx <= 1; sx++) for (const sz of [-1, 1]) parts.push(stilt(scene, cx + sx * (w / 2 - 0.2), cz + sz * (d / 2 - 0.15), F - 0.12, 0.18, 6));
+  // A hull under construction: keel and ribs on blocks.
+  const alongX = w >= d;
+  const keel = MeshBuilder.CreateBox("keel", { width: alongX ? 1.4 : 0.1, height: 0.1, depth: alongX ? 0.1 : 1.4 }, scene);
+  keel.position.set(cx, F + 0.3, cz);
+  parts.push(tint(keel, PALETTE.wood));
+  for (let k = -2; k <= 2; k++) {
+    const rib = MeshBuilder.CreateBox("rib", { width: alongX ? 0.06 : 0.5, height: 0.35, depth: alongX ? 0.5 : 0.06 }, scene);
+    rib.position.set(cx + (alongX ? k * 0.3 : 0), F + 0.42, cz + (alongX ? 0 : k * 0.3));
+    parts.push(tint(rib, PALETTE.hulls[0]));
+  }
+  shed(scene, parts, cx + (alongX ? 0 : 0.7), cz + (alongX ? 0.7 : 0), 0.8, 0.7, 0.55, F, PALETTE.walls[1], PALETTE.roofs[1]);
+  parts.push(box(scene, 0.1, 1.3, 0.1, cx - (alongX ? 1.0 : 0), F + 0.65, cz - (alongX ? 0 : 1.0), PALETTE.wood));
+  parts.push(box(scene, alongX ? 0.9 : 0.08, 0.08, alongX ? 0.08 : 0.9, cx - (alongX ? 0.6 : 0), F + 1.25, cz - (alongX ? 0 : 0.6), PALETTE.wood));
+  return { root: mergeFlat("shipyard", parts, scene) };
+}
+
 export function createBuildingMeshes(scene: Scene, b: Building): BuildingMeshes {
   switch (b.kind) {
     case "hut": return home(scene, b, 0.66, 0.62);
     case "house": return home(scene, b, 0.8, 0.9);
+    case "tallHouse": return home(scene, b, 0.8, 1.5);
     case "walkway": return walkway(scene, b);
     case "raisedWalkway": return raisedWalkway(scene, b);
     case "pier": return pier(scene, b);
     case "dock": return dock(scene, b);
+    case "shipyard": return shipyard(scene, b);
     case "market": return market(scene, b);
     case "oysterBed": return oysterBed(scene, b);
     case "clamCamp": return clamCamp(scene, b);
+    case "lumberCamp": return lumberCamp(scene, b);
+    case "sawmill": return sawmill(scene, b);
+    case "smokehouse": return smokehouse(scene, b);
+    case "netLoft": return netLoft(scene, b);
+    case "warehouse": return warehouse(scene, b);
   }
 }
 

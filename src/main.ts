@@ -8,14 +8,14 @@ import { newGame } from "./sim/start";
 import { SimState } from "./sim/state";
 import { advanceCycles, tick } from "./sim/tick";
 import { cycleFraction } from "./sim/tide";
-import { Hud, toolForKey } from "./ui/hud";
+import { Hud } from "./ui/hud";
 import { Boats } from "./view/boats";
 import { BuildingViews } from "./view/buildingViews";
+import { Trees } from "./view/trees";
 import { Walkers } from "./view/walkers";
 import { computeLighting, createLights, duskAt } from "./world/lighting";
 import { createSky } from "./world/sky";
 import { createTerrain } from "./world/terrain";
-import { createTrees } from "./world/trees";
 import { createWater } from "./world/water";
 
 const SEED = 1;
@@ -36,7 +36,6 @@ const lights = createLights(scene);
 const terrain = createTerrain(scene);
 const water = createWater(scene, terrain.heightTex);
 const sky = createSky(scene);
-createTrees(scene);
 
 const pipe = new DefaultRenderingPipeline("pp", false, scene, [camera]);
 pipe.fxaaEnabled = true;
@@ -65,8 +64,9 @@ else ({ state, grid } = newGame(SEED));
 const views = new BuildingViews(scene);
 const boats = new Boats(scene, grid);
 const walkers = new Walkers(scene, grid);
+const trees = new Trees(scene);
 const placement = new Placement(scene, camera, grid, canvas);
-const hud = new Hud(document.getElementById("hud")!, document.getElementById("resources")!, document.getElementById("notes")!, tool => placement.setTool(tool));
+const hud = new Hud(document.getElementById("hud")!, document.getElementById("resources")!, document.getElementById("notes")!, grid, tool => placement.setTool(tool));
 
 function newTown(): void {
   try { localStorage.removeItem(AUTOSAVE_KEY); } catch { /* ignore */ }
@@ -77,8 +77,7 @@ function newTown(): void {
 }
 
 window.addEventListener("keydown", e => {
-  const tool = toolForKey(e.key);
-  if (tool) placement.setTool(tool);
+  if (hud.key(e.key)) e.preventDefault();
 });
 
 let speed = 1;
@@ -93,6 +92,7 @@ function syncView(): void {
   water.setLighting(light);
   sky.setLighting(light);
   views.sync(state, light.lamp);
+  trees.sync(state);
   boats.sync(state, viewTime);
   walkers.sync(state, viewTime);
   terrain.update(camera.position, state.tide.level, state.tide.wetLevel);

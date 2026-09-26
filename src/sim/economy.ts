@@ -1,15 +1,18 @@
 // Money and goods. Per-cycle settlement runs at the high-tide peak. High-water producers (boats) work the high
 // phase and land on leaving it; low-water producers (oyster beds, clam camps) work the low phase the same way.
-// Boats at a deep dock work both.
+// Boats at a deep dock work both. Land production (wood, planks, smoking, boat building) settles once a cycle.
 import { SPRING_LO } from "../config";
 import {
   BOAT_BASE_FISH, BOAT_COST, BUILDINGS, BuildingKind, CAP_BASE, CLAM_PER_CELL, CLAM_RADIUS, Cost, FOOD_PER_CYCLE,
-  IMMIGRANTS_PER_CYCLE, IMMIGRATION_HAPPINESS, MARKET_SELL_PER_CYCLE, OYSTER_YIELD, PRICE_FISH, PRICE_SHELLFISH,
-  PURCHASABLE_BOATS, SPRING_LOW_BONUS, TAX_PER_RESIDENT,
+  FOOD_RESERVE_CYCLES, GoodKind, IMMIGRANTS_PER_CYCLE, IMMIGRATION_HAPPINESS, LUMBER_TREES_PER_CYCLE, MARKET_SELL_PER_CYCLE,
+  NET_LOFT_BONUS, NET_LOFT_RADIUS, OYSTER_YIELD, PRICE_FISH, PRICE_SHELLFISH, PURCHASABLE_BOATS, SAWMILL_RATE,
+  SHIPYARD_BOAT_COST, SHIPYARD_CYCLES, SMOKEHOUSE_RATE, SPRING_LOW_BONUS, TAX_PER_RESIDENT, TIMBER_PER_TREE,
+  WAREHOUSE_CAP,
 } from "./balance";
 import { Grid } from "./grid";
 import { chooseGround } from "./sea";
 import { Building, buildingList, Cell, notify, Phase, SimState } from "./state";
+import { fellTrees, regrowTrees } from "./trees";
 import { assignWorkers, employed, staffing } from "./workers";
 
 export function canAfford(state: SimState, cost: Cost): boolean {
@@ -46,10 +49,14 @@ export function isHarbour(b: Building | null): b is Building {
   return !!b && (BUILDINGS[b.kind].slots ?? 0) > 0;
 }
 
+export function freeSlots(b: Building): number {
+  return (BUILDINGS[b.kind].slots ?? 0) - b.boats;
+}
+
 /** Why a boat can't be bought at this pier/dock, or null if it can. */
 export function boatPurchaseBlocker(state: SimState, at: Building | null): string | null {
   if (!isHarbour(at)) return "Boats are bought at a pier or dock";
-  if (at.boats >= (BUILDINGS[at.kind].slots ?? 0)) return "No free slot";
+  if (freeSlots(at) <= 0) return "No free slot";
   if (totalBoats(state) >= PURCHASABLE_BOATS) return "Only the first two boats can be bought; build a shipyard";
   if (state.resources.money < BOAT_COST) return `Costs ${BOAT_COST}$`;
   return null;
@@ -63,10 +70,17 @@ export function buyBoat(state: SimState, at: Building): boolean {
   return true;
 }
 
-function addCapped(state: SimState, kind: keyof typeof CAP_BASE, amount: number): number {
-  const before = state.resources[kind];
-  state.resources[kind] = Math.min(CAP_BASE[kind], before + amount);
-  return state.resources[kind] - before;
+/** Storage cap for a good: the base plus every warehouse. */
+export function capFor(state: SimState, good: GoodKind): number {
+  let n = 0;
+  for (const b of buildingList(state)) if (b.kind === "warehouse") n++;
+  return CAP_BASE[good] + n * WAREHOUSE_CAP;
+}
+
+export function addCapped(state: SimState, good: GoodKind, amount: number): number {
+  const before = state.resources[good];
+  state.resources[good] = Math.min(capFor(state, good), before + amount);
+  return state.resources[good] - before;
 }
 
 /** Can boats moored here work this phase? Piers only at high water; docks whenever the water moves. */
@@ -74,6 +88,16 @@ export function sailsIn(b: Building, phase: Phase): boolean {
   if (b.kind === "pier") return phase === "high";
   if (b.kind === "dock") return phase !== "slack";
   return false;
+}
+
+/** Catch multiplier from a reached net loft within range of the harbour. */
+export function netLoftBonus(state: SimState, harbour: Building): number {
+  for (const b of buildingList(state)) {
+    if (b.kind !== "netLoft" || !b.reached || b.cut) continue;
+    const c = b.cells[0];
+    if (harbour.cells.some(h => Math.abs(h.i - c.i) <= NET_LOFT_RADIUS && Math.abs(h.j - c.j) <= NET_LOFT_RADIUS)) return 1 + NET_LOFT_BONUS;
+  }
+  return 1;
 }
 
 /** Shift start: boats leave for their ground, low-water crews walk out. */
@@ -93,7 +117,7 @@ export function shiftEnd(state: SimState, grid: Grid, phase: Phase): void {
   for (const b of buildingList(state)) {
     if (isHarbour(b) && b.atSea) {
       b.atSea = false;
-      const fish = b.boats * BOAT_BASE_FISH * staffing(b);
+      const fish = b.boats * BOAT_BASE_FISH * staffing(b) * netLoftBonus(state, b);
       b.output += addCapped(state, "fish", fish);
       state.last.fishCaught += fish;
       continue;
@@ -106,6 +130,53 @@ export function shiftEnd(state: SimState, grid: Grid, phase: Phase): void {
       b.output += addCapped(state, "shellfish", cells * CLAM_PER_CELL * staffing(b) * (springLow ? SPRING_LOW_BONUS : 1));
     }
   }
+}
+
+/** Land production, once a cycle: wood, planks, smoked goods, and boats from the yard. */
+function produce(state: SimState, grid: Grid, buildings: Building[]): void {
+  const r = state.resources;
+  for (const b of buildings) {
+    if (!b.reached || b.cut || staffing(b) === 0) continue;
+    const s = staffing(b);
+    switch (b.kind) {
+      case "lumberCamp": {
+        const felled = fellTrees(state, b, LUMBER_TREES_PER_CYCLE * s);
+        b.output = addCapped(state, "timber", felled * TIMBER_PER_TREE);
+        break;
+      }
+      case "sawmill": {
+        const timber = Math.min(r.timber, SAWMILL_RATE * s);
+        r.timber -= timber;
+        b.output = addCapped(state, "planks", timber);
+        break;
+      }
+      case "smokehouse": {
+        const fish = Math.min(r.fish, SMOKEHOUSE_RATE * s);
+        r.fish -= fish;
+        b.output = addCapped(state, "smoked", fish);
+        break;
+      }
+      case "shipyard": {
+        const berth = buildings.filter(h => isHarbour(h) && freeSlots(h) > 0)
+          .sort((x, y) => dist(x, b) - dist(y, b) || x.id - y.id)[0];
+        if (!berth || !canAfford(state, SHIPYARD_BOAT_COST)) { b.output = 0; break; }
+        b.progress += s;
+        if (b.progress >= SHIPYARD_CYCLES) {
+          b.progress = 0;
+          pay(state, SHIPYARD_BOAT_COST);
+          berth.boats++;
+          b.output = 1;
+          notify(state, `The shipyard launched a boat for the ${BUILDINGS[berth.kind].name.toLowerCase()}`);
+        }
+        break;
+      }
+    }
+  }
+  void grid;
+}
+
+function dist(a: Building, b: Building): number {
+  return Math.hypot(a.cells[0].i - b.cells[0].i, a.cells[0].j - b.cells[0].j);
 }
 
 /** The cycle settlement, run once at every high-tide peak. */
@@ -133,18 +204,23 @@ export function settleCycle(state: SimState, grid: Grid): void {
   state.happiness = houses ? happySum / houses : 1;
   stats.income += pop * TAX_PER_RESIDENT;
 
-  // Sales of what's left; producers' per-cycle output counters reset here.
+  // Sales of what's left beyond the town's food reserve; producers' per-cycle output counters reset here.
+  const reserve = (pop + IMMIGRANTS_PER_CYCLE) * FOOD_PER_CYCLE * FOOD_RESERVE_CYCLES;
   for (const b of buildings) {
     if (b.kind !== "market") { if (BUILDINGS[b.kind].residents === 0) b.output = 0; continue; }
     b.output = 0;
     if (!b.reached || b.cut) continue;
     let capacity = MARKET_SELL_PER_CYCLE * staffing(b);
-    const fish = Math.min(r.fish, capacity);
+    const fish = Math.max(0, Math.min(r.fish - reserve, capacity));
     r.fish -= fish; capacity -= fish; stats.income += fish * PRICE_FISH; stats.fishSold += fish;
-    const shellfish = Math.min(r.shellfish, capacity);
+    const shellReserve = Math.max(0, reserve - r.fish);
+    const shellfish = Math.max(0, Math.min(r.shellfish - shellReserve, capacity));
     r.shellfish -= shellfish; stats.income += shellfish * PRICE_SHELLFISH; stats.shellfishSold += shellfish;
     b.output = fish + shellfish;
   }
+
+  produce(state, grid, buildings);
+  regrowTrees(state);
 
   // Upkeep.
   for (const b of buildings) stats.expenses += BUILDINGS[b.kind].upkeep;

@@ -58,15 +58,25 @@
       .tide-spring.now { color: var(--accent); }
       #hud .hint.warn { color: var(--accent); }
 
+      .tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+      .tabs button {
+        font: inherit; font-size: 11px; letter-spacing: 0.04em; color: var(--ink-dim); background: transparent;
+        border: 1px solid transparent; border-radius: 6px; padding: 4px 8px; cursor: pointer;
+      }
+      .tabs button:hover { color: var(--ink); }
+      .tabs button.active { color: var(--accent); border-color: rgba(255, 209, 138, 0.4); background: rgba(255, 209, 138, 0.08); }
       .palette { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+      .palette button .reason { grid-column: 1; font-size: 10px; color: var(--bad); }
+      .palette button .reason:empty { display: none; }
       .palette button {
         font: inherit; font-size: 12px; color: var(--ink); background: rgba(255, 255, 255, 0.06);
         border: 1px solid var(--panel-line); border-radius: 6px; padding: 6px 7px;
-        display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto; column-gap: 6px; align-items: center; text-align: left; cursor: pointer;
+        display: grid; grid-template-columns: 1fr auto; grid-auto-rows: auto; column-gap: 6px; align-items: center; text-align: left; cursor: pointer;
       }
       .palette button .name { grid-column: 1; }
       .palette button .cost { grid-column: 1; font-size: 10px; color: var(--ink-dim); font-variant-numeric: tabular-nums; }
-      .palette button kbd { grid-column: 2; grid-row: 1 / span 2; font: 10px/1 "IBM Plex Sans", system-ui, sans-serif; color: var(--ink-dim); border: 1px solid var(--track); border-radius: 3px; padding: 2px 4px; }
+      .palette button kbd { grid-column: 2; grid-row: 1 / span 3; font: 10px/1 "IBM Plex Sans", system-ui, sans-serif; color: var(--ink-dim); border: 1px solid var(--track); border-radius: 3px; padding: 2px 4px; }
+      .palette button kbd:empty { display: none; }
       .palette button:hover { background: rgba(255, 255, 255, 0.11); }
       .palette button.active { background: rgba(255, 209, 138, 0.16); border-color: var(--accent); color: var(--accent); }
       .palette button.active kbd { color: var(--accent); border-color: rgba(255, 209, 138, 0.5); }

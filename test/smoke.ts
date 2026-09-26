@@ -186,6 +186,42 @@ try {
   await page.waitForTimeout(300);
   await page.screenshot({ path: "shots/m4-low.png" });
 
+  // M5: on a fresh town, the wood chain — camp on the hill, sawmill, shipyard — launches a boat within 12 cycles;
+  // trees near the camp thin out.
+  await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.newTown());
+  const m5 = await page.evaluate(async () => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    const url = "/test/scenario.ts";
+    const sc = (await import(url)) as typeof import("./scenario");
+    const s = api.sim, grid = api.grid;
+    const town = sc.starterTown(s, grid);
+    api.grant(3000);
+    const end = sc.reachHill(s, grid);
+    const camp = end ? sc.placeLumberCamp(s, grid, end) : null;
+    const mill = sc.placeByWalkway(s, grid, "sawmill", 1)[0] ?? null;
+    sc.growStreet(s, grid, 6);
+    sc.placeByWalkway(s, grid, "house", 6);
+    sc.placeSecondPier(s, grid, town.pier.cells[0]); // a berth for the boat to come
+    const treesBefore = camp ? (await import("/src/sim/trees.ts" as string) as typeof import("../src/sim/trees")).grownTreesNear(s, camp.cells) : -1;
+    const boatsBefore = (Object.values(s.buildings) as any[]).reduce((n, b) => n + b.boats, 0);
+    let yard = null, launched = -1;
+    for (let cycle = 1; cycle <= 12; cycle++) {
+      api.advance(1);
+      if (!yard && s.resources.planks >= 40) yard = sc.placeShipyard(s, grid, town.pier.cells[0]);
+      const boats = (Object.values(s.buildings) as any[]).reduce((n, b) => n + b.boats, 0);
+      if (boats > boatsBefore) { launched = cycle; break; }
+    }
+    const treesAfter = camp ? (await import("/src/sim/trees.ts" as string) as typeof import("../src/sim/trees")).grownTreesNear(s, camp.cells) : -1;
+    api.frameTown(26);
+    return { camp: !!camp, mill: !!mill, yard: !!yard, launched, treesBefore, treesAfter, planks: s.resources.planks, timber: s.resources.timber, log: s.log.slice(-3) };
+  });
+  console.log("M5:", JSON.stringify(m5));
+  assert(m5.camp && m5.mill && m5.yard, "camp, sawmill and shipyard placed");
+  assert(m5.launched > 0 && m5.launched <= 12, "shipyard launched a boat within 12 cycles");
+  assert(m5.treesAfter < m5.treesBefore, "trees near the camp thinned out");
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: "shots/m5.png" });
+
   // M1: save, reload the page, every building is back and the clock kept its place.
   const before = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; api.save(); return { n: Object.keys(api.sim.buildings).length, cycle: api.sim.tide.cycle, money: api.sim.resources.money }; });
   await page.reload();

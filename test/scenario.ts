@@ -32,7 +32,7 @@ export function layWalkways(state: SimState, grid: Grid, pier: Cell, target: Cel
   const seen = new Set<string>();
   while (cur && laid.length < max) {
     seen.add(cur.i + "," + cur.j);
-    const kind: BuildingKind = floodFate(grid.floorFor("walkway", [cur])) === "always" ? "raisedWalkway" : "walkway";
+    const kind: BuildingKind = floodFate(grid.floorFor("walkway", [cur])) === "safe" ? "walkway" : "raisedWalkway";
     if (!tryPlace(state, grid, kind, cur)) break;
     laid.push(cur);
     if (grid.neighbors(cur).some(n => n.i === target.i && n.j === target.j)) break;
@@ -40,6 +40,26 @@ export function layWalkways(state: SimState, grid: Grid, pier: Cell, target: Cel
       .filter(c => grid.classAt(c) === "flat" && !seen.has(c.i + "," + c.j) && !grid.buildingAt(c))
       .sort((a, b) => dist(a, target) - dist(b, target));
     cur = next[0] ?? null;
+  }
+  return laid;
+}
+
+/**
+ * Extend the street by `n` raised walkways (they never flood), each on the free flat cell next to the street with
+ * the most free flat neighbours, so houses have somewhere to go.
+ */
+export function growStreet(state: SimState, grid: Grid, n: number): number {
+  let laid = 0;
+  for (let k = 0; k < n; k++) {
+    const links = buildingList(state).filter(b => b.kind === "walkway" || b.kind === "raisedWalkway");
+    let best: Cell | null = null, bs = -1;
+    for (const l of links) for (const c of grid.neighbors(l.cells[0])) {
+      if (grid.classAt(c) !== "flat" || grid.buildingAt(c)) continue;
+      const free = grid.neighbors(c).filter(x => grid.classAt(x) === "flat" && !grid.buildingAt(x)).length;
+      if (free > bs) { bs = free; best = c; }
+    }
+    if (!best || !tryPlace(state, grid, "raisedWalkway", best)) break;
+    laid++;
   }
   return laid;
 }
@@ -59,6 +79,76 @@ export function placeByWalkway(state: SimState, grid: Grid, kind: BuildingKind, 
     }
   }
   return out;
+}
+
+/** BFS over unbuilt flat cells from the street to the nearest flat cell touching high ground; lays walkways along it. */
+export function reachHill(state: SimState, grid: Grid): Cell | null {
+  const links = buildingList(state).filter(b => b.kind === "walkway" || b.kind === "raisedWalkway");
+  const prev = new Map<string, Cell | null>();
+  const key = (c: Cell) => c.i + "," + c.j;
+  const queue: Cell[] = [];
+  for (const l of links) for (const n of grid.neighbors(l.cells[0])) {
+    if (grid.classAt(n) !== "flat" || grid.buildingAt(n) || prev.has(key(n))) continue;
+    prev.set(key(n), null); queue.push(n);
+  }
+  let end: Cell | null = null;
+  for (let head = 0; head < queue.length && !end; head++) {
+    const c = queue[head];
+    if (grid.neighbors(c).some(n => grid.classAt(n) === "high")) { end = c; break; }
+    for (const n of grid.neighbors(c)) {
+      if (grid.classAt(n) !== "flat" || grid.buildingAt(n) || prev.has(key(n))) continue;
+      prev.set(key(n), c); queue.push(n);
+    }
+  }
+  if (!end) return null;
+  const path: Cell[] = [];
+  for (let c: Cell | null = end; c; c = prev.get(key(c)) ?? null) path.push(c);
+  // The hill road must survive spring tides too, or the camp idles every fourth cycle.
+  for (const c of path.reverse()) {
+    const kind: BuildingKind = floodFate(grid.floorFor("walkway", [c])) === "safe" ? "walkway" : "raisedWalkway";
+    if (!tryPlace(state, grid, kind, c)) return null;
+  }
+  return end;
+}
+
+/** A lumber camp on the hill by the street's end: any anchor near it whose footprint the sim accepts. */
+export function placeLumberCamp(state: SimState, grid: Grid, streetEnd: Cell): Building | null {
+  const anchors: Cell[] = [];
+  for (let di = -2; di <= 2; di++) for (let dj = -2; dj <= 2; dj++) anchors.push({ i: streetEnd.i + di, j: streetEnd.j + dj });
+  anchors.sort((a, b) => dist(a, streetEnd) - dist(b, streetEnd));
+  for (const anchor of anchors) {
+    const b = tryPlace(state, grid, "lumberCamp", anchor);
+    if (b) return b;
+  }
+  return null;
+}
+
+/** Another pier (a berth for shipyard boats), on the nearest free shore site to `near`. */
+export function placeSecondPier(state: SimState, grid: Grid, near: Cell): Building | null {
+  let best: Cell | null = null, bd = Infinity;
+  for (let i = -32; i < 32; i++) for (let j = -32; j < 32; j++) {
+    const c = { i, j };
+    if (grid.classAt(c) !== "deep") continue;
+    const fp = grid.footprint("pier", c);
+    if (!fp || !grid.canPlace("pier", fp)) continue;
+    const d = dist(c, near);
+    if (d >= 2 && d < bd) { bd = d; best = c; }
+  }
+  return best ? tryPlace(state, grid, "pier", best) : null;
+}
+
+/** Deep cells against the shore that take a shipyard, nearest the street. */
+export function placeShipyard(state: SimState, grid: Grid, near: Cell): Building | null {
+  let best: Cell | null = null, bd = Infinity;
+  for (let i = -32; i < 32; i++) for (let j = -32; j < 32; j++) {
+    const c = { i, j };
+    if (grid.classAt(c) !== "deep") continue;
+    const fp = grid.footprint("shipyard", c);
+    if (!fp || !grid.canPlace("shipyard", fp)) continue;
+    const d = dist(c, near);
+    if (d < bd) { bd = d; best = c; }
+  }
+  return best ? tryPlace(state, grid, "shipyard", best) : null;
 }
 
 /**

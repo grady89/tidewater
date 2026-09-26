@@ -88,14 +88,18 @@ export class Grid {
     if (!inBounds(c.i, c.j)) return null;
     const def = BUILDINGS[kind];
     if (def.cls === "edge") {
-      // Edge pieces sit in deep water against the shore and extend seaward, away from the flat cell they touch.
+      // Edge pieces sit in deep water against the shore: `d` cells seaward from the anchor, `w` cells across it.
       if (this.classAt(c) !== "deep") return null;
       for (const d of DIRS) {
         const shore = { i: c.i + d.i, j: c.j + d.j };
         if (this.classAt(shore) !== "flat") continue;
+        const across = { i: d.j, j: -d.i };
         const cells: Cell[] = [];
-        for (let k = 0; k < def.d; k++) cells.push({ i: c.i - d.i * k, j: c.j - d.j * k });
-        if (cells.every(x => this.classAt(x) === "deep")) return cells;
+        for (let k = 0; k < def.d; k++) for (let m = 0; m < def.w; m++) {
+          const off = m - Math.floor((def.w - 1) / 2);
+          cells.push({ i: c.i - d.i * k + across.i * off, j: c.j - d.j * k + across.j * off });
+        }
+        if (cells.every(x => inBounds(x.i, x.j) && this.classAt(x) === "deep")) return cells;
       }
       return null;
     }
@@ -108,24 +112,40 @@ export class Grid {
     return cells;
   }
 
+  /** Does some cell touch a flat cell carrying a walkway? (Lumber camps must be served from the flats.) */
+  touchesWalkway(cells: Cell[]): boolean {
+    return cells.some(c => this.neighbors(c).some(n => {
+      const b = this.buildingAt(n);
+      return this.classAt(n) === "flat" && !!b && (b.kind === "walkway" || b.kind === "raisedWalkway");
+    }));
+  }
+
+  /** Does the town already have one of `kind`? */
+  has(kind: BuildingKind): boolean {
+    for (const b of Object.values(this.state.buildings)) if (b.kind === kind) return true;
+    return false;
+  }
+
   canPlace(kind: BuildingKind, cells: Cell[]): boolean {
-    return this.classOk(BUILDINGS[kind].cls, cells) && this.terrainOk(kind, cells) && cells.every(c => !this.buildingAt(c));
+    const def = BUILDINGS[kind];
+    return this.classOk(def.cls, cells) && this.terrainOk(kind, cells) && cells.every(c => !this.buildingAt(c))
+      && (!def.needsWalkway || this.touchesWalkway(cells)) && (!def.requires || this.has(def.requires));
   }
 
   /** Deck height a building of `kind` gets on these cells. */
   floorFor(kind: BuildingKind, cells: Cell[]): number {
     const f = BUILDINGS[kind].floor;
-    if (f !== "stilts") return f;
+    if (typeof f === "number") return f;
     let h = -Infinity;
     for (const c of cells) h = Math.max(h, this.heightAt(c));
-    return h + STILT_LENGTH;
+    return f === "stilts" ? h + STILT_LENGTH : Math.max(1.0, h + 0.05);
   }
 
   place(kind: BuildingKind, cells: Cell[]): Building {
     const s = this.state;
     const b: Building = {
       id: s.nextId++, kind, cells, floorY: this.floorFor(kind, cells), cut: false, reached: false,
-      workers: 0, residents: 0, boats: 0, atSea: false, ground: null, output: 0, happiness: 1,
+      workers: 0, residents: 0, boats: 0, atSea: false, ground: null, output: 0, happiness: 1, progress: 0,
     };
     for (const c of cells) this.occupancy[cellIndex(c.i, c.j)] = b;
     s.buildings[b.id] = b;

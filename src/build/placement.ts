@@ -5,6 +5,7 @@ import { ArcRotateCamera, Color3, Matrix, Mesh, MeshBuilder, Scene, StandardMate
 import { BuildingKind, BUILDINGS, PlacementClass } from "../sim/balance";
 import { boatPurchaseBlocker, buyBoat, canAfford, tryPlace } from "../sim/economy";
 import { Grid, HALF, worldToCell } from "../sim/grid";
+import { terrainHeight } from "../sim/heightfield";
 import { Building, Cell } from "../sim/state";
 import { floodFate } from "../sim/tide";
 
@@ -68,20 +69,40 @@ export class Placement {
   private pickY(): number {
     if (this.tool === "boat") return BUILDINGS.pier.floor as number;
     const f = BUILDINGS[this.tool].floor;
-    return f === "stilts" ? 0.6 : f;
+    return typeof f === "number" ? f : 0.6;
+  }
+
+  /** Tools that can go on the hill are picked against the terrain itself. */
+  private picksTerrain(): boolean {
+    if (this.tool === "boat") return false;
+    const cls = BUILDINGS[this.tool].cls;
+    return cls === "high" || cls === "flatOrHigh";
   }
 
   /**
-   * Cell under the pointer. Intersects the picking ray with the plane at the tool's deck height, so the ghost
-   * sits under the cursor; buildable terrain is always below that plane.
+   * Cell under the pointer. Flats tools intersect the picking ray with the plane at the tool's deck height, so the
+   * ghost sits under the cursor (buildable terrain is always below that plane); hill tools march the heightfield.
    */
   private pickCell(): Cell | null {
     const ray = this.scene.createPickingRay(this.scene.pointerX, this.scene.pointerY, Matrix.Identity(), this.camera);
     const o = ray.origin, d = ray.direction;
-    if (Math.abs(d.y) < 1e-6) return null;
-    const t = (this.pickY() - o.y) / d.y;
-    if (t <= 0) return null;
-    const x = o.x + d.x * t, z = o.z + d.z * t;
+    let x: number, z: number;
+    if (this.picksTerrain()) {
+      const under = (t: number) => o.y + d.y * t < terrainHeight(o.x + d.x * t, o.z + d.z * t);
+      let hit = -1, prev = 0;
+      for (let t = 0.35; t < 250; t += 0.35) {
+        if (d.y >= 0 && o.y + d.y * t > 8) return null;
+        if (under(t)) { let lo = prev, hi = t; for (let k = 0; k < 8; k++) { const m = (lo + hi) / 2; if (under(m)) hi = m; else lo = m; } hit = hi; break; }
+        prev = t;
+      }
+      if (hit < 0) return null;
+      x = o.x + d.x * hit; z = o.z + d.z * hit;
+    } else {
+      if (Math.abs(d.y) < 1e-6) return null;
+      const t = (this.pickY() - o.y) / d.y;
+      if (t <= 0) return null;
+      x = o.x + d.x * t; z = o.z + d.z * t;
+    }
     if (Math.abs(x) >= HALF || Math.abs(z) >= HALF) return null;
     return worldToCell(x, z);
   }
@@ -101,6 +122,8 @@ export class Placement {
     if (!this.grid.classOk(def.cls, cells)) return { cells, blocker: classHint(def.cls), fate: "safe", y };
     if (!this.grid.terrainOk(kind, cells)) return { cells, blocker: `Needs ground between ${def.terrain!.min} and ${def.terrain!.max} m`, fate: "safe", y };
     if (cells.some(c => this.grid.buildingAt(c))) return { cells, blocker: "Occupied", fate: "safe", y };
+    if (def.needsWalkway && !this.grid.touchesWalkway(cells)) return { cells, blocker: "Must touch a walkway on the flats", fate: "safe", y };
+    if (def.requires && !this.grid.has(def.requires)) return { cells, blocker: `Requires a ${BUILDINGS[def.requires].name.toLowerCase()}`, fate: "safe", y };
     if (!canAfford(state, def.cost)) return { cells, blocker: `Costs ${costLabel(kind)}`, fate: "safe", y };
     return { cells, blocker: null, fate: floodFate(y), y };
   }

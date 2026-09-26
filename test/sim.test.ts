@@ -1,18 +1,19 @@
 // Sim-only unit checks. Nothing here may pull in Babylon; the hygiene test enforces that for src/sim/**.
 import { describe, expect, it } from "vitest";
 import { HIGH_WATER_MARK, LOW_WATER_MARK, SPRING_HI, SPRING_LO, STILT_LENGTH, TIDE_HI, TIDE_LO, TIDE_PERIOD } from "../src/config";
-import { BOAT_COST, BOAT_MIN_RANGE, BOAT_RANGE, BUILDINGS, STARTING_MONEY } from "../src/sim/balance";
-import { boatPurchaseBlocker, buyBoat, tryPlace } from "../src/sim/economy";
+import { BOAT_COST, BOAT_MIN_RANGE, BOAT_RANGE, BUILDINGS, CAP_BASE, STARTING_MONEY, TREE_REGROW_CYCLES, WAREHOUSE_CAP } from "../src/sim/balance";
+import { addCapped, boatPurchaseBlocker, buyBoat, capFor, totalBoats, tryPlace } from "../src/sim/economy";
 import { Grid } from "../src/sim/grid";
 import { updateNetwork } from "../src/sim/network";
 import { stateHash } from "../src/sim/save";
 import { chooseGround, seaPath } from "../src/sim/sea";
 import { newGame } from "../src/sim/start";
-import { buildingList, Cell, createState, population, SimState } from "../src/sim/state";
+import { Building, buildingList, Cell, createState, population, SimState } from "../src/sim/state";
 import { advanceCycles, tick } from "../src/sim/tick";
 import { floodFate, isRising, phaseProgress, tickTide, tideNormalized } from "../src/sim/tide";
+import { grownTreesNear } from "../src/sim/trees";
 import { assignWorkers } from "../src/sim/workers";
-import { starterTown } from "./scenario";
+import { growStreet, placeByWalkway, placeLumberCamp, placeSecondPier, placeShipyard, reachHill, starterTown } from "./scenario";
 
 const simSources = import.meta.glob("../src/sim/**/*.ts", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
 
@@ -192,6 +193,67 @@ describe("the sea (M4 sim side)", () => {
     expect(last).toBeGreaterThan(0.95);
     for (let s = 0; s < TIDE_PERIOD / 2; s += dt) tickTide(t, dt);
     expect(phaseProgress(t, HIGH_WATER_MARK, LOW_WATER_MARK)).toBeCloseTo(0.5, 1);
+  });
+});
+
+describe("production chain (M5)", () => {
+  it("caps stockpiles at the base and raises the cap per warehouse", () => {
+    const { state, grid } = town();
+    state.resources.fish = 95;
+    expect(addCapped(state, "fish", 20)).toBe(5);
+    expect(state.resources.fish).toBe(CAP_BASE.fish);
+    state.resources.money += 500;
+    expect(placeByWalkway(state, grid, "warehouse", 1).length).toBe(1);
+    expect(capFor(state, "fish")).toBe(CAP_BASE.fish + WAREHOUSE_CAP);
+    expect(addCapped(state, "fish", 20)).toBe(20);
+  });
+
+  it("locks the tall house behind a sawmill and the lumber camp behind a walkway on the flats", () => {
+    const { state, grid } = town();
+    state.resources.money += 2000; state.resources.planks += 50;
+    expect(placeByWalkway(state, grid, "tallHouse", 1).length).toBe(0);
+    let highCell: Cell | null = null;
+    for (let i = -32; i < 32 && !highCell; i++) for (let j = -32; j < 32; j++) {
+      const c = { i, j };
+      if (grid.classAt(c) === "high" && grid.footprint("lumberCamp", c)?.every(x => grid.classAt(x) === "high" && !grid.buildingAt(x))) { highCell = c; break; }
+    }
+    expect(highCell).not.toBeNull();
+    expect(grid.canPlace("lumberCamp", grid.footprint("lumberCamp", highCell!)!)).toBe(false); // no walkway touches it
+  });
+
+  it("fells trees near a lumber camp, mills planks, and launches a shipyard boat within 12 cycles", () => {
+    const { state, grid, town: t } = town();
+    state.resources.money += 3000;
+    const end = reachHill(state, grid);
+    expect(end).not.toBeNull();
+    const camp = placeLumberCamp(state, grid, end!);
+    expect(camp).not.toBeNull();
+    const mill = placeByWalkway(state, grid, "sawmill", 1)[0];
+    expect(mill).toBeDefined();
+    expect(growStreet(state, grid, 6)).toBeGreaterThan(0);
+    expect(placeByWalkway(state, grid, "house", 6).length).toBeGreaterThanOrEqual(4);
+    expect(placeSecondPier(state, grid, t.pier.cells[0])).not.toBeNull(); // a berth for the boat to come
+    const treesBefore = grownTreesNear(state, camp!.cells);
+    expect(treesBefore).toBeGreaterThan(0);
+
+    const boatsBefore = totalBoats(state);
+    let yard: Building | null = null, launched = -1;
+    for (let cycle = 1; cycle <= 12; cycle++) {
+      advanceCycles(state, grid, 1);
+      if (!yard && state.resources.planks >= BUILDINGS.shipyard.cost.planks!) { yard = placeShipyard(state, grid, t.pier.cells[0]); expect(yard).not.toBeNull(); }
+      if (totalBoats(state) > boatsBefore) { launched = cycle; break; }
+    }
+    expect(yard).not.toBeNull();
+    expect(launched).toBeGreaterThan(0);
+    expect(launched).toBeLessThanOrEqual(12);
+    expect(grownTreesNear(state, camp!.cells)).toBeLessThan(treesBefore);
+
+    // Stop felling: the wood comes back.
+    const felledCount = grownTreesNear(state, camp!.cells);
+    grid.remove(camp!);
+    advanceCycles(state, grid, TREE_REGROW_CYCLES + 1);
+    expect(grownTreesNear(state, camp!.cells)).toBeGreaterThan(felledCount);
+    expect(grownTreesNear(state, camp!.cells)).toBe(treesBefore);
   });
 });
 

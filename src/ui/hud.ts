@@ -1,8 +1,9 @@
-// The UI: resource bar, build palette, tide clock, last-cycle ledger, notifications. Plain DOM over the canvas,
-// read-only over the sim.
+// The UI: resource bar, build menu by category, tide clock, last-cycle ledger, notifications. Plain DOM over the
+// canvas, read-only over the sim.
 import { Fate, Tool } from "../build/placement";
-import { BOAT_COST, BUILDING_KINDS, BuildingKind, BUILDINGS } from "../sim/balance";
+import { BOAT_COST, BUILDING_KINDS, BuildingKind, BUILDINGS, CATEGORIES, Category } from "../sim/balance";
 import { canAfford } from "../sim/economy";
+import { Grid } from "../sim/grid";
 import { population, SimState } from "../sim/state";
 import { cycleFraction, cyclesToSpring, isRising, secondsToHighTide, secondsToLowTide, tideNormalized } from "../sim/tide";
 import { jobsAt } from "../sim/workers";
@@ -14,12 +15,12 @@ export interface HudState {
   state: SimState;
 }
 
-interface ToolDef { tool: Tool; label: string; key: string; cost: string }
-const KEYS = "1234567890";
+interface ToolDef { tool: Tool; label: string; category: Category; cost: string }
 const TOOLS: ToolDef[] = [
-  ...BUILDING_KINDS.map((kind, i) => ({ tool: kind as Tool, label: BUILDINGS[kind].name, key: KEYS[i] ?? "", cost: costOf(kind) })),
-  { tool: "boat", label: "Boat", key: KEYS[BUILDING_KINDS.length] ?? "", cost: `${BOAT_COST}$` },
+  ...BUILDING_KINDS.map(kind => ({ tool: kind as Tool, label: BUILDINGS[kind].name, category: BUILDINGS[kind].category, cost: costOf(kind) })),
+  { tool: "boat", label: "Boat", category: "Sea", cost: `${BOAT_COST}$` },
 ];
+const KEYS = "123456789";
 
 function costOf(kind: BuildingKind): string {
   const c = BUILDINGS[kind].cost;
@@ -29,21 +30,21 @@ function costOf(kind: BuildingKind): string {
   return parts.join("+");
 }
 
-export function toolForKey(key: string): Tool | null {
-  return TOOLS.find(t => t.key === key)?.tool ?? null;
-}
-
 const FATE_TEXT: Record<Fate, string> = {
   safe: "Click to place · right-click to remove · drag to orbit",
   spring: "Floods at spring tides",
   always: "Floods every high tide",
 };
 
+const RESOURCES = ["money", "fish", "shellfish", "smoked", "timber", "planks", "population", "happiness"];
+
 // Tide dial geometry (SVG units). The fill rect is clipped to the inner disc.
 const DIAL_R = 24, DIAL_TOP = 32 - DIAL_R, DIAL_H = DIAL_R * 2;
 
 export class Hud {
   private readonly buttons = new Map<Tool, HTMLButtonElement>();
+  private readonly reasons = new Map<Tool, HTMLElement>();
+  private readonly tabs = new Map<Category, HTMLButtonElement>();
   private readonly res: Record<string, HTMLElement> = {};
   private readonly tideLevel: SVGRectElement;
   private readonly tideMarker: SVGCircleElement;
@@ -54,11 +55,12 @@ export class Hud {
   private readonly ledgerLabel: HTMLElement;
   private readonly ledgerValue: HTMLElement;
   private readonly notes: HTMLElement;
+  private category: Category = "Homes";
   private lastCycle = -1;
   private lastLogLen = -1;
 
-  constructor(root: HTMLElement, resources: HTMLElement, notes: HTMLElement, onTool: (tool: Tool) => void) {
-    resources.innerHTML = ["money", "fish", "shellfish", "population", "happiness"].map(k => `<div class="res" data-res="${k}"><label>${k}</label><span>0</span></div>`).join("");
+  constructor(root: HTMLElement, resources: HTMLElement, notes: HTMLElement, private readonly grid: Grid, private readonly onTool: (tool: Tool) => void) {
+    resources.innerHTML = RESOURCES.map(k => `<div class="res" data-res="${k}"><label>${k}</label><span>0</span></div>`).join("");
     for (const el of resources.querySelectorAll<HTMLElement>(".res")) this.res[el.dataset.res!] = el.querySelector("span")!;
     this.notes = notes;
 
@@ -80,6 +82,7 @@ export class Hud {
           <div class="tide-spring"></div>
         </div>
       </div>
+      <div class="tabs"></div>
       <div class="palette"></div>
       <p class="hint"></p>
       <div class="score">
@@ -87,14 +90,26 @@ export class Hud {
         <div class="score-value">—</div>
       </div>`;
 
+    const tabs = root.querySelector<HTMLElement>(".tabs")!;
+    for (const cat of CATEGORIES) {
+      if (!TOOLS.some(t => t.category === cat)) continue;
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = cat;
+      b.addEventListener("click", () => this.showCategory(cat));
+      tabs.appendChild(b);
+      this.tabs.set(cat, b);
+    }
     const palette = root.querySelector<HTMLElement>(".palette")!;
     for (const t of TOOLS) {
       const b = document.createElement("button");
       b.type = "button";
-      b.innerHTML = `<span class="name">${t.label}</span><span class="cost">${t.cost}</span><kbd>${t.key}</kbd>`;
+      b.dataset.category = t.category;
+      b.innerHTML = `<span class="name">${t.label}</span><span class="cost">${t.cost}</span><span class="reason"></span><kbd></kbd>`;
       b.addEventListener("click", () => onTool(t.tool));
       palette.appendChild(b);
       this.buttons.set(t.tool, b);
+      this.reasons.set(t.tool, b.querySelector<HTMLElement>(".reason")!);
     }
     this.tideLevel = root.querySelector<SVGRectElement>(".tide-level")!;
     this.tideMarker = root.querySelector<SVGCircleElement>(".tide-marker")!;
@@ -104,15 +119,66 @@ export class Hud {
     this.hint = root.querySelector<HTMLElement>(".hint")!;
     this.ledgerLabel = root.querySelector<HTMLElement>(".score label")!;
     this.ledgerValue = root.querySelector<HTMLElement>(".score-value")!;
+    this.showCategory("Streets");
+  }
+
+  /** Tools of the active category, in palette order (number keys map onto these). */
+  private visibleTools(): ToolDef[] {
+    return TOOLS.filter(t => t.category === this.category);
+  }
+
+  showCategory(cat: Category): void {
+    this.category = cat;
+    for (const [c, b] of this.tabs) b.classList.toggle("active", c === cat);
+    const visible = this.visibleTools();
+    for (const [tool, b] of this.buttons) {
+      const idx = visible.findIndex(t => t.tool === tool);
+      b.hidden = idx < 0;
+      b.querySelector("kbd")!.textContent = idx >= 0 ? KEYS[idx] ?? "" : "";
+    }
+  }
+
+  /** Keyboard: digits pick within the active category; Tab cycles categories. */
+  key(key: string): boolean {
+    const idx = KEYS.indexOf(key);
+    if (idx >= 0) {
+      const t = this.visibleTools()[idx];
+      if (t) { this.onTool(t.tool); return true; }
+      return false;
+    }
+    if (key === "Tab") {
+      const cats = [...this.tabs.keys()];
+      this.showCategory(cats[(cats.indexOf(this.category) + 1) % cats.length]);
+      return true;
+    }
+    return false;
+  }
+
+  /** Why a tool is greyed, or null. */
+  private lock(state: SimState, tool: Tool): string | null {
+    if (tool === "boat") return state.resources.money >= BOAT_COST ? null : "no money";
+    const def = BUILDINGS[tool];
+    if (def.requires && !this.grid.has(def.requires)) return `needs ${BUILDINGS[def.requires].name.toLowerCase()}`;
+    if (!canAfford(state, def.cost)) {
+      const r = state.resources;
+      if (r.money < def.cost.money) return "no money";
+      if ((def.cost.planks ?? 0) > r.planks) return "no planks";
+      return "no timber";
+    }
+    return null;
   }
 
   update(s: HudState): void {
     const { state } = s;
     const r = state.resources;
+    const active = TOOLS.find(t => t.tool === s.tool);
+    if (active && active.category !== this.category) this.showCategory(active.category);
     for (const [tool, b] of this.buttons) {
       b.classList.toggle("active", tool === s.tool);
-      const affordable = tool === "boat" ? r.money >= BOAT_COST : canAfford(state, BUILDINGS[tool].cost);
-      b.classList.toggle("unaffordable", !affordable);
+      const lock = this.lock(state, tool);
+      b.classList.toggle("unaffordable", lock !== null);
+      const reason = this.reasons.get(tool)!;
+      if (reason.textContent !== (lock ?? "")) reason.textContent = lock ?? "";
     }
 
     let jobs = 0;
@@ -120,6 +186,9 @@ export class Hud {
     this.res.money.textContent = `${Math.floor(r.money)}$`;
     this.res.fish.textContent = `${Math.floor(r.fish)}`;
     this.res.shellfish.textContent = `${Math.floor(r.shellfish)}`;
+    this.res.smoked.textContent = `${Math.floor(r.smoked)}`;
+    this.res.timber.textContent = `${Math.floor(r.timber)}`;
+    this.res.planks.textContent = `${Math.floor(r.planks)}`;
     this.res.population.textContent = `${population(state)} / ${jobs} jobs`;
     this.res.happiness.textContent = `${Math.round(state.happiness * 100)}%`;
 
