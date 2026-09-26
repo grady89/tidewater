@@ -2,6 +2,7 @@
 import { ArcRotateCamera, Color4, DefaultRenderingPipeline, Engine, Scene, Vector3 } from "@babylonjs/core";
 import { Grid, PieceKind } from "./build/grid";
 import { Placement } from "./build/placement";
+import { TIDE_PERIOD } from "./config";
 import { updateNetwork } from "./sim/network";
 import { TideClock } from "./sim/tide";
 import { Hud, Score } from "./ui/hud";
@@ -38,7 +39,8 @@ const tide = new TideClock();
 const grid = new Grid();
 const placement = new Placement(scene, camera, grid, canvas);
 const hud = new Hud(document.getElementById("hud")!, kind => placement.setTool(kind));
-let score: Score | null = null;
+const sim = { tide, grid, score: null as Score | null };
+let speed = 1;
 
 const TOOL_KEYS: Record<string, PieceKind> = { "1": "house", "2": "walkway", "3": "pier" };
 window.addEventListener("keydown", e => {
@@ -46,19 +48,52 @@ window.addEventListener("keydown", e => {
   if (kind) placement.setTool(kind);
 });
 
-let t = 0;
-engine.runRenderLoop(() => {
-  const dt = Math.min(engine.getDeltaTime() / 1000, 0.1);
-  t += dt;
+/** One simulation step of `dt` game seconds. */
+function step(dt: number): void {
   tide.update(dt);
   const stats = updateNetwork(grid, tide.level);
-  if (tide.peaked) score = { cycle: tide.cycle, reached: stats.reached, houses: stats.houses };
+  if (tide.peaked) sim.score = { cycle: tide.cycle, reached: stats.reached, houses: stats.houses };
+}
+
+let t = 0;
+engine.runRenderLoop(() => {
+  const dt = Math.min(engine.getDeltaTime() / 1000, 0.1) * speed;
+  t += dt;
+  step(dt);
   placement.syncVisuals();
   terrain.update(camera.position, tide.level, tide.wetLevel);
   water.update(t, camera.position, tide.level);
-  hud.update({ tool: placement.tool, tide, score });
+  hud.update({ tool: placement.tool, tide, score: sim.score });
   scene.render();
 });
 window.addEventListener("resize", () => engine.resize());
 
-if (import.meta.env.DEV) (window as unknown as { __tidewater: unknown }).__tidewater = { engine, scene, tide, grid, placement };
+// Console / test API. Everything the smoke scenario and the dev console drive goes through here.
+const api = {
+  sim,
+  fields: {} as Record<string, Float32Array>,
+  ready: false,
+  place(type: PieceKind, i: number, j: number) {
+    placement.setTool(type);
+    return placement.place({ i, j });
+  },
+  remove(i: number, j: number) {
+    placement.remove({ i, j });
+  },
+  setTide(level: number | null) {
+    tide.override = level;
+  },
+  /** Advance the sim by whole tide cycles in fixed sub-steps, independent of rendering. */
+  advance(cycles: number) {
+    const dt = 1 / 30;
+    const steps = Math.round((cycles * TIDE_PERIOD) / dt);
+    for (let k = 0; k < steps; k++) step(dt);
+    placement.syncVisuals();
+  },
+  setSpeed(n: number) {
+    speed = n;
+  },
+  engine, scene, camera, placement,
+};
+(window as unknown as { __tidewater: typeof api }).__tidewater = api;
+scene.executeWhenReady(() => { api.ready = true; });

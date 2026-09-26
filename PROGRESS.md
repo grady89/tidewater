@@ -4,7 +4,7 @@ Live status. Update after every milestone (and mid-milestone if you compact). On
 
 | Milestone | Status | Notes |
 |---|---|---|
-| M0 Harness | TODO | |
+| M0 Harness | IN PROGRESS | sub-task: vitest + playwright setup, console API |
 | M1 Ledger refactor | TODO | |
 | M2 Money loop | TODO | |
 | M3 Tide splits economy | TODO | |
@@ -21,7 +21,7 @@ Live status. Update after every milestone (and mid-milestone if you compact). On
 | M14 Ship it | TODO | |
 
 ## Current focus
-(milestone, sub-task, last thing that worked)
+M0 Harness — sub-task: install vitest + playwright, add test/sim.test.ts, test/smoke.ts, console API. Last thing that worked: sessions 1–2 game renders and plays.
 
 ## Blocked
 (milestone, why, what was tried, what would unblock)

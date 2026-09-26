@@ -14,6 +14,8 @@ export class TideClock {
   cycle = 0;
   /** True only on the frame in which the tide peaks. */
   peaked = false;
+  /** Debug/test hook: when set, the water is held at this level while the clock keeps running. */
+  override: number | null = null;
 
   update(dt: number): void {
     const before = this.phase;
@@ -21,7 +23,7 @@ export class TideClock {
     this.peaked = Math.floor((before - Math.PI / 2) / TAU) !== Math.floor((this.phase - Math.PI / 2) / TAU);
     if (this.peaked) this.cycle++;
     const t = 0.5 + 0.5 * Math.sin(this.phase);
-    this.level = TIDE_LO + (TIDE_HI - TIDE_LO) * t;
+    this.level = this.override ?? TIDE_LO + (TIDE_HI - TIDE_LO) * t;
     this.wetLevel = Math.max(this.level, this.wetLevel - dt * WET_SAND_DRY_RATE);
   }
 
