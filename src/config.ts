@@ -17,6 +17,16 @@ export const SIM_TICK = 1 / 20;
 export const HIGH_WATER_MARK = 0.25;
 export const LOW_WATER_MARK = 0.0;
 
+/** Every SPRING_EVERY-th cycle is a spring tide: a deeper trough and a higher peak. */
+export const SPRING_EVERY = 4;
+export const SPRING_HI = 0.85;
+export const SPRING_LO = -0.55;
+
+/** Standard walkway deck height above the cell's terrain. */
+export const STILT_LENGTH = 0.5;
+/** Raised walkway deck height, absolute. Above any spring tide. */
+export const RAISED_FLOOR = 1.2;
+
 /** Seed for the terrain noise. 0 reproduces the island in reference/tidewater-study.html. */
 export const TERRAIN_SEED = 0;
 

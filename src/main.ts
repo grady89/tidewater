@@ -4,7 +4,8 @@ import { Placement, Tool } from "./build/placement";
 import { SIM_TICK } from "./config";
 import { Grid } from "./sim/grid";
 import { AUTOSAVE_KEY, deserialize, serialize } from "./sim/save";
-import { createState, SimState } from "./sim/state";
+import { newGame } from "./sim/start";
+import { SimState } from "./sim/state";
 import { advanceCycles, tick } from "./sim/tick";
 import { Hud, toolForKey } from "./ui/hud";
 import { BuildingViews } from "./view/buildingViews";
@@ -51,15 +52,18 @@ function save(): void {
   try { localStorage.setItem(AUTOSAVE_KEY, serialize(state)); } catch { /* storage unavailable: play on without autosave */ }
 }
 
-let state = loadAutosave() ?? createState(SEED);
-const grid = new Grid(state);
+const loaded = loadAutosave();
+let state: SimState;
+let grid: Grid;
+if (loaded) { state = loaded; grid = new Grid(state); }
+else ({ state, grid } = newGame(SEED));
 const views = new BuildingViews(scene);
 const placement = new Placement(scene, camera, grid, canvas);
 const hud = new Hud(document.getElementById("hud")!, document.getElementById("resources")!, document.getElementById("notes")!, tool => placement.setTool(tool));
 
 function newTown(): void {
   try { localStorage.removeItem(AUTOSAVE_KEY); } catch { /* ignore */ }
-  state = createState(SEED);
+  state = newGame(SEED).state;
   grid.attach(state);
   views.clear();
 }
@@ -85,7 +89,7 @@ engine.runRenderLoop(() => {
   views.sync(state);
   terrain.update(camera.position, state.tide.level, state.tide.wetLevel);
   water.update(viewTime, camera.position, state.tide.level);
-  hud.update({ tool: placement.tool, blocker: placement.blocker, state });
+  hud.update({ tool: placement.tool, blocker: placement.blocker, fate: placement.fate, state });
   scene.render();
 });
 window.addEventListener("resize", () => engine.resize());
@@ -116,8 +120,19 @@ const api = {
     speed = n;
   },
   /** Cheat for scripted scenarios. */
-  grant(money: number) {
+  grant(money: number, planks = 0, timber = 0) {
     state.resources.money += money;
+    state.resources.planks += planks;
+    state.resources.timber += timber;
+  },
+  /** View only: aim the camera at the town's centroid for screenshots. */
+  frameTown(radius = 22) {
+    const bs = Object.values(state.buildings);
+    if (!bs.length) return;
+    let x = 0, z = 0, n = 0;
+    for (const b of bs) for (const c of b.cells) { x += c.i + 0.5; z += c.j + 0.5; n++; }
+    camera.target.set(x / n, 0.8, z / n);
+    camera.radius = radius; camera.alpha = -0.8; camera.beta = 0.95;
   },
   save,
   newTown,

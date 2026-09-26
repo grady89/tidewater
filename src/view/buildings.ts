@@ -147,13 +147,76 @@ function market(scene: Scene, b: Building): BuildingMeshes {
   return { root: mergeFlat("market", parts, scene) };
 }
 
+function raisedWalkway(scene: Scene, b: Building): BuildingMeshes {
+  const { x, z } = cellCenter(b.cells[0]);
+  const F = b.floorY;
+  const parts: Mesh[] = [box(scene, 0.96, 0.07, 0.96, x, F - 0.035, z, PALETTE.planks)];
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) parts.push(stilt(scene, x + sx * 0.36, z + sz * 0.36, F - 0.07, 0.1, 5));
+  // Cross-brace so the tall stilts read as a trestle.
+  parts.push(box(scene, 0.8, 0.05, 0.05, x, F - 0.45, z - 0.36, PALETTE.wood));
+  parts.push(box(scene, 0.8, 0.05, 0.05, x, F - 0.45, z + 0.36, PALETTE.wood));
+  return { root: mergeFlat("raisedWalkway", parts, scene) };
+}
+
+function dock(scene: Scene, b: Building): BuildingMeshes {
+  const { cx, cz, w, d } = bounds(b.cells);
+  const F = b.floorY;
+  const parts: Mesh[] = [box(scene, w - 0.02, 0.12, d - 0.02, cx, F - 0.06, cz, PALETTE.planks)];
+  for (const sx of [-1, 0, 1]) for (const sz of [-1, 0, 1]) {
+    if (sx === 0 && sz === 0) continue;
+    parts.push(stilt(scene, cx + sx * (w / 2 - 0.15), cz + sz * (d / 2 - 0.15), F - 0.12, 0.2, 6));
+  }
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    const bollard = MeshBuilder.CreateCylinder("bollard", { diameter: 0.14, height: 0.32, tessellation: 5 }, scene);
+    bollard.position.set(cx + sx * (w / 2 - 0.2), F + 0.16, cz + sz * (d / 2 - 0.2));
+    parts.push(tint(bollard, PALETTE.wood));
+  }
+  // A small crane post.
+  parts.push(box(scene, 0.12, 1.1, 0.12, cx, F + 0.55, cz, PALETTE.wood));
+  parts.push(box(scene, 0.9, 0.08, 0.08, cx + 0.35, F + 1.05, cz, PALETTE.wood));
+  return { root: mergeFlat("dock", parts, scene) };
+}
+
+function oysterBed(scene: Scene, b: Building): BuildingMeshes {
+  const { x, z } = cellCenter(b.cells[0]);
+  const F = b.floorY;
+  const parts: Mesh[] = [];
+  // Three low racks on thin posts, the kind that stand in the shallows.
+  for (const dz of [-0.3, 0, 0.3]) {
+    parts.push(box(scene, 0.86, 0.05, 0.16, x, F - 0.2, z + dz, PALETTE.wood));
+    for (const sx of [-1, 1]) parts.push(stilt(scene, x + sx * 0.38, z + dz, F - 0.2, 0.05, 4));
+  }
+  return { root: mergeFlat("oysterBed", parts, scene) };
+}
+
+function clamCamp(scene: Scene, b: Building): BuildingMeshes {
+  const { cx, cz, w, d } = bounds(b.cells);
+  const F = b.floorY;
+  const parts: Mesh[] = [];
+  deck(scene, parts, cx, cz, w, d, F);
+  const a = cellCenter(b.cells[0]), s = cellCenter(b.cells[b.cells.length - 1]);
+  // A shed on the first cell, baskets on the second.
+  parts.push(box(scene, 0.7, 0.6, 0.7, a.x, F + 0.3, a.z, PALETTE.walls[3]));
+  parts.push(pyramid(scene, 1.15, 0.4, a.x, F + 0.6 + 0.2, a.z, PALETTE.roofs[2]));
+  for (const [dx, dz] of [[-0.25, -0.2], [0.2, 0.15], [-0.1, 0.3]]) {
+    const basket = MeshBuilder.CreateCylinder("basket", { diameter: 0.28, height: 0.22, tessellation: 6 }, scene);
+    basket.position.set(s.x + dx, F + 0.11, s.z + dz);
+    parts.push(tint(basket, PALETTE.planks));
+  }
+  return { root: mergeFlat("clamCamp", parts, scene) };
+}
+
 export function createBuildingMeshes(scene: Scene, b: Building): BuildingMeshes {
   switch (b.kind) {
     case "hut": return home(scene, b, 0.66, 0.62);
     case "house": return home(scene, b, 0.8, 0.9);
     case "walkway": return walkway(scene, b);
+    case "raisedWalkway": return raisedWalkway(scene, b);
     case "pier": return pier(scene, b);
+    case "dock": return dock(scene, b);
     case "market": return market(scene, b);
+    case "oysterBed": return oysterBed(scene, b);
+    case "clamCamp": return clamCamp(scene, b);
   }
 }
 

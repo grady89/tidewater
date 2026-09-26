@@ -1,12 +1,14 @@
-// Money and goods. Per-cycle settlement runs at the high-tide peak; boats sail on entering high water and land
-// their catch on leaving it.
+// Money and goods. Per-cycle settlement runs at the high-tide peak. High-water producers (boats) work the high
+// phase and land on leaving it; low-water producers (oyster beds, clam camps) work the low phase the same way.
+// Boats at a deep dock work both.
+import { SPRING_LO } from "../config";
 import {
-  BOAT_BASE_FISH, BOAT_COST, BUILDINGS, BuildingKind, CAP_BASE, Cost, FOOD_PER_CYCLE, IMMIGRANTS_PER_CYCLE,
-  IMMIGRATION_HAPPINESS, MARKET_SELL_PER_CYCLE, PIER_SLOTS, PRICE_FISH, PRICE_SHELLFISH, PURCHASABLE_BOATS,
-  TAX_PER_RESIDENT,
+  BOAT_BASE_FISH, BOAT_COST, BUILDINGS, BuildingKind, CAP_BASE, CLAM_PER_CELL, CLAM_RADIUS, Cost, FOOD_PER_CYCLE,
+  IMMIGRANTS_PER_CYCLE, IMMIGRATION_HAPPINESS, MARKET_SELL_PER_CYCLE, OYSTER_YIELD, PRICE_FISH, PRICE_SHELLFISH,
+  PURCHASABLE_BOATS, SPRING_LOW_BONUS, TAX_PER_RESIDENT,
 } from "./balance";
 import { Grid } from "./grid";
-import { Building, buildingList, Cell, notify, SimState } from "./state";
+import { Building, buildingList, Cell, notify, Phase, SimState } from "./state";
 import { assignWorkers, employed, staffing } from "./workers";
 
 export function canAfford(state: SimState, cost: Cost): boolean {
@@ -39,20 +41,24 @@ export function totalBoats(state: SimState): number {
   return n;
 }
 
-/** Why a boat can't be bought at this pier, or null if it can. */
-export function boatPurchaseBlocker(state: SimState, pier: Building | null): string | null {
-  if (!pier || pier.kind !== "pier") return "Boats are bought at a pier";
-  if (pier.boats >= PIER_SLOTS) return "Pier is full";
+export function isHarbour(b: Building | null): b is Building {
+  return !!b && (BUILDINGS[b.kind].slots ?? 0) > 0;
+}
+
+/** Why a boat can't be bought at this pier/dock, or null if it can. */
+export function boatPurchaseBlocker(state: SimState, at: Building | null): string | null {
+  if (!isHarbour(at)) return "Boats are bought at a pier or dock";
+  if (at.boats >= (BUILDINGS[at.kind].slots ?? 0)) return "No free slot";
   if (totalBoats(state) >= PURCHASABLE_BOATS) return "Only the first two boats can be bought; build a shipyard";
   if (state.resources.money < BOAT_COST) return `Costs ${BOAT_COST}$`;
   return null;
 }
 
-export function buyBoat(state: SimState, pier: Building): boolean {
-  if (boatPurchaseBlocker(state, pier)) return false;
+export function buyBoat(state: SimState, at: Building): boolean {
+  if (boatPurchaseBlocker(state, at)) return false;
   state.resources.money -= BOAT_COST;
-  pier.boats++;
-  notify(state, "A fishing boat is tied up at the pier");
+  at.boats++;
+  notify(state, `A fishing boat is tied up at the ${BUILDINGS[at.kind].name.toLowerCase()}`);
   return true;
 }
 
@@ -62,31 +68,46 @@ function addCapped(state: SimState, kind: keyof typeof CAP_BASE, amount: number)
   return state.resources[kind] - before;
 }
 
-/** Boats leave every reached pier that has crew. */
-export function boatsSail(state: SimState): void {
+/** Can boats moored here work this phase? Piers only at high water; docks whenever the water moves. */
+export function sailsIn(b: Building, phase: Phase): boolean {
+  if (b.kind === "pier") return phase === "high";
+  if (b.kind === "dock") return phase !== "slack";
+  return false;
+}
+
+/** Shift start: boats leave, low-water crews walk out. */
+export function shiftStart(state: SimState, phase: Phase): void {
   for (const b of buildingList(state)) {
-    if (b.kind !== "pier" || !b.reached || b.cut || b.boats === 0) continue;
-    if (staffing(b) > 0) b.atSea = true;
+    if (!b.reached || b.cut) continue;
+    if (isHarbour(b) && b.boats > 0 && sailsIn(b, phase) && staffing(b) > 0) b.atSea = true;
   }
 }
 
-/** Boats come home and land their catch. */
-export function boatsReturn(state: SimState): void {
-  let caught = 0;
+/** Shift end: boats land their catch; shellfish comes in from the flats. */
+export function shiftEnd(state: SimState, grid: Grid, phase: Phase): void {
+  const springLow = phase === "low" && state.tide.level <= SPRING_LO + 0.05;
   for (const b of buildingList(state)) {
-    if (b.kind !== "pier" || !b.atSea) continue;
-    b.atSea = false;
-    const fish = b.boats * BOAT_BASE_FISH * staffing(b);
-    b.output = addCapped(state, "fish", fish);
-    caught += b.output;
+    if (isHarbour(b) && b.atSea) {
+      b.atSea = false;
+      const fish = b.boats * BOAT_BASE_FISH * staffing(b);
+      b.output += addCapped(state, "fish", fish);
+      state.last.fishCaught += fish;
+      continue;
+    }
+    if (phase !== "low" || !b.reached || b.cut) continue;
+    if (b.kind === "oysterBed") {
+      b.output += addCapped(state, "shellfish", OYSTER_YIELD * staffing(b) * (springLow ? SPRING_LOW_BONUS : 1));
+    } else if (b.kind === "clamCamp") {
+      const cells = grid.exposedFlatsNear(b.cells, CLAM_RADIUS, state.tide.level);
+      b.output += addCapped(state, "shellfish", cells * CLAM_PER_CELL * staffing(b) * (springLow ? SPRING_LOW_BONUS : 1));
+    }
   }
-  state.last.fishCaught += caught;
 }
 
 /** The cycle settlement, run once at every high-tide peak. */
 export function settleCycle(state: SimState, grid: Grid): void {
   const r = state.resources;
-  const stats = { cycle: state.tide.cycle, fishCaught: state.last.fishCaught, fishSold: 0, income: 0, expenses: 0, immigrants: 0 };
+  const stats = { cycle: state.tide.cycle, fishCaught: state.last.fishCaught, fishSold: 0, shellfishSold: 0, income: 0, expenses: 0, immigrants: 0 };
   const buildings = buildingList(state).sort((a, b) => a.id - b.id);
 
   assignWorkers(state, grid);
@@ -108,16 +129,16 @@ export function settleCycle(state: SimState, grid: Grid): void {
   state.happiness = houses ? happySum / houses : 1;
   stats.income += pop * TAX_PER_RESIDENT;
 
-  // Sales of what's left.
+  // Sales of what's left; producers' per-cycle output counters reset here.
   for (const b of buildings) {
-    if (b.kind !== "market") continue;
+    if (b.kind !== "market") { if (BUILDINGS[b.kind].residents === 0) b.output = 0; continue; }
     b.output = 0;
     if (!b.reached || b.cut) continue;
     let capacity = MARKET_SELL_PER_CYCLE * staffing(b);
     const fish = Math.min(r.fish, capacity);
     r.fish -= fish; capacity -= fish; stats.income += fish * PRICE_FISH; stats.fishSold += fish;
     const shellfish = Math.min(r.shellfish, capacity);
-    r.shellfish -= shellfish; stats.income += shellfish * PRICE_SHELLFISH;
+    r.shellfish -= shellfish; stats.income += shellfish * PRICE_SHELLFISH; stats.shellfishSold += shellfish;
     b.output = fish + shellfish;
   }
 

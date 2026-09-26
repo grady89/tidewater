@@ -6,7 +6,7 @@ import { Assignment, Building, SimState } from "./state";
 
 /** Jobs a building offers right now. */
 export function jobsAt(b: Building): number {
-  return b.kind === "pier" ? b.boats * BOAT_CREW : BUILDINGS[b.kind].workers;
+  return (BUILDINGS[b.kind].slots ?? 0) > 0 ? b.boats * BOAT_CREW : BUILDINGS[b.kind].workers;
 }
 
 export function assignWorkers(state: SimState, grid: Grid): void {

@@ -53,6 +53,7 @@ export interface CycleStats {
   cycle: number;
   fishCaught: number;
   fishSold: number;
+  shellfishSold: number;
   income: number;
   expenses: number;
   immigrants: number;
@@ -94,7 +95,7 @@ export function createState(seed = 1): SimState {
     nextId: 1,
     assignments: [],
     happiness: 1,
-    last: { cycle: 0, fishCaught: 0, fishSold: 0, income: 0, expenses: 0, immigrants: 0 },
+    last: { cycle: 0, fishCaught: 0, fishSold: 0, shellfishSold: 0, income: 0, expenses: 0, immigrants: 0 },
     log: [],
   };
 }

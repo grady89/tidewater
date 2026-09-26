@@ -1,6 +1,6 @@
 // Cell model over the terrain, occupancy index, and placement rules. Buildings live in SimState; the Grid is the
 // spatial index over them (rebuilt from state on load) plus the fixed terrain classification.
-import { SIZE, TIDE_HI, TIDE_LO } from "../config";
+import { SIZE, STILT_LENGTH, TIDE_HI, TIDE_LO } from "../config";
 import { BuildingKind, BUILDINGS, PlacementClass } from "./balance";
 import { terrainHeight } from "./heightfield";
 import { Building, Cell, SimState } from "./state";
@@ -27,7 +27,7 @@ export function worldToCell(x: number, z: number): Cell {
 }
 
 export class Grid {
-  private readonly heights = new Float32Array(SIZE * SIZE);
+  readonly heights = new Float32Array(SIZE * SIZE);
   private readonly classes: CellClass[] = new Array(SIZE * SIZE);
   private readonly occupancy: (Building | null)[] = new Array(SIZE * SIZE).fill(null);
 
@@ -70,9 +70,17 @@ export class Grid {
       case "deep": return cells.every(c => base(c) === "deep");
       case "high": return cells.every(c => base(c) === "high");
       case "flatOrHigh": return cells.every(c => base(c) === "flat" || base(c) === "high");
+      case "flatOrDeep": return cells.every(c => base(c) === "flat" || base(c) === "deep");
       case "shore": return cells.every(c => base(c) === "flat") && cells.some(c => this.touches(c, "high"));
       case "edge": return cells.every(c => base(c) === "deep") && cells.some(c => this.touches(c, "flat"));
     }
+  }
+
+  /** Terrain window check for kinds that have one (oyster beds). */
+  terrainOk(kind: BuildingKind, cells: Cell[]): boolean {
+    const t = BUILDINGS[kind].terrain;
+    if (!t) return true;
+    return cells.every(c => { const h = this.heightAt(c); return h >= t.min && h <= t.max; });
   }
 
   /** The cells a building of `kind` anchored at `c` would occupy, or null if that shape can't be formed there. */
@@ -101,13 +109,22 @@ export class Grid {
   }
 
   canPlace(kind: BuildingKind, cells: Cell[]): boolean {
-    return this.classOk(BUILDINGS[kind].cls, cells) && cells.every(c => !this.buildingAt(c));
+    return this.classOk(BUILDINGS[kind].cls, cells) && this.terrainOk(kind, cells) && cells.every(c => !this.buildingAt(c));
+  }
+
+  /** Deck height a building of `kind` gets on these cells. */
+  floorFor(kind: BuildingKind, cells: Cell[]): number {
+    const f = BUILDINGS[kind].floor;
+    if (f !== "stilts") return f;
+    let h = -Infinity;
+    for (const c of cells) h = Math.max(h, this.heightAt(c));
+    return h + STILT_LENGTH;
   }
 
   place(kind: BuildingKind, cells: Cell[]): Building {
     const s = this.state;
     const b: Building = {
-      id: s.nextId++, kind, cells, floorY: BUILDINGS[kind].floor, cut: false, reached: false,
+      id: s.nextId++, kind, cells, floorY: this.floorFor(kind, cells), cut: false, reached: false,
       workers: 0, residents: 0, boats: 0, atSea: false, output: 0, happiness: 1,
     };
     for (const c of cells) this.occupancy[cellIndex(c.i, c.j)] = b;
@@ -119,5 +136,18 @@ export class Grid {
     for (const c of b.cells) this.occupancy[cellIndex(c.i, c.j)] = null;
     delete this.state.buildings[b.id];
     this.state.assignments = this.state.assignments.filter(a => a.home !== b.id && a.work !== b.id);
+  }
+
+  /** Flat cells within `radius` (Chebyshev) of `cells` whose terrain is above `level`: the exposed flats. */
+  exposedFlatsNear(cells: Cell[], radius: number, level: number): number {
+    const seen = new Set<number>();
+    for (const c of cells) for (let di = -radius; di <= radius; di++) for (let dj = -radius; dj <= radius; dj++) {
+      const i = c.i + di, j = c.j + dj;
+      if (!inBounds(i, j)) continue;
+      const k = cellIndex(i, j);
+      if (seen.has(k)) continue;
+      if (this.classes[k] === "flat" && this.heights[k] > level && !this.occupancy[k]) seen.add(k);
+    }
+    return seen.size;
   }
 }

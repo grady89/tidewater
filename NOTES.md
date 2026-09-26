@@ -108,6 +108,30 @@ Decisions and findings that CLAUDE.md does not cover. Newest at the bottom of ea
 - Save format bumped to `version: 2`; older autosaves are discarded on load (returns null → new town).
 - `__tidewater.grant(money)` exists for scripted scenarios that need more than the 500$ start.
 
+### M3 tide splits the economy
+- **Tide shape**: each half-cycle eases (cosine) from the previous extreme to the next; a spring cycle k
+  (`k % 4 === 0`) has trough `SPRING_LO` *before* its peak `SPRING_HI`, so the water is continuous through it.
+  `tide.cycle` counts peaks; `troughLevel(k)` is the trough that precedes peak k.
+- **Standard walkways stand `STILT_LENGTH` (0.5) above their cell** (`floor: "stilts"` in the catalog). Since
+  settlement, immigration and worker assignment happen at the peak, a walkway on terrain < 0.1 is under water
+  at every settlement and its street is dead; terrain 0.1–0.35 dies only at spring peaks. That is the game: the
+  shoreline flats need raised walkways (12$, fixed 1.2). The ghost tints by fate (green safe, amber spring, red
+  every tide, grey blocked) and the hint says why.
+- **The starting hut is placed by the sim** (`sim/start.ts`, `newGame`) on flat ground 0.36–0.58 nearest the
+  island centre: high enough that standard walkways around it never flood. The scripted starter town builds
+  from the free hut: pier nearest it (penalising shore cells below 0.1), walkways greedily toward the hut using
+  raised where a standard one would flood every tide, then 2 huts and a market. 500$ covers it with ~50$ left.
+- **Roots vs links**: piers and docks are roots. A dock in open water is "reached" by definition; it needs a
+  raised walkway (allowed on flat *or* deep cells) or a touching pier for crews to get there. I did not enforce the
+  brief's "must touch a walkway via raised walkway or pier" at placement; an unreachable dock just never staffs.
+- **Shifts**: high water and low water are shifts. `shiftStart` on entering a phase (boats out from piers at high,
+  from docks at high *and* low), `shiftEnd` on leaving it (catch lands; oyster beds and clam camps deliver
+  shellfish at the end of low water). Spring low (level ≤ −0.5) doubles shellfish. Clam camps count exposed,
+  unbuilt flat cells within radius 6 above the current water level.
+- Oyster beds have a terrain window 0.0–0.45 (`terrain` in the catalog) on top of the flat class.
+- The smoke scenario imports `test/scenario.ts` into the page through the Vite dev server instead of duplicating
+  the script; the unit tests import it directly.
+
 ## Findings on the v1 questions
 
 (placement and connectivity exist now; play a few cycles and write answers here)

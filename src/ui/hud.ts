@@ -1,22 +1,24 @@
 // The UI: resource bar, build palette, tide clock, last-cycle ledger, notifications. Plain DOM over the canvas,
 // read-only over the sim.
-import { Tool } from "../build/placement";
+import { Fate, Tool } from "../build/placement";
 import { BOAT_COST, BUILDING_KINDS, BuildingKind, BUILDINGS } from "../sim/balance";
 import { canAfford } from "../sim/economy";
 import { population, SimState } from "../sim/state";
-import { cycleFraction, isRising, secondsToHighTide, secondsToLowTide, tideNormalized } from "../sim/tide";
+import { cycleFraction, cyclesToSpring, isRising, secondsToHighTide, secondsToLowTide, tideNormalized } from "../sim/tide";
 import { jobsAt } from "../sim/workers";
 
 export interface HudState {
   tool: Tool;
   blocker: string | null;
+  fate: Fate;
   state: SimState;
 }
 
 interface ToolDef { tool: Tool; label: string; key: string; cost: string }
+const KEYS = "1234567890";
 const TOOLS: ToolDef[] = [
-  ...BUILDING_KINDS.map((kind, i) => ({ tool: kind as Tool, label: BUILDINGS[kind].name, key: String(i + 1), cost: costOf(kind) })),
-  { tool: "boat", label: "Boat", key: String(BUILDING_KINDS.length + 1), cost: `${BOAT_COST}$` },
+  ...BUILDING_KINDS.map((kind, i) => ({ tool: kind as Tool, label: BUILDINGS[kind].name, key: KEYS[i] ?? "", cost: costOf(kind) })),
+  { tool: "boat", label: "Boat", key: KEYS[BUILDING_KINDS.length] ?? "", cost: `${BOAT_COST}$` },
 ];
 
 function costOf(kind: BuildingKind): string {
@@ -31,6 +33,12 @@ export function toolForKey(key: string): Tool | null {
   return TOOLS.find(t => t.key === key)?.tool ?? null;
 }
 
+const FATE_TEXT: Record<Fate, string> = {
+  safe: "Click to place · right-click to remove · drag to orbit",
+  spring: "Floods at spring tides",
+  always: "Floods every high tide",
+};
+
 // Tide dial geometry (SVG units). The fill rect is clipped to the inner disc.
 const DIAL_R = 24, DIAL_TOP = 32 - DIAL_R, DIAL_H = DIAL_R * 2;
 
@@ -41,6 +49,7 @@ export class Hud {
   private readonly tideMarker: SVGCircleElement;
   private readonly tideValue: HTMLElement;
   private readonly tideSub: HTMLElement;
+  private readonly tideSpring: HTMLElement;
   private readonly hint: HTMLElement;
   private readonly ledgerLabel: HTMLElement;
   private readonly ledgerValue: HTMLElement;
@@ -49,7 +58,7 @@ export class Hud {
   private lastLogLen = -1;
 
   constructor(root: HTMLElement, resources: HTMLElement, notes: HTMLElement, onTool: (tool: Tool) => void) {
-    resources.innerHTML = ["money", "fish", "population", "happiness"].map(k => `<div class="res" data-res="${k}"><label>${k}</label><span>0</span></div>`).join("");
+    resources.innerHTML = ["money", "fish", "shellfish", "population", "happiness"].map(k => `<div class="res" data-res="${k}"><label>${k}</label><span>0</span></div>`).join("");
     for (const el of resources.querySelectorAll<HTMLElement>(".res")) this.res[el.dataset.res!] = el.querySelector("span")!;
     this.notes = notes;
 
@@ -68,10 +77,11 @@ export class Hud {
         <div>
           <div class="tide-value">+0.00 m</div>
           <div class="tide-sub"></div>
+          <div class="tide-spring"></div>
         </div>
       </div>
       <div class="palette"></div>
-      <p class="hint">Click to place · right-click to remove · drag to orbit</p>
+      <p class="hint"></p>
       <div class="score">
         <label></label>
         <div class="score-value">—</div>
@@ -90,6 +100,7 @@ export class Hud {
     this.tideMarker = root.querySelector<SVGCircleElement>(".tide-marker")!;
     this.tideValue = root.querySelector<HTMLElement>(".tide-value")!;
     this.tideSub = root.querySelector<HTMLElement>(".tide-sub")!;
+    this.tideSpring = root.querySelector<HTMLElement>(".tide-spring")!;
     this.hint = root.querySelector<HTMLElement>(".hint")!;
     this.ledgerLabel = root.querySelector<HTMLElement>(".score label")!;
     this.ledgerValue = root.querySelector<HTMLElement>(".score-value")!;
@@ -108,11 +119,12 @@ export class Hud {
     for (const b of Object.values(state.buildings)) jobs += jobsAt(b);
     this.res.money.textContent = `${Math.floor(r.money)}$`;
     this.res.fish.textContent = `${Math.floor(r.fish)}`;
+    this.res.shellfish.textContent = `${Math.floor(r.shellfish)}`;
     this.res.population.textContent = `${population(state)} / ${jobs} jobs`;
     this.res.happiness.textContent = `${Math.round(state.happiness * 100)}%`;
 
     const { tide } = state;
-    const top = DIAL_TOP + (1 - tideNormalized(tide)) * DIAL_H;
+    const top = DIAL_TOP + (1 - Math.min(1, Math.max(0, tideNormalized(tide)))) * DIAL_H;
     this.tideLevel.setAttribute("y", top.toFixed(2));
     this.tideLevel.setAttribute("height", (DIAL_TOP + DIAL_H - top).toFixed(2));
     this.tideMarker.setAttribute("transform", `rotate(${(cycleFraction(tide) * 360).toFixed(1)} 32 32)`);
@@ -121,9 +133,13 @@ export class Hud {
     this.tideSub.textContent = isRising(tide)
       ? `${phase} · rising · high in ${Math.ceil(secondsToHighTide(tide))} s`
       : `${phase} · falling · low in ${Math.ceil(secondsToLowTide(tide))} s`;
+    const toSpring = cyclesToSpring(tide);
+    this.tideSpring.textContent = toSpring === 1 ? "Spring tide at the next high water" : `Spring tide in ${toSpring} high tides`;
+    this.tideSpring.classList.toggle("now", toSpring === 1);
 
-    this.hint.textContent = s.blocker ?? "Click to place · right-click to remove · drag to orbit";
+    this.hint.textContent = s.blocker ?? FATE_TEXT[s.fate];
     this.hint.classList.toggle("blocked", s.blocker !== null);
+    this.hint.classList.toggle("warn", s.blocker === null && s.fate !== "safe");
 
     if (state.last.cycle !== this.lastCycle) {
       this.lastCycle = state.last.cycle;
@@ -134,7 +150,7 @@ export class Hud {
       } else {
         const net = l.income - l.expenses;
         this.ledgerLabel.textContent = `Cycle ${l.cycle}`;
-        this.ledgerValue.textContent = `${net >= 0 ? "+" : ""}${net.toFixed(0)}$ · ${l.fishCaught.toFixed(0)} fish landed · ${l.fishSold.toFixed(0)} sold`;
+        this.ledgerValue.textContent = `${net >= 0 ? "+" : ""}${net.toFixed(0)}$ · ${l.fishCaught.toFixed(0)} fish landed · ${(l.fishSold + l.shellfishSold).toFixed(0)} sold`;
         this.ledgerValue.classList.remove("flash");
         void this.ledgerValue.offsetWidth;
         this.ledgerValue.classList.add("flash");

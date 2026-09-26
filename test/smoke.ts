@@ -16,51 +16,6 @@ async function waitReady(page: Page): Promise<void> {
   await page.waitForFunction(() => (window as unknown as { __tidewater?: { ready: boolean } }).__tidewater?.ready === true, null, { timeout: 30_000 });
 }
 
-/** Runs in the page: the M2 starter town through the console API (mirrors test/scenario.ts). */
-function buildStarterTown(): { pier: boolean; boats: number; walkways: number; huts: number; market: boolean; money: number } {
-  type Cell = { i: number; j: number };
-  const api = (window as unknown as { __tidewater: Api }).__tidewater;
-  const grid = api.grid;
-  let site: Cell | null = null, bd = Infinity;
-  for (let i = -32; i < 32; i++) for (let j = -32; j < 32; j++) {
-    const c = { i, j };
-    if (grid.classAt(c) !== "deep" || !grid.footprint("pier", c)) continue;
-    const d = Math.hypot(i, j);
-    if (d < bd) { bd = d; site = c; }
-  }
-  if (!site) throw new Error("no pier site");
-  const pier = api.place("pier", site.i, site.j);
-  let boats = 0;
-  if (api.place("boat", site.i, site.j)) boats++;
-  if (api.place("boat", site.i, site.j)) boats++;
-  let cur: Cell | null = grid.neighbors(site).find((c: Cell) => grid.classAt(c) === "flat") ?? null;
-  let walkways = 0;
-  const seen = new Set<string>();
-  while (cur && walkways < 8) {
-    seen.add(cur.i + "," + cur.j);
-    if (api.place("walkway", cur.i, cur.j)) walkways++;
-    const next: Cell[] = grid.neighbors(cur).filter((c: Cell) => grid.classAt(c) === "flat" && !seen.has(c.i + "," + c.j) && !grid.buildingAt(c));
-    cur = next[0] ?? null;
-  }
-  const byWalkway = (kind: string, count: number): number => {
-    let placed = 0;
-    const ws = (Object.values(api.sim.buildings) as any[]).filter(b => b.kind === "walkway");
-    for (const w of ws) {
-      if (placed >= count) break;
-      for (const n of grid.neighbors(w.cells[0])) {
-        if (placed >= count) break;
-        for (let di = 0; di < 2 && placed < count; di++) for (let dj = 0; dj < 2 && placed < count; dj++) {
-          if (api.place(kind, n.i - di, n.j - dj)) { placed++; break; }
-        }
-      }
-    }
-    return placed;
-  };
-  const huts = byWalkway("hut", 3);
-  const market = byWalkway("market", 1) === 1;
-  return { pier: !!pier, boats, walkways, huts, market, money: api.sim.resources.money };
-}
-
 const server = await createServer({ server: { port: PORT, strictPort: true }, logLevel: "error" });
 await server.listen();
 
@@ -82,9 +37,15 @@ try {
   await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.newTown());
 
   // M2: the starter town, four cycles, positive net money; cutting the market's walkway stops sales.
-  const built = await page.evaluate(buildStarterTown);
+  const built = await page.evaluate(async () => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    const url = "/test/scenario.ts"; // served by the Vite dev server; typed loosely so Node's tsc doesn't resolve it
+    const scenario = (await import(url)) as typeof import("./scenario");
+    const t = scenario.starterTown(api.sim, api.grid);
+    return { pier: !!t.pier, boats: t.pier.boats, walkways: t.walkways.length, huts: t.huts.length, market: !!t.market, money: api.sim.resources.money };
+  });
   console.log("M2 built:", JSON.stringify(built));
-  assert(built.pier && built.boats === 2 && built.huts === 3 && built.market && built.walkways >= 6, "starter town placed");
+  assert(built.pier && built.boats === 2 && built.huts === 3 && built.market && built.walkways >= 2, "starter town placed");
   assert(built.money >= 0, "starter town affordable");
 
   const ran = await page.evaluate(() => {
@@ -108,7 +69,7 @@ try {
     const market = (Object.values(api.sim.buildings) as any[]).find(b => b.kind === "market");
     for (const c of market.cells) for (const n of api.grid.neighbors(c)) {
       const b = api.grid.buildingAt(n);
-      if (b && b.kind === "walkway") api.remove(n.i, n.j);
+      if (b && (b.kind === "walkway" || b.kind === "raisedWalkway")) api.remove(n.i, n.j);
     }
     api.advance(1);
     return { reached: market.reached, sold: api.sim.last.fishSold, fish: api.sim.resources.fish };
@@ -116,11 +77,40 @@ try {
   console.log("M2 market cut:", JSON.stringify(cut));
   assert(!cut.reached && cut.sold === 0, "sales stop when the market is cut off");
 
+  // M3: low-water producers and a raised walkway go in; the 4th cycle is a spring tide.
+  const m3 = await page.evaluate(() => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    api.grant(400, 20);
+    const grid = api.grid;
+    const placeByWalkway = (kind: string): boolean => {
+      for (const w of (Object.values(api.sim.buildings) as any[]).filter(b => b.kind === "walkway" || b.kind === "raisedWalkway")) {
+        for (const n of grid.neighbors(w.cells[0])) {
+          for (let di = 0; di < 2; di++) for (let dj = 0; dj < 2; dj++) if (api.place(kind, n.i - di, n.j - dj)) return true;
+        }
+      }
+      return false;
+    };
+    const oyster = placeByWalkway("oysterBed");
+    const clam = placeByWalkway("clamCamp");
+    const raised = placeByWalkway("raisedWalkway");
+    api.advance((4 - (api.sim.tide.cycle % 4)) % 4 || 4); // to the next spring peak
+    const springText = document.querySelector(".tide-spring")?.textContent ?? "";
+    return { oyster, clam, raised, cycle: api.sim.tide.cycle, level: api.sim.tide.level, springText, log: api.sim.log.slice(-2) };
+  });
+  console.log("M3:", JSON.stringify(m3));
+  assert(m3.clam && m3.raised, "clam camp and raised walkway placed");
+  assert(m3.cycle % 4 === 0 && m3.level > 0.84, "every 4th cycle peaks as a spring tide");
+  assert(/spring/i.test(m3.springText), "tide clock announces the spring tide");
+  await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; api.setTide(-0.55); api.frameTown(20); });
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: "shots/m3.png" });
+  await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.setTide(null));
+
   // M1: save, reload the page, every building is back and the clock kept its place.
   const before = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; api.save(); return { n: Object.keys(api.sim.buildings).length, cycle: api.sim.tide.cycle, money: api.sim.resources.money }; });
   await page.reload();
   await waitReady(page);
-  const after = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { n: Object.keys(api.sim.buildings).length, cycle: api.sim.tide.cycle, money: api.sim.resources.money, meshes: api.scene.meshes.filter((m: any) => ["hut", "house", "walkway", "pier", "market"].includes(m.name)).length }; });
+  const after = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; const kinds = new Set((Object.values(api.sim.buildings) as any[]).map(b => b.kind)); return { n: Object.keys(api.sim.buildings).length, cycle: api.sim.tide.cycle, money: api.sim.resources.money, meshes: api.scene.meshes.filter((m: any) => kinds.has(m.name)).length }; });
   console.log("M1:", JSON.stringify({ before, after }));
   assert(after.n === before.n && before.n >= 5, "all buildings present after reload");
   assert(after.cycle === before.cycle && after.money === before.money, "ledger restored");

@@ -1,13 +1,16 @@
 // Sim-only unit checks. Nothing here may pull in Babylon; the hygiene test enforces that for src/sim/**.
 import { describe, expect, it } from "vitest";
-import { TIDE_HI, TIDE_LO, TIDE_PERIOD } from "../src/config";
+import { SPRING_HI, SPRING_LO, STILT_LENGTH, TIDE_HI, TIDE_LO, TIDE_PERIOD } from "../src/config";
 import { BOAT_COST, BUILDINGS, STARTING_MONEY } from "../src/sim/balance";
-import { boatPurchaseBlocker, buyBoat } from "../src/sim/economy";
+import { boatPurchaseBlocker, buyBoat, tryPlace } from "../src/sim/economy";
 import { Grid } from "../src/sim/grid";
+import { updateNetwork } from "../src/sim/network";
 import { stateHash } from "../src/sim/save";
-import { buildingList, createState, population, SimState } from "../src/sim/state";
+import { newGame } from "../src/sim/start";
+import { buildingList, Cell, createState, population, SimState } from "../src/sim/state";
 import { advanceCycles, tick } from "../src/sim/tick";
-import { isRising, tickTide, tideNormalized } from "../src/sim/tide";
+import { floodFate, isRising, tickTide, tideNormalized } from "../src/sim/tide";
+import { assignWorkers } from "../src/sim/workers";
 import { starterTown } from "./scenario";
 
 const simSources = import.meta.glob("../src/sim/**/*.ts", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
@@ -44,6 +47,29 @@ describe("tide clock", () => {
     expect(isRising(t)).toBe(true);
   });
 
+  it("runs a spring tide every 4th cycle, continuous with its neighbours", () => {
+    const t = createState().tide;
+    const dt = 1 / 60;
+    let min = Infinity, max = -Infinity, prev = t.level, jump = 0;
+    for (let s = 0; s < TIDE_PERIOD * 3; s += dt) { tickTide(t, dt); }
+    expect(t.cycle).toBe(3);
+    for (let s = 0; s < TIDE_PERIOD; s += dt) {
+      tickTide(t, dt);
+      min = Math.min(min, t.level); max = Math.max(max, t.level);
+      jump = Math.max(jump, Math.abs(t.level - prev)); prev = t.level;
+    }
+    expect(t.cycle).toBe(4);
+    expect(min).toBeCloseTo(SPRING_LO, 2);
+    expect(max).toBeCloseTo(SPRING_HI, 2);
+    expect(jump).toBeLessThan(0.01);
+    // The next ordinary cycle falls from the spring peak to the usual trough and rises to the usual peak.
+    min = Infinity; max = -Infinity;
+    for (let s = 0; s < TIDE_PERIOD; s += dt) { tickTide(t, dt); min = Math.min(min, t.level); if (s > TIDE_PERIOD / 2) max = Math.max(max, t.level); }
+    expect(t.cycle).toBe(5);
+    expect(min).toBeCloseTo(TIDE_LO, 2);
+    expect(max).toBeCloseTo(TIDE_HI, 2);
+  });
+
   it("wet sand lags the falling water", () => {
     const t = createState().tide;
     for (let i = 0; i < 60 * 10; i++) tickTide(t, 1 / 60);
@@ -62,8 +88,7 @@ describe("tide clock", () => {
 });
 
 function town(seed = 7): { state: SimState; grid: Grid; town: ReturnType<typeof starterTown> } {
-  const state = createState(seed);
-  const grid = new Grid(state);
+  const { state, grid } = newGame(seed);
   return { state, grid, town: starterTown(state, grid) };
 }
 
@@ -84,25 +109,20 @@ describe("ledger", () => {
     advanceCycles(copy, grid2, 1);
     expect(stateHash(copy)).toBe(stateHash(state));
   });
-
-  it("cuts walkways but not houses when the water reaches 0.97", () => {
-    const { state, grid } = town();
-    state.tide.override = 0.97;
-    tick(state, grid);
-    const all = buildingList(state);
-    expect(all.filter(b => b.kind === "walkway").every(b => b.cut)).toBe(true);
-    expect(all.filter(b => b.kind !== "walkway").some(b => b.cut)).toBe(false);
-  });
 });
 
 describe("money loop (M2)", () => {
   it("the starter town is affordable from the 500$ start and is fully connected", () => {
-    const { state, town: t } = town();
+    const { state, grid, town: t } = town();
     expect(t.huts.length).toBe(3);
     expect(t.market).not.toBeNull();
     expect(t.pier.boats).toBe(2);
     expect(state.resources.money).toBeGreaterThanOrEqual(0);
     expect(state.resources.money).toBeLessThan(STARTING_MONEY - BUILDINGS.pier.cost.money - 2 * BOAT_COST);
+    state.tide.override = TIDE_HI;
+    tick(state, grid);
+    expect(t.huts.every(h => h.reached)).toBe(true);
+    expect(t.market!.reached).toBe(true);
   });
 
   it("makes positive net money over 4 cycles, with residents arriving and boats landing fish", () => {
@@ -122,7 +142,7 @@ describe("money loop (M2)", () => {
     const market = t.market!;
     for (const c of market.cells) for (const n of grid.neighbors(c)) {
       const b = grid.buildingAt(n);
-      if (b && b.kind === "walkway") grid.remove(b);
+      if (b && (b.kind === "walkway" || b.kind === "raisedWalkway")) grid.remove(b);
     }
     advanceCycles(state, grid, 1);
     expect(market.reached).toBe(false);
@@ -136,5 +156,114 @@ describe("money loop (M2)", () => {
     expect(boatPurchaseBlocker(state, t.pier)).not.toBeNull();
     expect(buyBoat(state, t.pier)).toBe(false);
     expect(boatPurchaseBlocker(state, t.huts[0])).not.toBeNull();
+  });
+});
+
+/** A flat cell with terrain in [lo, hi] not yet built on, nearest to `near`. */
+function flatCellWithHeight(grid: Grid, lo: number, hi: number, near: Cell): Cell | null {
+  let best: Cell | null = null, bd = Infinity;
+  for (let i = -32; i < 32; i++) for (let j = -32; j < 32; j++) {
+    const c = { i, j };
+    if (grid.classAt(c) !== "flat" || grid.buildingAt(c)) continue;
+    const h = grid.heightAt(c);
+    if (h < lo || h > hi) continue;
+    const d = Math.hypot(i - near.i, j - near.j);
+    if (d < bd) { bd = d; best = c; }
+  }
+  return best;
+}
+
+describe("tide splits the economy (M3)", () => {
+  it("standard walkways stand STILT_LENGTH above their cell; low ones flood at spring high, not at ordinary high", () => {
+    const { state, grid, town: t } = town();
+    const cell = flatCellWithHeight(grid, 0.12, 0.33, t.pier.cells[0]);
+    expect(cell).not.toBeNull();
+    const w = grid.place("walkway", [cell!]);
+    expect(w.floorY).toBeCloseTo(grid.heightAt(cell!) + STILT_LENGTH, 6);
+    expect(floodFate(w.floorY)).toBe("spring");
+    state.tide.override = TIDE_HI; tick(state, grid);
+    expect(w.cut).toBe(false);
+    state.tide.override = SPRING_HI; tick(state, grid);
+    expect(w.cut).toBe(true);
+  });
+
+  it("workers beyond a flooded walkway don't count for that shift", () => {
+    const { state, grid, town: t } = town();
+    advanceCycles(state, grid, 3);
+    expect(population(state)).toBeGreaterThan(0);
+    // Sink every link to spring-flood height, as if the whole street stood on terrain 0.2.
+    const links = buildingList(state).filter(b => b.kind === "walkway" || b.kind === "raisedWalkway");
+    for (const l of links) l.floorY = 0.7;
+    updateNetwork(state, grid, TIDE_HI);
+    assignWorkers(state, grid);
+    const workersAtOrdinaryHigh = t.pier.workers;
+    expect(workersAtOrdinaryHigh).toBeGreaterThan(0);
+    updateNetwork(state, grid, SPRING_HI);
+    assignWorkers(state, grid);
+    expect(links.every(l => l.cut)).toBe(true);
+    // Only homes touching the pier itself can still reach it.
+    const pierCells = new Set(t.pier.cells.map(c => c.i + "," + c.j));
+    const touching = t.huts.filter(h => h.cells.some(c => grid.neighbors(c).some(n => pierCells.has(n.i + "," + n.j))));
+    const reachable = touching.reduce((n, h) => n + h.residents, 0);
+    expect(t.pier.workers).toBeLessThanOrEqual(reachable);
+    expect(t.pier.workers).toBeLessThan(workersAtOrdinaryHigh);
+    for (const h of t.huts) if (!touching.includes(h)) expect(h.reached).toBe(false);
+  });
+
+  it("oyster beds produce shellfish only when a low-water shift ends", () => {
+    const { state, grid, town: t } = town();
+    state.resources.money += 200;
+    advanceCycles(state, grid, 2);
+    // Put the bed on the flats next to a walkway, in the oyster window, and make sure it is the only job in town.
+    let bed = null;
+    for (const w of buildingList(state).filter(b => b.kind === "walkway")) {
+      for (const n of grid.neighbors(w.cells[0])) { bed = tryPlace(state, grid, "oysterBed", n); if (bed) break; }
+      if (bed) break;
+    }
+    if (!bed) {
+      // No window cell touches the town: lay a walkway to the nearest one.
+      const cell = flatCellWithHeight(grid, 0.05, 0.4, t.pier.cells[0])!;
+      for (const n of grid.neighbors(cell)) if (grid.classAt(n) === "flat" && !grid.buildingAt(n)) { grid.place("walkway", [n]); break; }
+      bed = grid.place("oysterBed", [cell]);
+    }
+    expect(bed).not.toBeNull();
+    for (const b of buildingList(state)) if (b.kind === "pier") b.boats = 0;
+    advanceCycles(state, grid, 1);
+    expect(bed!.reached).toBe(true);
+    expect(bed!.workers).toBeGreaterThan(0);
+
+    let prevPhase = state.phase, prevShell = state.resources.shellfish, gained = 0;
+    const cycleTicks = Math.round(TIDE_PERIOD * 20);
+    for (let k = 0; k < cycleTicks; k++) {
+      tick(state, grid);
+      const d = state.resources.shellfish - prevShell;
+      if (d > 0) { expect(prevPhase).toBe("low"); gained += d; }
+      prevPhase = state.phase; prevShell = state.resources.shellfish;
+    }
+    expect(gained).toBeGreaterThan(0);
+  });
+
+  it("pier boats stay in at low water; deep-dock boats sail on both tides", () => {
+    const { state, grid, town: t } = town();
+    state.resources.money += 500; state.resources.planks += 20;
+    advanceCycles(state, grid, 2);
+    // A dock touching the pier so its crew can reach it over the pier's own planks.
+    let dock = null;
+    for (const pc of t.pier.cells) for (const n of grid.neighbors(pc)) {
+      for (let di = 0; di < 2 && !dock; di++) for (let dj = 0; dj < 2 && !dock; dj++) dock = tryPlace(state, grid, "dock", { i: n.i - di, j: n.j - dj });
+      if (dock) break;
+    }
+    expect(dock).not.toBeNull();
+    dock!.boats = 2;
+    t.pier.boats = 1;
+    advanceCycles(state, grid, 1);
+    expect(dock!.workers).toBeGreaterThan(0);
+    const seen = { pierLow: false, dockLow: false, pierHigh: false, dockHigh: false };
+    for (let k = 0; k < TIDE_PERIOD * 20; k++) {
+      tick(state, grid);
+      if (state.phase === "low") { seen.pierLow ||= t.pier.atSea; seen.dockLow ||= dock!.atSea; }
+      if (state.phase === "high") { seen.pierHigh ||= t.pier.atSea; seen.dockHigh ||= dock!.atSea; }
+    }
+    expect(seen).toEqual({ pierLow: false, dockLow: true, pierHigh: true, dockHigh: true });
   });
 });
