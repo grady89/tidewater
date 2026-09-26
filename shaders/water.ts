@@ -2,6 +2,9 @@
 // shader keeps the study's wave math and adds uniforms only: `waveAmp` scales the swell (storms), and
 // `waveDir/waveFront/waveHeight/waveWidth` add a travelling crest (the tsunami). With waveAmp = 1 and
 // waveHeight = 0 the displacement is exactly the study's.
+// Backlog 1 adds a planar reflection: the vertex shader passes its clip position (`vClip`), and the fragment
+// shader mixes `reflectTex` (a MirrorTexture sampled at the fragment's own screen position, nudged by the facet
+// normal) into the sky it already reflects, by `reflectMix`. With reflectMix = 0 the colour is exactly the study's.
 // The only substitution is ${SIZE}, which the reference also interpolated from its SIZE constant.
 import { COMMON } from "./common";
 import { SIZE } from "../src/config";
@@ -11,7 +14,7 @@ export const waterVS = `
     attribute vec3 position;
     uniform mat4 world; uniform mat4 worldViewProjection; uniform float time;
     uniform float waveAmp; uniform vec2 waveDir; uniform float waveFront; uniform float waveHeight; uniform float waveWidth;
-    varying vec3 vW;
+    varying vec3 vW; varying vec4 vClip;
     void main(){
       vec4 w = world*vec4(position,1.0);
       float y = 0.045*sin(w.x*0.9 + time*1.1) + 0.035*sin((w.x*0.6 + w.z*0.8)*1.3 - time*0.9) + 0.025*sin(w.z*1.7 + time*1.6);
@@ -20,16 +23,17 @@ export const waterVS = `
       y += waveHeight * exp(-crest*crest);
       w.y += y; vW = w.xyz;
       gl_Position = worldViewProjection*vec4(position.x, position.y + y, position.z, 1.0);
+      vClip = gl_Position;
     }
   `;
 
 export const waterFS = `
     #extension GL_OES_standard_derivatives : enable
   ` + COMMON + `
-    varying vec3 vW;
-    uniform sampler2D heightTex;
+    varying vec3 vW; varying vec4 vClip;
+    uniform sampler2D heightTex; uniform sampler2D reflectTex;
     uniform vec3 sunDir, sunColor, skyColor, fogColor, camPos;
-    uniform float time, dusk;
+    uniform float time, dusk, reflectMix;
     void main(){
       vec2 uv = vW.xz / ${SIZE}.0 + 0.5;
       vec4 t = texture2D(heightTex, uv);
@@ -46,7 +50,9 @@ export const waterFS = `
       float alpha = mix(0.34, 0.92, smoothstep(0.0, 1.4, depth));
       // fresnel toward sky
       float fres = pow(1.0 - max(dot(n, V), 0.0), 3.0);
-      col = mix(col, skyColor, fres*0.55);
+      vec2 ruv = vClip.xy / vClip.w * 0.5 + 0.5 + n.xz * 0.03;
+      vec3 skyRef = mix(skyColor, texture2D(reflectTex, ruv).rgb, reflectMix);
+      col = mix(col, skyRef, fres*mix(0.55, 0.7, reflectMix));
       alpha = mix(alpha, 0.97, fres*0.6);
       // foam: a crisp edge line plus broken rings drifting toward the shore
       float band = 1.0 - smoothstep(0.0, 0.32, depth);

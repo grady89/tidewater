@@ -110,7 +110,18 @@ function load(json: string): void {
 const menu = new SaveMenu(document.getElementById("menu")!, { serialize: () => serialize(state), cycle: () => state.tide.cycle, load, newTown });
 let speed: Speed = 1;
 const audio = new Audio();
-const speedControls = new SpeedControls(document.getElementById("speed")!, s => { speed = s; }, () => menu.toggle(), () => audio.setMuted(!audio.muted));
+const REFLECTIONS_KEY = "tidewater.reflections";
+function setReflections(on: boolean): void {
+  water.setReflections(on);
+  try { localStorage.setItem(REFLECTIONS_KEY, on ? "1" : "0"); } catch { /* ignore */ }
+}
+try { if (localStorage.getItem(REFLECTIONS_KEY) === "1") water.setReflections(true); } catch { /* ignore */ }
+const speedControls = new SpeedControls(document.getElementById("speed")!, {
+  onSpeed: s => { speed = s; },
+  onMenu: () => menu.toggle(),
+  onMute: () => audio.setMuted(!audio.muted),
+  onReflections: () => setReflections(!water.reflections),
+});
 
 window.addEventListener("keydown", e => {
   if (e.target instanceof HTMLInputElement) return;
@@ -153,7 +164,7 @@ function syncView(): void {
   hud.update({ tool: placement.tool, blocker: placement.blocker, fate: placement.fate, state });
   info.update(state);
   tutorial.update(state);
-  speedControls.update(speed, audio.muted);
+  speedControls.update(speed, audio.muted, water.reflections);
   audio.sync(state, stormMix);
 }
 
@@ -261,7 +272,10 @@ const api = {
     stormMix: () => stormMix,
     drawCalls: () => scene.getActiveMeshes().length,
     audio: () => ({ started: audio.started, state: audio.state, muted: audio.muted }),
+    reflections: () => water.reflections,
   },
+  /** The reflections quality toggle (remembered). */
+  setReflections,
   orderPlanks() {
     return orderPlanks(state);
   },

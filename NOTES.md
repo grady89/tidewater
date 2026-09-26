@@ -331,6 +331,20 @@ Decisions and findings that CLAUDE.md does not cover. Newest at the bottom of ea
   exists (`view.audio().started` is false), which is what browsers' autoplay rules need. Mute is a master gain
   ramp and is remembered in localStorage.
 
+### Backlog 1 reflections
+- A Babylon `MirrorTexture` (1024², plane = the water level, refreshed each frame while on) renders every mesh but
+  the water, the overlay quad and the placement ghost. It sits in `scene.customRenderTargets` only while the
+  toggle is on, so off costs nothing; the sampler stays bound so the shader never sees an empty unit.
+- The water fragment shader samples it at the fragment's own clip position (Babylon's mirror reflects the world
+  through the plane and keeps the camera, so a point on the plane lands on the same pixel), nudged by the facet
+  normal for a broken edge, and mixes it into the sky the fresnel term already reflects (`reflectMix`, and the
+  fresnel share rises 0.55 → 0.7). `reflectMix = 0` is bit-for-bit the study; no other line of the shader moved.
+- The toggle lives on the speed bar ("Reflections"), is remembered in localStorage, and is off by default: it is a
+  second render of the scene. Measured in the 300-building town (headless 4060, 165 fps off): 62.5 fps on at 1024²,
+  62.5 at 512² — so the cost is draw submission (311 meshes), not fill — and 99.5 with `refreshRate = 2`, which is
+  what ships (the mirror lags the camera by one frame). Walkers, lantern spheres, fins, flames and smoke are left
+  out of the mirror; the starter town stays at the cap either way. `__tidewater.setReflections(on)`.
+
 ## Findings on the v1 questions
 
 (placement and connectivity exist now; play a few cycles and write answers here)

@@ -499,6 +499,25 @@ try {
   console.log(`M12 big-town fps: ${bigFps.toFixed(1)}`);
   await page.screenshot({ path: "shots/m12-bigtown.png" });
   assert(bigFps >= 60, "60 fps with 300 buildings, 200 walkers, 30 boats");
+  // Backlog 1: planar reflections behind a toggle — on, the big town still holds 60 fps; the button flips it; off
+  // again the colour path is the study's.
+  await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.setReflections(true));
+  await page.waitForTimeout(300);
+  const reflFps = await page.evaluate(async () => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    let frames = 0;
+    const obs = api.scene.onAfterRenderObservable.add(() => frames++);
+    await new Promise(r => setTimeout(r, 5000));
+    api.scene.onAfterRenderObservable.remove(obs);
+    return { fps: frames / 5, on: api.view.reflections(), targets: api.scene.customRenderTargets.length };
+  });
+  await page.screenshot({ path: "shots/b1-reflections.png" });
+  await page.click("#speed .reflections");
+  const reflOff = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { on: api.view.reflections(), targets: api.scene.customRenderTargets.length }; });
+  console.log("B1 reflections:", JSON.stringify({ ...reflFps, off: reflOff }));
+  assert(reflFps.on && reflFps.targets === 1, "reflections on: one mirror render target");
+  assert(reflFps.fps >= 60, "60 fps with reflections on in the big town");
+  assert(!reflOff.on && reflOff.targets === 0, "reflections button turns them off");
   await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.save());
   const t0 = Date.now();
   await page.reload();
