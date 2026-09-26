@@ -4,14 +4,65 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Tidewater</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=IBM+Plex+Sans:wght@400;500&display=swap" />
     <style>
+      :root {
+        --sky: #cfe6f2;
+        --panel: rgba(18, 34, 46, 0.72);
+        --panel-line: rgba(255, 255, 255, 0.10);
+        --ink: #f3f1ea;
+        --ink-dim: rgba(243, 241, 234, 0.62);
+        --accent: #ffd18a;
+        --track: rgba(255, 255, 255, 0.18);
+        --water: #3f8fa8;
+        color-scheme: dark;
+      }
       html, body { height: 100%; }
-      body { margin: 0; background: #cfe6f2; overflow: hidden; }
-      #c { width: 100%; height: 100%; display: block; outline: none; touch-action: none; }
+      body { margin: 0; background: var(--sky); overflow: hidden; font-family: "IBM Plex Sans", system-ui, sans-serif; color: var(--ink); }
+      #c { width: 100%; height: 100%; display: block; outline: none; touch-action: none; cursor: crosshair; }
+
+      #hud {
+        position: fixed; left: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+        width: min(300px, calc(100vw - 32px));
+        background: var(--panel); border: 1px solid var(--panel-line);
+        backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+        border-radius: 10px; padding: 14px 16px 16px; box-sizing: border-box;
+        display: grid; gap: 12px; user-select: none;
+      }
+      #hud h1 { font: 400 26px/1 "Instrument Serif", Georgia, serif; margin: 0; letter-spacing: 0.01em; }
+      #hud label { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-dim); }
+      #hud .hint { margin: 0; font-size: 11px; color: var(--ink-dim); line-height: 1.45; }
+
+      .tide { display: grid; grid-template-columns: 64px 1fr; gap: 12px; align-items: center; }
+      .tide svg { display: block; }
+      .tide-level { fill: var(--water); opacity: 0.85; }
+      .tide-track { stroke: var(--track); stroke-width: 2; }
+      .tide-tick { stroke: var(--ink-dim); stroke-width: 1.5; }
+      .tide-marker { fill: var(--accent); }
+      .tide-value { font: 400 22px/1.1 "Instrument Serif", Georgia, serif; font-variant-numeric: tabular-nums; }
+      .tide-sub { font-size: 11px; color: var(--ink-dim); margin-top: 3px; font-variant-numeric: tabular-nums; }
+
+      .palette { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+      .palette button {
+        font: inherit; font-size: 12px; color: var(--ink); background: rgba(255, 255, 255, 0.06);
+        border: 1px solid var(--panel-line); border-radius: 6px; padding: 8px 6px;
+        display: flex; justify-content: space-between; align-items: center; cursor: pointer;
+      }
+      .palette button:hover { background: rgba(255, 255, 255, 0.11); }
+      .palette button.active { background: rgba(255, 209, 138, 0.16); border-color: var(--accent); color: var(--accent); }
+      .palette kbd { font: 10px/1 "IBM Plex Sans", system-ui, sans-serif; color: var(--ink-dim); border: 1px solid var(--track); border-radius: 3px; padding: 2px 4px; }
+      .palette button.active kbd { color: var(--accent); border-color: rgba(255, 209, 138, 0.5); }
+
+      .score { border-top: 1px solid var(--panel-line); padding-top: 10px; display: grid; gap: 4px; }
+      .score-value { font-size: 13px; }
+      .score-value.flash { animation: flash 1.2s ease-out; }
+      @keyframes flash { 0% { color: var(--accent); } 100% { color: var(--ink); } }
+      @media (prefers-reduced-motion: reduce) { .score-value.flash { animation: none; } }
     </style>
   </head>
   <body>
     <canvas id="c"></canvas>
+    <div id="hud"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
