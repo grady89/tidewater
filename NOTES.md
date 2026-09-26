@@ -356,6 +356,16 @@ Decisions and findings that CLAUDE.md does not cover. Newest at the bottom of ea
   (`__tidewater.brightness(x, y, w, h)` reads pixels in the next rendered frame) and expects on > off; the
   measured delta is ~1 of 255 because the sample includes sand and glint, hence the 0.5 threshold.
 
+### Backlog 3 gulls and crabs
+- `view/wildlife.ts`, two thin-instanced meshes, matrices rebuilt every frame from the ledger; nothing is stored.
+- Gulls circle every harbour (pier, dock, harbor) that has boats: 2 + 1 per boat, at most 5 each and 48 in all,
+  on staggered radii and heights above the deck, alternating direction, with a wing flap from a rotation about
+  the body axis. Harbours without boats get none — a gull flock reads as "there is fishing here".
+- Crabs: up to 64 seeded sites on unbuilt flat cells within 4 cells of any building (re-picked when the building
+  set changes, so a fresh town gets crabs where the player looks). A crab shows when its cell's terrain is above
+  the water, popping up over the first 8 cm of exposure and scuttling sideways in place; at +0.6 every flat cell is
+  under water, so high tide has none and the smoke asserts exactly that, and > 0 at low water.
+
 ### Chunk merge (the M12 perf pass, done for the mirror)
 - `view/buildingViews.ts` now merges every building in an 8×8-cell chunk into one mesh (`chunk:i,j`), rebuilt
   when any building in the chunk appears, leaves or changes its mesh signature. 300 buildings → 15 chunk meshes;

@@ -165,12 +165,15 @@ try {
     const boats = api.view.boats();
     const harbours = (Object.values(api.sim.buildings) as any[]).filter(b => b.kind === "pier" || b.kind === "dock")
       .map(b => ({ kind: b.kind, boats: b.boats, workers: b.workers, reached: b.reached, atSea: b.atSea, ground: b.ground }));
-    return { walkersAtShift, phase: api.sim.phase, away: boats.filter((b: any) => b.atSea).length, total: boats.length, dusk: api.view.dusk(), harbours, assignments: api.sim.assignments };
+    return { walkersAtShift, phase: api.sim.phase, away: boats.filter((b: any) => b.atSea).length, total: boats.length, dusk: api.view.dusk(), harbours, assignments: api.sim.assignments, gulls: api.view.gulls(), crabs: api.view.crabs() };
   });
   console.log("M4 high water:", JSON.stringify(high));
   assert(high.phase === "high", "clock is at high water");
   assert(high.away >= 3, "at least 3 boats away from the docks at high water");
   assert(high.walkersAtShift > 0, "walkers spawned at shift change");
+  // Backlog 3: gulls over harbours with boats; no crabs while the flats are under water.
+  assert(high.gulls > 0, "gulls circle the harbours");
+  assert(high.crabs === 0, "no crabs at high water");
   await page.waitForTimeout(300);
   await page.screenshot({ path: "shots/m4-high.png" });
 
@@ -178,11 +181,12 @@ try {
     const api = (window as unknown as { __tidewater: Api }).__tidewater;
     api.advanceTo(0.5);
     const boats = api.view.boats();
-    return { phase: api.sim.phase, moored: boats.filter((b: any) => b.moored).length, away: boats.filter((b: any) => b.atSea).length };
+    return { phase: api.sim.phase, moored: boats.filter((b: any) => b.moored).length, away: boats.filter((b: any) => b.atSea).length, crabs: api.view.crabs() };
   });
   console.log("M4 low water:", JSON.stringify(low));
   assert(low.phase === "low", "clock is at low water");
   assert(low.moored >= 3, "at least 3 boats at the docks at low water");
+  assert(low.crabs > 0, "crabs on the exposed flats at low water");
   await page.waitForTimeout(300);
   await page.screenshot({ path: "shots/m4-low.png" });
 

@@ -26,6 +26,7 @@ import { OverlayKind, Overlays } from "./view/overlays";
 import { Ship } from "./view/ship";
 import { Trees } from "./view/trees";
 import { Walkers } from "./view/walkers";
+import { Wildlife } from "./view/wildlife";
 import { computeLighting, createLights, duskAt } from "./world/lighting";
 import { createSky } from "./world/sky";
 import { createTerrain } from "./world/terrain";
@@ -82,6 +83,7 @@ const trees = new Trees(scene);
 const overlays = new Overlays(scene, grid);
 const effects = new Effects(scene);
 const ship = new Ship(scene, grid);
+const wildlife = new Wildlife(scene, grid);
 const placement = new Placement(scene, camera, grid, canvas);
 const hud = new Hud(document.getElementById("hud")!, document.getElementById("resources")!, document.getElementById("notes")!, grid, tool => placement.setTool(tool), kind => overlays.show(kind), () => orderPlanks(state));
 const info = new InfoPanel(document.getElementById("info")!, grid);
@@ -159,6 +161,7 @@ function syncView(): void {
   walkers.sync(state, viewTime);
   effects.sync(state, viewTime);
   ship.sync(state, viewTime);
+  wildlife.sync(state, viewTime);
   terrain.update(camera.position, state.tide.level, state.tide.wetLevel);
   water.update(viewTime, camera.position, state.tide.level);
   hud.update({ tool: placement.tool, blocker: placement.blocker, fate: placement.fate, state });
@@ -275,6 +278,8 @@ const api = {
     reflections: () => water.reflections,
     chunks: () => views.chunkCount,
     caustics: () => water.caustics,
+    gulls: () => wildlife.gullCount,
+    crabs: () => wildlife.crabCount,
   },
   /** The reflections quality toggle (remembered). */
   setReflections,

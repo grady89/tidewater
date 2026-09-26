@@ -20,10 +20,11 @@ Live status. Update after every milestone (and mid-milestone if you compact). On
 | M13 Audio | DONE | 121ed07 · Web Audio surf (noise + low-pass, follows tide/storm), shift bell, tsunami thrum, mute (remembered); context created on first gesture, smoke asserts running after click and no console errors · headless 165 fps |
 | M14 Ship it | DONE | 7d32ada · README (run, controls, how the town works, layout, screenshot), HANDOFF rewritten (what exists, known-broken, balance notes, next three, backlog), `npm run build` → dist/ · headless 164.8 fps |
 | Backlog 1 Reflections | DONE | eddf8ae (+ chunk merge) · MirrorTexture through the water plane mixed into the fresnel sky term by `reflectMix`; speed-bar toggle, remembered, off by default; forced the M12 chunk merge (300 buildings → 15 meshes, lanterns thin-instanced) · headless 165 fps with it on in the big town |
-| Backlog 2 Caustics | IN PROGRESS | sub-task: `caustics` uniform + noise in the shallow band |
+| Backlog 2 Caustics | DONE | (see run log) · additive noise web in the 0.03–1.6 depth band scaled by a `caustics` uniform that follows daylight; smoke A/Bs viewport brightness over a beach · headless 165 fps |
+| Backlog 3 Gulls & crabs | IN PROGRESS | sub-task: view/wildlife.ts thin instances |
 
 ## Current focus
-Backlog 2 Caustics — sub-task: shaders/water.ts additive term. Last thing that worked: chunk merge green (build/test/smoke, 42 tests, 165 fps with reflections).
+Backlog 3 Gulls & crabs — sub-task: view/wildlife.ts. Last thing that worked: caustics green (build/test/smoke, 42 tests, 165 fps).
 
 ## Blocked
 (milestone, why, what was tried, what would unblock)
