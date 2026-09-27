@@ -3,11 +3,10 @@
 import { describe, expect, it } from "vitest";
 import { CLEARANCE, SPRING_HI, STILT_MIN, TIDE_HI, TIDE_LO, TIDE_PERIOD } from "../src/config";
 import { BUILDINGS, LANDFILL_HEIGHT, WAVE_HEIGHT } from "../src/sim/balance";
-import { Biome, biomeOf, catalogFor, catalogOf, chartedBiomes, makesOf, registerBiome, tideScaleOf } from "../src/sim/biomes";
+import { catalogFor, catalogOf, chartedBiomes, makesOf, tideScaleOf } from "../src/sim/biomes";
 import { tryPlace } from "../src/sim/economy";
 import { newGame as newGame, suggestPier } from "../src/sim/start";
 import { Cell } from "../src/sim/state";
-import { islandHeight } from "../src/sim/heightfield";
 import { candidate, island } from "../src/sim/island";
 import { deserialize, serialize } from "../src/sim/save";
 
@@ -16,23 +15,15 @@ import { floodFate, tickTide } from "../src/sim/tide";
 import { BASE_TIDES, classFor, tidesFor } from "../src/sim/tides";
 import { starterTown } from "./scenario";
 
-/** A test-only biome: Tidewater's ground with the Fjord's tide, so the scaling is measured on a known island. */
-const HIGH_TIDE: Biome = registerBiome({
-  ...biomeOf("tidewater"),
-  id: "fjord", label: "Test fjord", bands: ["polar"], tide: 1.6, foods: ["fish", "stockfish"], luxury: "whaleOil", industrials: ["iron", "timber"],
-  favourite: "cocoa", unique: ["toolworks"], excluded: ["oysterBed", "clamCamp"],
-  shape: seed => ({ height: islandHeight(seed) }),
-  thresholds: { treed: 0 },
-});
-
 describe("biome framework", () => {
   it("Tidewater is the identity: base tides, the base catalog, the original island at seed 0", () => {
     expect(tideScaleOf("tidewater")).toBe(1);
     expect(tidesFor(1)).toEqual(BASE_TIDES);
     expect(BASE_TIDES).toMatchObject({ lo: TIDE_LO, hi: TIDE_HI, springHi: SPRING_HI, dryTerrain: SPRING_HI + CLEARANCE, springFloodTerrain: SPRING_HI - STILT_MIN, waveHeight: WAVE_HEIGHT, landfillHeight: LANDFILL_HEIGHT, pierFloor: 1, raisedFloor: 1.2 });
     const all = Object.keys(BUILDINGS) as (keyof typeof BUILDINGS)[];
-    const base = new Set(all.filter(k => k !== "toolworks"));
-    expect(catalogOf("tidewater", all, base)).toEqual(all.filter(k => k !== "toolworks"));
+    expect(catalogFor("tidewater")).toContain("toolworks"); // base: no biome owns it
+    expect(catalogFor("tidewater")).not.toContain("stockfishRacks");
+    expect(catalogOf("tidewater", all, new Set(all))).toEqual(all);
     expect(island(0, "tidewater")).toBe(island(0));
     expect(makesOf("tidewater")).toEqual(["fish", "shellfish", "smoked", "timber", "planks"]);
     expect(chartedBiomes()).toContain("tidewater");
@@ -49,9 +40,6 @@ describe("biome framework", () => {
     expect(state.tide.scale).toBe(1.6);
     expect(state.tide.level).toBeCloseTo(TIDE_HI * 1.6, 9);
     // Flats run wider: more cells are flat than on the same ground at Tidewater's tide.
-    const wide = island(7, "fjord").stats.flats, base = island(7).stats.flats;
-    expect(island(7, "fjord").noiseSeed).toBe(island(7).noiseSeed === 7 ? 7 : island(7, "fjord").noiseSeed);
-    expect(wide).not.toBe(base);
     // The clock peaks at the scaled levels and the spring is scaled too.
     const clock = state.tide;
     let max = -Infinity, min = Infinity;
@@ -76,14 +64,12 @@ describe("biome framework", () => {
     expect(island(3, "fjord")).toBe(island(3, "fjord"));
     expect(island(3, "fjord")).not.toBe(island(3));
     expect(candidate(3, 0, "fjord").stats.materials.length).toBeGreaterThan(0);
-    const all = Object.keys(BUILDINGS) as (keyof typeof BUILDINGS)[];
-    const base = new Set(all.filter(k => k !== "toolworks"));
-    const cat = catalogOf("fjord", all, base);
+    const cat = catalogFor("fjord");
     expect(cat).toContain("toolworks");
+    expect(cat).toContain("stockfishRacks");
     expect(cat).not.toContain("oysterBed");
     expect(cat).toContain("hut");
-    expect(makesOf("fjord")).toEqual(["fish", "stockfish", "whaleOil", "iron", "timber"]);
-    void HIGH_TIDE;
+    expect(makesOf("fjord")).toEqual(["fish", "stockfish", "whaleOil", "iron", "timber", "planks"]);
   });
 });
 

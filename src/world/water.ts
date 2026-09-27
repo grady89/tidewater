@@ -10,13 +10,14 @@ export const FOG_NEAR = 45, FOG_FAR = 140;
 /** Every uniform the water shader takes (the World builds its own materials from the same list). */
 export const WATER_UNIFORMS = ["world", "worldViewProjection", "time", "sunDir", "sunColor", "skyColor", "fogColor", "camPos", "dusk",
   "waveAmp", "waveDir", "waveFront", "waveHeight", "waveWidth", "reflectMix", "caustics", "frame", "fogNear", "fogFar",
-  "shallow", "mid", "deep", "lagoonTint", "lagoonMix", "depthScale"];
+  "shallow", "mid", "deep", "lagoonTint", "lagoonMix", "depthScale", "ice"];
 
 /** The biome's look on a water material: the three tints, the lagoon, the depth scale. */
 export function applyWaterLook(material: ShaderMaterial, look: BiomeLook, depthScale = 1): void {
   const c = (h: string) => { const k = Color3.FromHexString(h); return new Vector3(k.r, k.g, k.b); };
   material.setVector3("shallow", c(look.water.shallow)).setVector3("mid", c(look.water.mid)).setVector3("deep", c(look.water.deep))
     .setVector3("lagoonTint", c(look.lagoon.tint)).setFloat("lagoonMix", look.lagoon.mix).setFloat("depthScale", depthScale);
+  material.setFloat("ice", 0);
 }
 
 export interface Water {
@@ -28,6 +29,8 @@ export interface Water {
   setSwell(amp: number): void;
   /** The biome's look: water tints, the lagoon, the depth scale. */
   setLook(look: BiomeLook, depthScale?: number): void;
+  /** Sea ice 0..1 (the Fjord's ice cycles): whitens and stills the surface. */
+  setIce(ice: number): void;
   /** The tsunami crest: direction, front position along it, height (0 = none), width. */
   setCrest(dir: { x: number; z: number }, front: number, height: number, width: number): void;
   /** Planar reflections (a second render of the scene per frame): the quality toggle. */
@@ -95,6 +98,7 @@ export function createWater(scene: Scene, heightTex: RawTexture): Water {
     },
     setSwell(amp) { material.setFloat("waveAmp", amp); },
     setLook(look, depthScale = 1) { applyWaterLook(material, look, depthScale); },
+    setIce(ice) { material.setFloat("ice", ice); },
     setCrest(dir, front, height, width) {
       material.setVector2("waveDir", new Vector2(dir.x, dir.z)).setFloat("waveFront", front).setFloat("waveHeight", height).setFloat("waveWidth", width);
     },

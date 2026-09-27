@@ -7,10 +7,13 @@ import {
   LUMBER_TREES_PER_CYCLE, MARKET_SELL_PER_CYCLE, MAX_LEVEL, NET_LOFT_BONUS, NET_LOFT_RADIUS, OYSTER_YIELD,
   POLLUTION_HAPPY_SCALE, FOOD_PRICE, PURCHASABLE_BOATS, SAWMILL_RATE, SHIPYARD_BOAT_COST,
   SHIPYARD_CYCLES, SMOKEHOUSE_RATE, SPRING_LOW_BONUS, TAX_PER_RESIDENT, TIMBER_PER_TREE, TOOLWORKS_BONUS, TOOLWORKS_IRON_PER_CYCLE, TOOLWORKS_RADIUS, WAREHOUSE_CAP,
+  ICE_HOUSE_CAP_FACTOR, IRON_PER_CYCLE, SALT_PER_STOCKFISH, STOCKFISH_RATE, STOCKFISH_UNSALTED, WHALE_MEAT_PER_CYCLE, WHALE_OIL_PER_CYCLE,
   WASTE_BACKLOG_PENALTY_MAX, WASTE_BACKLOG_PENALTY_PER_UNIT,
 } from "./balance";
 import { at } from "./fields";
 import { active, damageNear, fireSources, repairDamage, rollIgnitions } from "./fire";
+import { biomeFor } from "./biomes";
+import { whaleSeason } from "./biomes/fjord";
 import { consumeLuxury, eat, favouriteInStock, foodsInStock, foodTotal, levelAllowed } from "./food";
 import { goodsOfRole } from "./goods";
 import { REMOVE_REFUND, STILT_COST_PER_UNIT } from "./balance";
@@ -107,11 +110,12 @@ export function buyBoat(state: SimState, at: Building): boolean {
   return true;
 }
 
-/** Storage cap for a good: the base plus every warehouse. */
+/** Storage cap for a good: the base plus every warehouse; an ice house (Fjord) doubles the fish. */
 export function capFor(state: SimState, good: GoodKind): number {
-  let n = 0;
-  for (const b of buildingList(state)) if (b.kind === "warehouse") n++;
-  return CAP_BASE[good] + n * WAREHOUSE_CAP;
+  let n = 0, ice = false;
+  for (const b of buildingList(state)) { if (b.kind === "warehouse") n++; if (b.kind === "iceHouse" && active(b)) ice = true; }
+  const cap = CAP_BASE[good] + n * WAREHOUSE_CAP;
+  return good === "fish" && ice ? cap * ICE_HOUSE_CAP_FACTOR : cap;
 }
 
 /** Add up to the cap and return what fit. A stock already over its cap (grants, a lost warehouse) is left alone. */
@@ -123,7 +127,7 @@ export function addCapped(state: SimState, good: GoodKind, amount: number): numb
 
 /** Can boats moored here work this phase? Piers only at high water; docks whenever the water moves. */
 export function sailsIn(b: Building, phase: Phase): boolean {
-  if (b.kind === "pier") return phase === "high";
+  if (b.kind === "pier" || b.kind === "iceBreakerPier") return phase === "high";
   if (b.kind === "dock") return phase !== "slack";
   return false;
 }
@@ -150,8 +154,11 @@ export function toolBonus(state: SimState, at: Building): number {
 
 /** Shift start: boats leave for the richest ground in range, low-water crews walk out. */
 export function shiftStart(state: SimState, grid: Grid, phase: Phase): void {
+  // A frozen sea (the Fjord's ice cycles) keeps every boat in except those at an ice-breaker pier.
+  const frozen = biomeFor(state).frozen?.(state) ?? false;
   for (const b of buildingList(state)) {
     if (!active(b)) continue;
+    if (frozen && b.kind !== "iceBreakerPier") continue;
     if (isHarbour(b) && b.boats > 0 && sailsIn(b, phase) && staffing(b) > 0) {
       b.ground = chooseGround(grid, b, state.fields.fish);
       b.atSea = b.ground !== null;
@@ -215,6 +222,26 @@ function produce(state: SimState, grid: Grid, buildings: Building[]): void {
         b.output = addCapped(state, "smoked", fish * toolBonus(state, b));
         break;
       }
+      // Fjord (BIOMES.md §3.3)
+      case "stockfishRacks": {
+        const fish = Math.min(r.fish, STOCKFISH_RATE * s);
+        const saltNeed = fish * SALT_PER_STOCKFISH;
+        const salt = Math.min(r.salt, saltNeed);
+        const salted = saltNeed > 0 ? salt / saltNeed : 0;
+        r.fish -= fish; r.salt -= salt;
+        b.output = addCapped(state, "stockfish", fish * (STOCKFISH_UNSALTED + (1 - STOCKFISH_UNSALTED) * salted) * toolBonus(state, b));
+        break;
+      }
+      case "whalingStation": {
+        if (!whaleSeason(state.tide.cycle) || b.boats === 0) { b.output = 0; break; }
+        b.output = addCapped(state, "whaleOil", WHALE_OIL_PER_CYCLE * s * toolBonus(state, b));
+        addCapped(state, "fish", WHALE_MEAT_PER_CYCLE * s);
+        break;
+      }
+      case "ironMine": {
+        b.output = addCapped(state, "iron", IRON_PER_CYCLE * s * toolBonus(state, b));
+        break;
+      }
       case "shipyard": {
         const berth = buildings.filter(h => isHarbour(h) && freeSlots(h) > 0)
           .sort((x, y) => dist(x, b) - dist(y, b) || x.id - y.id)[0];
@@ -247,8 +274,9 @@ export function homeHappiness(state: SimState, home: Building, fed: number, jobs
   const injury = home.shock > 0 || home.injured > 0 ? HAPPY.injury : 0;
   const damage = home.damaged || damageNear(grid, c, DAMAGE_GRIEF_RADIUS) ? HAPPY.damage : 0;
   const favourite = favouriteInStock(state) ? HAPPY.favourite : 0;
+  const biome = biomeFor(state).happiness?.(state) ?? 0;
   const h = HAPPY.base + HAPPY.fed * fed + HAPPY.jobs * jobs + HAPPY.water * at(cov.water, c) + HAPPY.leisure * at(cov.leisure, c)
-    + HAPPY.night * at(cov.night, c) + favourite - HAPPY.pollution * foul - backlog - injury - damage;
+    + HAPPY.night * at(cov.night, c) + favourite + biome - HAPPY.pollution * foul - backlog - injury - damage;
   return Math.max(0, Math.min(1, h));
 }
 const DAMAGE_GRIEF_RADIUS = 3;

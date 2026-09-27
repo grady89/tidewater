@@ -18,6 +18,8 @@ const CRAB_REACH = 4;
 const CRAB_BOUT = 3.2, CRAB_MOVE = 0.35;
 
 interface CrabSite { x: number; z: number; h: number; phase: number }
+interface ShoreSite { x: number; z: number; h: number; yaw: number; phase: number }
+const SEAL_SITES = 10, PUFFIN_SITES = 14, SHORE_REACH = 6, WHALES = 3;
 
 const PALETTE_BEAK = "#ffb859";
 
@@ -26,6 +28,20 @@ export class Wildlife {
   private readonly wingL: Mesh;
   private readonly wingR: Mesh;
   private readonly crabs: Mesh;
+  private readonly seals: Mesh;
+  private readonly puffins: Mesh;
+  private readonly whales: Mesh;
+  private readonly spouts: Mesh;
+  private sealMatrices = new Float32Array(SEAL_SITES * 16);
+  private puffinMatrices = new Float32Array(PUFFIN_SITES * 16);
+  private whaleMatrices = new Float32Array(WHALES * 16);
+  private spoutMatrices = new Float32Array(WHALES * 16);
+  private sealSites: ShoreSite[] = [];
+  private puffinSites: ShoreSite[] = [];
+  private shoreKey = "";
+  sealCount = 0;
+  puffinCount = 0;
+  whaleCount = 0;
   private gullMatrices = new Float32Array(MAX_GULLS * 16);
   private wingLMatrices = new Float32Array(MAX_GULLS * 16);
   private wingRMatrices = new Float32Array(MAX_GULLS * 16);
@@ -100,7 +116,142 @@ export class Wildlife {
     }
     this.crabs = mergeFlat("crabs", crabParts, scene);
     for (const m of [this.gulls, this.crabs]) { m.isPickable = false; m.alwaysSelectAsActiveMesh = true; m.setEnabled(false); }
+    // A seal: a tapered grey-brown body, a round head, two hind flippers; it lies on its belly on the shingle.
+    const sealBody = MeshBuilder.CreateSphere("sb", { diameter: 0.5, segments: 4 }, scene);
+    sealBody.scaling.set(1.5, 0.5, 0.8);
+    sealBody.position.y = 0.11;
+    const sealHead = MeshBuilder.CreateSphere("sh", { diameter: 0.22, segments: 4 }, scene);
+    sealHead.position.set(0.36, 0.2, 0);
+    const sealParts = [tint(sealBody, "#6b6a66"), tint(sealHead, "#7a756c")];
+    for (const side of [-1, 1]) {
+      const flipper = MeshBuilder.CreateBox("sf", { width: 0.16, height: 0.03, depth: 0.1 }, scene);
+      flipper.position.set(-0.4, 0.05, side * 0.08);
+      flipper.rotation.y = side * 0.4;
+      sealParts.push(tint(flipper, "#5d5854"));
+    }
+    this.seals = mergeFlat("seals", sealParts, scene);
+    // A puffin: a black back, a white front, an orange beak, standing upright on orange feet.
+    const pBody = MeshBuilder.CreateSphere("pb", { diameter: 0.16, segments: 4 }, scene);
+    pBody.scaling.set(0.8, 1.2, 0.8);
+    pBody.position.y = 0.11;
+    const pFront = MeshBuilder.CreateSphere("pf", { diameter: 0.12, segments: 4 }, scene);
+    pFront.scaling.set(0.6, 1.0, 0.7);
+    pFront.position.set(0.045, 0.1, 0);
+    const pBeak = MeshBuilder.CreateCylinder("pk", { diameterTop: 0, diameterBottom: 0.05, height: 0.07, tessellation: 4 }, scene);
+    pBeak.rotation.z = -Math.PI / 2;
+    pBeak.position.set(0.1, 0.17, 0);
+    const puffinParts = [tint(pBody, "#2b2b2b"), tint(pFront, "#f2ece0"), tint(pBeak, "#e0705a")];
+    for (const side of [-1, 1]) {
+      const foot = MeshBuilder.CreateBox("pft", { width: 0.05, height: 0.015, depth: 0.03 }, scene);
+      foot.position.set(0.02, 0.008, side * 0.03);
+      puffinParts.push(tint(foot, "#e0705a"));
+    }
+    this.puffins = mergeFlat("puffins", puffinParts, scene);
+    // A whale's back: a long dark hump with a small fin; the spout a pale cone.
+    const back = MeshBuilder.CreateSphere("wb", { diameter: 1.0, segments: 5 }, scene);
+    back.scaling.set(2.4, 0.5, 0.9);
+    const fin = MeshBuilder.CreateCylinder("wfn", { diameterTop: 0, diameterBottom: 0.3, height: 0.3, tessellation: 3 }, scene);
+    fin.scaling.set(1, 1, 0.3);
+    fin.position.set(-0.4, 0.3, 0);
+    this.whales = mergeFlat("whales", [tint(back, "#2b3a45"), tint(fin, "#2b3a45")], scene);
+    const spout = MeshBuilder.CreateCylinder("ws", { diameterTop: 0.5, diameterBottom: 0.06, height: 1.0, tessellation: 5 }, scene);
+    spout.position.y = 0.5;
+    this.spouts = mergeFlat("spouts", [tint(spout, "#e6eef2")], scene);
+    for (const m of [this.seals, this.puffins, this.whales, this.spouts]) { m.isPickable = false; m.alwaysSelectAsActiveMesh = true; m.setEnabled(false); }
   }
+
+  // ---------- the Fjord's fauna (BIOMES.md §3.3): seals on the shingle, whale spouts in season, puffins on the cliffs ----------
+
+  /** Seeded beach cells near the town for the seals, and high cells against the water for the puffins. */
+  private pickShoreSites(state: SimState): void {
+    const ids = Object.keys(state.buildings);
+    const key = ids.length + ":" + ids[ids.length - 1] + ":" + this.grid.terrainVersion;
+    if (key === this.shoreKey) return;
+    this.shoreKey = key;
+    const beach = new Set<number>(), cliff = new Set<number>();
+    for (const b of Object.values(state.buildings)) for (const c of b.cells) {
+      for (let di = -SHORE_REACH; di <= SHORE_REACH; di++) for (let dj = -SHORE_REACH; dj <= SHORE_REACH; dj++) {
+        const i = c.i + di, j = c.j + dj;
+        if (!inBounds(i, j) || this.grid.buildingAt({ i, j })) continue;
+        const k = cellIndex(i, j);
+        const h = this.grid.heights[k];
+        if (this.grid.beach[k]) beach.add(k);
+        else if (h > this.grid.tides.hi + 0.8 && h < 3.5 && this.grid.neighbors({ i, j }).some(n => this.grid.water[cellIndex(n.i, n.j)])) cliff.add(k);
+      }
+    }
+    let seed = 23;
+    const rnd = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
+    const pick = (set: Set<number>, n: number): ShoreSite[] => {
+      const cells = [...set].sort((a, b) => a - b);
+      for (let k = cells.length - 1; k > 0; k--) { const r = Math.floor(rnd() * (k + 1)); [cells[k], cells[r]] = [cells[r], cells[k]]; }
+      return cells.slice(0, n).map(k => {
+        const x = Math.floor(k / 64) - HALF + 0.25 + rnd() * 0.5, z = (k % 64) - HALF + 0.25 + rnd() * 0.5;
+        return { x, z, h: groundHeight(x, z), yaw: rnd() * 6.28, phase: rnd() * 6.28 };
+      });
+    };
+    this.sealSites = pick(beach, SEAL_SITES);
+    this.puffinSites = pick(cliff, PUFFIN_SITES);
+  }
+
+  private syncSeals(state: SimState, viewTime: number): void {
+    if (!this.fauna.has("seals")) { this.sealCount = 0; this.seals.setEnabled(false); return; }
+    this.pickShoreSites(state);
+    let n = 0;
+    for (const s of this.sealSites) {
+      // Hauled out while the water is off the shingle: they leave when the tide comes up over the site.
+      const exposed = (s.h - state.tide.level) / 0.15;
+      if (exposed <= 0) continue;
+      const sc = Math.min(1, exposed);
+      const lift = 0.06 * Math.max(0, Math.sin(viewTime * 0.6 + s.phase)); // the head comes up now and then
+      Matrix.Compose(new Vector3(sc, sc, sc), Quaternion.FromEulerAngles(-lift, s.yaw, 0), new Vector3(s.x, s.h, s.z)).copyToArray(this.sealMatrices, n++ * 16);
+    }
+    this.sealCount = n;
+    if (n === 0) { this.seals.setEnabled(false); return; }
+    this.seals.setEnabled(true);
+    this.seals.thinInstanceSetBuffer("matrix", this.sealMatrices.subarray(0, n * 16), 16, false);
+  }
+
+  private syncPuffins(state: SimState, viewTime: number): void {
+    if (!this.fauna.has("puffins")) { this.puffinCount = 0; this.puffins.setEnabled(false); return; }
+    this.pickShoreSites(state);
+    let n = 0;
+    for (const s of this.puffinSites) {
+      const bob = 0.01 * Math.sin(viewTime * 3 + s.phase);
+      Matrix.Compose(new Vector3(1, 1, 1), Quaternion.FromEulerAngles(0, s.yaw + 0.3 * Math.sin(viewTime * 0.4 + s.phase), 0), new Vector3(s.x, s.h + bob, s.z)).copyToArray(this.puffinMatrices, n++ * 16);
+    }
+    this.puffinCount = n;
+    if (n === 0) { this.puffins.setEnabled(false); return; }
+    this.puffins.setEnabled(true);
+    this.puffins.thinInstanceSetBuffer("matrix", this.puffinMatrices.subarray(0, n * 16), 16, false);
+  }
+
+  /** Whales cruise the deep water in season, surfacing on a slow cycle; a spout rises for a moment each time. */
+  private syncWhales(state: SimState, viewTime: number): void {
+    const inSeason = this.fauna.has("whales") && (state.biomeState.whaleSeason ?? 0) > 0;
+    if (!inSeason) { this.whaleCount = 0; this.whales.setEnabled(false); this.spouts.setEnabled(false); return; }
+    let n = 0, ns = 0;
+    const level = state.tide.level;
+    for (let k = 0; k < WHALES; k++) {
+      // A loop over the deepest water: a circle of cells off the mouth, each whale at its own phase.
+      const t = viewTime * 0.05 + k * 2.1;
+      const cx = Math.cos(t) * 9, cz = 22 + Math.sin(t) * 5;
+      const gx = Math.floor(cx), gz = Math.floor(cz);
+      if (!inBounds(gx, gz) || this.grid.heights[cellIndex(gx, gz)] > -2.0) continue;
+      const surface = Math.sin(viewTime * 0.35 + k * 1.7);
+      if (surface < 0.2) continue;
+      const up = (surface - 0.2) / 0.8;
+      const yaw = Math.atan2(-Math.sin(t) * 9, Math.cos(t) * 5);
+      Matrix.Compose(new Vector3(1, 1, 1), Quaternion.FromEulerAngles(0, yaw, 0), new Vector3(cx, level - 0.35 + 0.4 * up, cz)).copyToArray(this.whaleMatrices, n++ * 16);
+      if (up > 0.6) {
+        const s = (up - 0.6) / 0.4;
+        Matrix.Compose(new Vector3(0.6 + 0.6 * s, 0.6 + 1.2 * s, 0.6 + 0.6 * s), Quaternion.Identity(), new Vector3(cx, level + 0.1, cz)).copyToArray(this.spoutMatrices, ns++ * 16);
+      }
+    }
+    this.whaleCount = n;
+    if (n === 0) this.whales.setEnabled(false); else { this.whales.setEnabled(true); this.whales.thinInstanceSetBuffer("matrix", this.whaleMatrices.subarray(0, n * 16), 16, false); }
+    if (ns === 0) this.spouts.setEnabled(false); else { this.spouts.setEnabled(true); this.spouts.thinInstanceSetBuffer("matrix", this.spoutMatrices.subarray(0, ns * 16), 16, false); }
+  }
+
 
   /** Seeded crab sites: unbuilt flat cells within reach of the town, re-picked when the building set changes. */
   private pickSites(state: SimState): void {
@@ -195,5 +346,8 @@ export class Wildlife {
   sync(state: SimState, viewTime: number): void {
     this.syncGulls(state, viewTime);
     this.syncCrabs(state, viewTime);
+    this.syncSeals(state, viewTime);
+    this.syncPuffins(state, viewTime);
+    this.syncWhales(state, viewTime);
   }
 }

@@ -12,7 +12,8 @@ export type BuildingKind =
   | "clinic" | "lifeguard" | "sharkNet"
   | "harbor" | "inn" | "lighthouse" | "fireWatch"
   | "breakwater" | "seaWall"
-  | "toolworks";
+  | "toolworks"
+  | "stockfishRacks" | "whalingStation" | "ironMine" | "iceHouse" | "iceBreakerPier";
 
 /** Service coverage layers; each building that provides one writes its staffed fraction within `radius`. */
 export type ServiceKind = "water" | "leisure" | "night" | "treatment" | "lifeguard" | "firewatch";
@@ -89,6 +90,12 @@ export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
   netLoft: { name: "Net loft", category: "Production", w: 1, d: 1, cls: "flat", cost: { money: 90 }, workers: 0, residents: 0, upkeep: 0.5, floor: "stilts", network: "leaf", desc: "+15% catch for boats within 8" },
   warehouse: { name: "Warehouse", category: "Production", w: 2, d: 2, cls: "flat", cost: { money: 120 }, workers: 0, residents: 0, upkeep: 1, floor: "stilts", network: "leaf", desc: "+100 storage for every good" },
   toolworks: { name: "Toolworks", category: "Production", w: 2, d: 2, cls: "flatOrHigh", cost: { money: 220, planks: 10 }, workers: 3, residents: 0, upkeep: 2, floor: "ground", network: "leaf", desc: "Burns a little iron: +20% output for producers within 8" },
+  // Fjord (BIOMES.md §3.3)
+  stockfishRacks: { name: "Stockfish racks", category: "Production", w: 2, d: 1, cls: "flat", cost: { money: 110 }, workers: 2, residents: 0, upkeep: 1, floor: "stilts", network: "leaf", desc: "Fish + salt → stockfish; plain dried fish at half value without salt" },
+  whalingStation: { name: "Whaling station", category: "Sea", w: 3, d: 2, cls: "edge", cost: { money: 400, planks: 30 }, workers: 6, residents: 0, upkeep: 4, floor: 1.0, network: "leaf", slots: 1, desc: "Whale oil and meat in whale season; needs a boat" },
+  ironMine: { name: "Iron mine", category: "Production", w: 2, d: 2, cls: "high", cost: { money: 260 }, workers: 4, residents: 0, upkeep: 3, floor: "ground", network: "leaf", desc: "Iron from the ridge; fire risk" },
+  iceHouse: { name: "Ice house", category: "Production", w: 1, d: 1, cls: "flat", cost: { money: 90 }, workers: 0, residents: 0, upkeep: 0.5, floor: "stilts", network: "leaf", desc: "Keeps fish from spoiling: doubles the fish cap" },
+  iceBreakerPier: { name: "Ice-breaker pier", category: "Sea", w: 1, d: 2, cls: "edge", cost: { money: 300, planks: 20 }, workers: 0, residents: 0, upkeep: 4, floor: 1.0, network: "root", slots: 2, desc: "2 boats; keeps sailing through the sea ice" },
   outfall: { name: "Sewage outfall", category: "Services", w: 1, d: 1, cls: "edge", cost: { money: 40 }, workers: 0, residents: 0, upkeep: 0.5, floor: 1.0, network: "leaf", desc: "Dumps the town's waste into the sea; the tide carries it" },
   treatmentPlant: { name: "Treatment plant", category: "Services", w: 2, d: 2, cls: "flatOrHigh", cost: { money: 350 }, workers: 4, residents: 0, upkeep: 3, floor: "ground", network: "leaf", service: { kind: "treatment", radius: 12 }, desc: "Neutralises waste from homes within 12" },
   well: { name: "Well", category: "Services", w: 1, d: 1, cls: "flat", cost: { money: 50 }, workers: 0, residents: 0, upkeep: 0.5, floor: "stilts", network: "leaf", service: { kind: "water", radius: 8 }, desc: "Drinking water for homes within 8" },
@@ -351,3 +358,31 @@ export const COMPANY_PRICE_SLOPE_UNITS = 120;
 export const COMPANY_PRICE_FLOOR = 0.5;
 /** Units per click of an order button. */
 export const ORDER_SIZE = PLANK_ORDER_SIZE;
+
+// Fjord (BIOMES.md §3.3)
+/** Fish a fully staffed rack dries per cycle, and the salt each unit takes. */
+export const STOCKFISH_RATE = 6;
+export const SALT_PER_STOCKFISH = 0.2;
+/** Without salt the racks make plain dried fish: this fraction of the stockfish. */
+export const STOCKFISH_UNSALTED = 0.5;
+/** Whale season: every WHALE_SEASON_EVERY cycles, for WHALE_SEASON_LENGTH cycles, from WHALE_SEASON_FIRST. */
+export const WHALE_SEASON_EVERY = 10;
+export const WHALE_SEASON_LENGTH = 3;
+export const WHALE_SEASON_FIRST = 4;
+/** A fully staffed, boated station's whale oil and meat (fish) per season cycle. */
+export const WHALE_OIL_PER_CYCLE = 6;
+export const WHALE_MEAT_PER_CYCLE = 10;
+export const IRON_PER_CYCLE = 3;
+export const FIRE_MINE = 4;
+/** The ice house doubles the fish cap. */
+export const ICE_HOUSE_CAP_FACTOR = 2;
+/** Sea ice: every ICE_EVERY-th cycle from ICE_FIRST the harbor freezes for one cycle. */
+export const ICE_EVERY = 6;
+export const ICE_FIRST = 6;
+/** After a storm, a building on the slope under trees is buried with this chance. */
+export const AVALANCHE_CHANCE = 0.5;
+export const AVALANCHE_MIN_HEIGHT = 2.0;
+export const AVALANCHE_RADIUS = 3;
+export const AVALANCHE_RISE = 1.0;
+/** Happiness on a clear night under the aurora (Fjord). */
+export const HAPPY_AURORA = 0.03;

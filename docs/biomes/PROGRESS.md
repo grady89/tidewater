@@ -25,7 +25,7 @@ never push `main`. Where BIOMES.md is silent, choose the simplest option and log
 - [DONE] 2d snow line, aurora, lagoon tint as new uniforms on existing shaders (additive only).
 
 ## Stage 3 — Fjord (§3.3)
-- [TODO] shaper, tide ×1.6, stockfish racks, whaling station + whale season, iron mine, ice house, sea ice + ice-breaker pier, avalanche, fauna, longboats, stave houses, hooded walkers, aurora, ambience, validation.
+- [DONE] shaper, tide ×1.6, stockfish racks, whaling station + whale season, iron mine, ice house, sea ice + ice-breaker pier, avalanche, fauna, longboats, stave houses, hooded walkers, aurora, ambience, validation.
 
 ## Stage 4 — Atoll (§3.2)
 - [TODO] ring shaper + lagoon + pass, tide ×0.6, dive platform + pearl house, coconut grove, reef nursery, cyclone, bleaching, turtle hatching, fauna, outriggers, round huts, straw hats, ambience, validation.
@@ -46,4 +46,4 @@ never push `main`. Where BIOMES.md is silent, choose the simplest option and log
 - [TODO] behind `LANES_ENABLED=false`.
 
 ## Last thing that worked
-- Stage 2 complete: 2c catalogFor/baseKinds in the registry, Grid.inCatalog in canPlace, HUD hides tools outside the catalog, placement blocker "Not built on this coast", starter hut + pier site for any biome/seed (test). Pushed.
+- Stage 3 (Fjord) complete: sim/biomes/fjord.ts (shaper, trees, validation, whale season, sea ice, avalanche, aurora), five kinds in the catalog + view factories, stave houses, longboats, hoods, pines, seals/whales/puffins, water ice uniform, horn; test/fjord.test.ts 7 checks; build+test+smoke green. Pushed.

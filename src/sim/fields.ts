@@ -2,7 +2,8 @@
 // decays, diffuses to its four neighbours, and is carried by the tide: shoreward (uphill) while it rises,
 // seaward (downhill) while it falls. Every spatial mechanic should reuse these helpers.
 import { SIZE } from "../config";
-import { cellIndex, Grid, HALF } from "./grid";
+import { cellIndex, HALF } from "./cells"; // not from grid.ts: this table is built at load, and grid.ts sits in the biome import cycle
+import type { Grid } from "./grid";
 import { Cell } from "./state";
 
 export const CELLS = SIZE * SIZE;

@@ -3,7 +3,7 @@
 import { SIZE } from "../config";
 import { BUILDINGS, ISLAND_MAX_REROLLS, ISLAND_MIN_FLATS, ISLAND_MIN_HARBOR_SITES, ISLAND_MIN_PIER_SITES, ISLAND_MIN_REGION, ISLAND_MIN_TREED } from "./balance";
 import { cellIndex as at, DIRS, HALF, inBounds } from "./cells";
-import { biomeOf, BiomeId } from "./biomes";
+import { biomeOf, BiomeId } from "./biomes/registry"; // the registry, not the index: the biome files import state.ts, which imports trees.ts, which needs island() at load
 import { cellClass, HeightFn } from "./heightfield";
 import { materialCode, MATERIALS } from "./materials";
 import { BASE_TIDES, Tides, tidesFor } from "./tides";

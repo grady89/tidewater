@@ -2,7 +2,7 @@
 // canvas, read-only over the sim.
 import { Fate, isBuildingTool, Tool } from "../build/placement";
 import { BOAT_COST, BUILDING_KINDS, BuildingKind, BUILDINGS, CATEGORIES, Category, CLEAR_TIMBER, LANDFILL_COST, LANTERN_COST, LIFT_STEP, LOAN_AMOUNT, LOAN_INTEREST, LOAN_REPAY_CYCLES, PLANK_ORDER_SIZE, PLANT_COST, TRADE_PLANK_PRICE } from "../sim/balance";
-import { BiomeId, catalogFor, makesOf } from "../sim/biomes";
+import { biomeFor, BiomeId, catalogFor, makesOf } from "../sim/biomes";
 import { canAfford } from "../sim/economy";
 import { GOOD_IDS, GOOD_ROLES, GoodId, GOODS, shownGoods } from "../sim/goods";
 import { Grid } from "../sim/grid";
@@ -309,7 +309,8 @@ export class Hud {
     this.loanButton.hidden = loan.owed > 0;
     const ts = state.tsunami.stage;
     const uneasy = ts === null && state.tsunami.due >= 0;
-    this.tideEvent.textContent = ts === "drawdown" ? "The sea is pulling back" : ts === "wave" ? "A wave is coming in" : ts === "settle" ? "The water returns" : uneasy ? "The sea is uneasy: a wave at the next peak" : state.storm.active ? "Storm: the boats stay in" : "";
+    const season = biomeFor(state).seasonLabel?.(state) ?? "";
+    this.tideEvent.textContent = ts === "drawdown" ? "The sea is pulling back" : ts === "wave" ? "A wave is coming in" : ts === "settle" ? "The water returns" : uneasy ? "The sea is uneasy: a wave at the next peak" : state.storm.active ? "Storm: the boats stay in" : season;
     this.tideEvent.classList.toggle("now", ts !== null || state.storm.active || uneasy);
 
     const lineText = s.line ? `${s.line.count} × ${TOOLS.find(t => t.tool === s.tool)?.label.toLowerCase() ?? s.tool} · ${s.line.cost}$ — release to lay them` : null;

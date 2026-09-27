@@ -52,6 +52,14 @@ export interface Biome {
   settle?(state: SimState, grid: Grid): void;
   /** Per-tick hook (ice, ash, bleaching). */
   tick?(state: SimState, grid: Grid, dt: number): void;
+  /** Sharks patrol this coast (false: no risk field, no incidents; the Fjord has orcas nobody meets). */
+  sharks?: boolean;
+  /** Is the sea frozen this cycle? Boats stay in (unless their pier breaks ice) and the ship skips the harbor. */
+  frozen?(state: SimState): boolean;
+  /** Happiness every home gets this settlement on top of the base formula (the aurora, the night market). */
+  happiness?(state: SimState): number;
+  /** A line for the tide clock while something seasonal is on (whale season, sea ice). */
+  seasonLabel?(state: SimState): string | null;
 }
 
 const REGISTRY = new Map<BiomeId, Biome>();

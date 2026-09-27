@@ -471,6 +471,7 @@ let acc = 0;
 let viewTime = 0;
 let lastLight: Lighting = MORNING;
 let stormMix = 0;
+let iceMix = 0;
 let lastFrameTime = 0;
 
 /** Everything the view derives from the ledger for one frame. */
@@ -487,7 +488,10 @@ function syncView(): void {
   water.setLighting(light);
   sky.setLighting(light);
   sky.setAurora(look.sky.aurora * (1 - stormMix), viewTime);
-  water.setSwell(1 + (STORM_WAVE_AMP - 1) * stormMix);
+  const iceTarget = (state.biomeState.seaIce ?? 0) > 0 ? 1 : 0;
+  iceMix += (iceTarget - iceMix) * Math.min(1, frameDt / 4);
+  water.setIce(iceMix);
+  water.setSwell((1 + (STORM_WAVE_AMP - 1) * stormMix) * (1 - 0.9 * iceMix));
   const ts = state.tsunami;
   water.setCrest(ts.dir, ts.stage === "wave" ? ts.front : -999, ts.stage === "wave" ? grid.tides.waveHeight : 0, WAVE_WIDTH);
   views.sync(state, light.lamp);

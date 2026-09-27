@@ -5,7 +5,7 @@
 import { SIM_TICK, TIDE_PERIOD } from "../config";
 import {
   BUILDINGS, FIRE_ADVECT_NONE, FIRE_BURN_SECONDS, FIRE_DECAY, FIRE_DIFFUSE, FIRE_IGNITE_CHANCE, FIRE_IGNITE_THRESHOLD,
-  FIRE_LANTERN, FIRE_SAVE_COVERAGE, FIRE_SMOKEHOUSE, FIRE_SPREAD_PER_S, FIRE_TAVERN, FIRE_WATCH_CUT, REPAIR_FRACTION,
+  FIRE_LANTERN, FIRE_MINE, FIRE_SAVE_COVERAGE, FIRE_SMOKEHOUSE, FIRE_SPREAD_PER_S, FIRE_TAVERN, FIRE_WATCH_CUT, REPAIR_FRACTION,
   REPAIR_TIMBER_PER_100,
 } from "./balance";
 import { at, flowFor, stepDrift } from "./fields";
@@ -24,6 +24,7 @@ export function fireSources(state: SimState): Emitter[] {
     let rate = 0;
     if (b.kind === "smokehouse" && b.workers > 0) rate = FIRE_SMOKEHOUSE;
     else if (b.kind === "tavern" && b.workers > 0) rate = FIRE_TAVERN;
+    else if (b.kind === "ironMine" && b.workers > 0) rate = FIRE_MINE;
     else if (b.lantern) rate = FIRE_LANTERN;
     if (rate > 0) for (const c of b.cells) out.push({ k: cellIndex(c.i, c.j), rate: rate / b.cells.length / TICKS_PER_CYCLE });
   }

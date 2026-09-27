@@ -6,7 +6,7 @@ import {
   COMPANY_FULL_PRICE_UNITS, COMPANY_PRICE_FLOOR, COMPANY_PRICE_SLOPE_UNITS, FOOD_PER_CYCLE, FOOD_RESERVE_CYCLES, IMMIGRANTS_PER_CYCLE, INN_CAPACITY,
   ORDER_SIZE, PLANK_ORDER_SIZE, TOURIST_BORED_FACTOR, TOURIST_SPEND, TOURISTS_PER_SHIP, TRADE_EVERY, TRADE_EVERY_LIGHTHOUSE, TRADE_PLANK_PRICE,
 } from "./balance";
-import { makesOf } from "./biomes";
+import { biomeFor, makesOf } from "./biomes";
 import { addCapped } from "./economy";
 import { GOOD_IDS, GoodId, GOODS } from "./goods";
 import { Grid } from "./grid";
@@ -117,6 +117,11 @@ export function settleTrade(state: SimState, grid: Grid): { trade: number; touri
     moveMoney(state, tourism, "tourism");
   }
 
+  // A frozen harbor (the Fjord's ice cycles) turns the ship back for a cycle.
+  if (state.tide.cycle >= t.nextVisit && biomeFor(state).frozen?.(state)) {
+    t.nextVisit = state.tide.cycle + 1;
+    notify(state, "The trade ship turned back from the ice");
+  }
   if (state.tide.cycle >= t.nextVisit) {
     t.shipCycle = state.tide.cycle;
     t.visits++;

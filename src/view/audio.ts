@@ -41,9 +41,11 @@ export class Audio {
   private windFilter: BiquadFilterNode | null = null;
   private rustleGain: GainNode | null = null;
   private ambience: Ambience = TIDEWATER_AMBIENCE;
-  /** Creaks and chirps played (checks). */
+  /** Creaks, chirps and horns played (checks). */
   creaks = 0;
   chirps = 0;
+  horns = 0;
+  private lastWhaleSeason = 0;
   /** The biome look's ambience parameters; applied every frame in sync. */
   setLook(look: BiomeLook): void { this.ambience = look.ambience; }
   /** Gull cries, hammer blows and bells played so far (smoke probes). */
@@ -242,6 +244,27 @@ export class Audio {
     this.hammers++;
   }
 
+  /** A low horn, two notes a fourth apart, for the whales' arrival. */
+  horn(): void {
+    if (!this.ctx || !this.master) return;
+    const ctx = this.ctx, t = ctx.currentTime;
+    for (const [f, start, len] of [[110, 0, 1.6], [146.8, 1.2, 2.2]] as [number, number, number][]) {
+      const o = ctx.createOscillator();
+      o.type = "triangle";
+      o.frequency.value = f;
+      const lp = ctx.createBiquadFilter();
+      lp.type = "lowpass"; lp.frequency.value = 500;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t + start);
+      g.gain.exponentialRampToValueAtTime(0.09, t + start + 0.25);
+      g.gain.setValueAtTime(0.09, t + start + len - 0.5);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + start + len);
+      o.connect(lp).connect(g).connect(this.master);
+      o.start(t + start); o.stop(t + start + len + 0.1);
+    }
+    this.horns++;
+  }
+
   /** Sea ice: a low groan that bends downward, with a grainy edge from a detuned partner. */
   creak(): void {
     if (!this.ctx || !this.master) return;
@@ -292,6 +315,10 @@ export class Audio {
     const t = this.ctx.currentTime;
     const water = Math.max(0, Math.min(1.2, tideNormalized(state.tide)));
     const amb = this.ambience;
+    // The whales' arrival is announced with a horn once per season.
+    const ws = state.biomeState.whaleSeason ?? 0;
+    if (ws > 0 && this.lastWhaleSeason === 0) this.horn();
+    this.lastWhaleSeason = ws;
     this.surfGain.gain.setTargetAtTime((0.04 + 0.08 * water + 0.25 * stormMix) * amb.surf, t, 0.3);
     // The biome voices: wind that gusts on a slow cycle, the palms hissing under it, ice creaking now and then,
     // small birds by day.

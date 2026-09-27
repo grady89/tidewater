@@ -331,6 +331,18 @@ export function starterTown(state: SimState, grid: Grid): { pier: Building; huts
   buyBoat(state, pier);
   buyBoat(state, pier);
   const walkways = layWalkways(state, grid, site, hut0.cells[0]);
+  // On a coast where the greedy walk stalls short of the hut (the Fjord's banks), finish with an L of walkways.
+  if (!grid.touchesWalkway(hut0.cells) && walkways.length) {
+    const last = walkways[walkways.length - 1], to = hut0.cells[0];
+    let c = { ...last };
+    while (c.i !== to.i || c.j !== to.j) {
+      if (c.i !== to.i) c = { i: c.i + Math.sign(to.i - c.i), j: c.j }; else c = { i: c.i, j: c.j + Math.sign(to.j - c.j) };
+      if (c.i === to.i && c.j === to.j) break;
+      if (grid.buildingAt(c)) continue;
+      const w = tryPlace(state, grid, "walkway", c) ?? tryPlace(state, grid, "raisedWalkway", c);
+      if (w) walkways.push(c);
+    }
+  }
   const huts = [hut0, ...placeByWalkway(state, grid, "hut", 2)];
   const market = placeByWalkway(state, grid, "market", 1)[0] ?? null;
   // The change from the 500$ buys the outfall, so waste doesn't pile up while the town grows.

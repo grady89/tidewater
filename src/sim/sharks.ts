@@ -7,6 +7,7 @@ import {
   BUILDINGS, CLINIC_HEAL_PER_CYCLE, INCIDENT_SCALE, INJURY_MEMORY, INJURY_NATURAL_CYCLES, INJURY_RADIUS, LIFEGUARD_CUT,
   NIGHT_RISK, SHARK_ADVECT, SHARK_DECAY, SHARK_DIFFUSE, SHARK_DOCK, SHARK_MARKET, SWIM_FRACTION, SWIM_RADIUS,
 } from "./balance";
+import { biomeFor } from "./biomes";
 import { isDaytime } from "./daylight";
 import { at, CELLS, flowFor, stepDrift } from "./fields";
 import { cellIndex, Grid, HALF } from "./grid";
@@ -33,6 +34,7 @@ export function sharkSources(state: SimState): { k: number; rate: number }[] {
 
 /** Every tick: emit, drift with the tide, keep to the water, and let the nets swallow what reaches them. */
 export function tickSharks(state: SimState, grid: Grid, dt: number, sources: { k: number; rate: number }[]): void {
+  if (biomeFor(state).sharks === false) return; // no sharks on this coast: the field stays at zero
   const f = state.fields.shark;
   for (const s of sources) f[s.k] += s.rate * (dt / SIM_TICK);
   stepDrift(f, flowFor(grid), dt, isRising(state.tide), SHARK_DECAY, SHARK_DIFFUSE, SHARK_ADVECT);
@@ -69,6 +71,7 @@ export function beachRisk(state: SimState, grid: Grid, c: Cell): number {
 
 /** Shift end at high water: every beach with swimmers rolls for an incident. */
 export function rollIncidents(state: SimState, grid: Grid): number {
+  if (biomeFor(state).sharks === false) return 0;
   let incidents = 0;
   const night = isDaytime(state.time) ? 1 : NIGHT_RISK;
   for (const s of state.swimmers) {

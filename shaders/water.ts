@@ -47,6 +47,7 @@ export const waterFS = `
     uniform vec3 shallow, mid, deep;          // the study's three tints, as uniforms (biomes)
     uniform vec3 lagoonTint; uniform float lagoonMix; // lagoon cells (material code 1 in the blue channel) pulled toward a tint
     uniform float depthScale;                 // the biome's tide multiplier: the depth bands follow the water line
+    uniform float ice;                        // sea ice (Fjord): the surface whitens and stills as it rises toward 1
     void main(){
       vec3 L = (frame * vec4(vW, 1.0)).xyz;
       vec2 uv = L.xz / ${SIZE}.0 + 0.5;
@@ -61,8 +62,10 @@ export const waterFS = `
       vec3 col = mix(shallow, mid, smoothstep(0.0, 0.9, bd));
       col = mix(col, deep, smoothstep(0.8, 3.2, bd));
       col = mix(col, lagoonTint, lagoonMix * step(abs(t.b*255.0 - 1.0), 0.5));
+      col = mix(col, vec3(0.88, 0.92, 0.94), ice * 0.85);
       col = mix(col, vec3(0.10,0.24,0.42), dusk*0.55);
       float alpha = mix(0.34, 0.92, smoothstep(0.0, 1.4, depth));
+      alpha = mix(alpha, 0.98, ice);
       // fresnel toward sky
       float fres = pow(1.0 - max(dot(n, V), 0.0), 3.0);
       vec2 ruv = vClip.xy / vClip.w * 0.5 + 0.5 + n.xz * 0.03;

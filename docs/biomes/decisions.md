@@ -64,3 +64,24 @@ Calls made where BIOMES.md is silent, or where the code's balance and BIOMES.md 
     same channel), `depthScale`; sky `aurora/auroraTime`. With the defaults every fragment computes what it did.
 15. **The World's miniatures read each sector's own look** (terrain and water uniforms per face, roofs from the
     sector's palette), so Stage 5's face tinting is already half done.
+16. **Fjord numbers not in BIOMES.md:** racks dry 6 fish a cycle at full staff, 0.2 salt per fish, unsalted output
+    ×0.5; whale season every 10 cycles from cycle 4 for 3 cycles, station 6 oil + 10 fish (the meat) a cycle
+    with a boat and full hands (its jobs are its own six plus the boat's crew: `jobsAt` now adds both for a kind
+    with `workers` and `slots`); iron mine 3 iron a cycle, fire rate 4 (between the tavern and the smokehouse);
+    ice house ×2 fish cap; sea ice every 6th cycle from cycle 6, one cycle, boats stay in except at an
+    ice-breaker pier (2 slots, 300$ + 20 planks, sails at high water like a pier) and the ship turns back for a
+    cycle; avalanche after a storm: each undamaged land building on ground ≥ 2.0 with a standing tree within 3
+    cells and ≥ 1.0 higher is buried with chance 0.5; aurora +0.03 happiness on every non-storm settlement.
+17. **Sharks per biome:** `Biome.sharks = false` (the Fjord) zeroes the risk field and skips incidents; shark nets
+    and the lifeguard are excluded from its catalog.
+18. **The Fjord shaper** (`fjordHeight`): a cross-section in |x| (channel floor −3.6 → bank shelf 0.6 → crest
+    5.8 → outer sea) swept along z, the channel filling to flats past the head at z ≈ −12, ledges pulsing along
+    the banks, crests and channel wandering with the seed, the mouth open at +z, the head's back climbing to a
+    col at the top edge. Tree sites 150 between 1.6 and 3.9. Validation on top of the base: ≥ 120 deep-enough
+    cells (the channel) and ≥ 40 cells above 4.0 (the ridges); thresholds flats 260, region 150, piers 6.
+19. **Per-biome counters live in `state.biomeState`** (a flat Record<string, number>, saved; old saves get {}):
+    whaleSeason, seaIce, avalanches. The view reads them for spouts, ice on the water and the horn.
+20. **Import-order traps:** `island.ts` reads the biome registry (`biomes/registry.ts`), never the index that
+    loads the biome files; `fields.ts` builds its neighbour table at load and so imports the lattice from
+    `cells.ts`, not from `grid.ts`, which sits in the biome import cycle; the view's looks are registered by
+    `view/biomes/index.ts` itself, not on their own import.

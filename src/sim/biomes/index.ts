@@ -5,3 +5,4 @@
 // The interface and the registry live in registry.ts; every biome file registers itself when imported here.
 export * from "./registry";
 import "./tidewater";
+import "./fjord";

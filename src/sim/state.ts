@@ -206,6 +206,8 @@ export interface SimState {
   last: CycleStats;
   /** Newest last; capped. */
   log: string[];
+  /** The biome's own counters (whale season, sea ice, …): a flat bag of numbers so every biome saves the same way. */
+  biomeState: Record<string, number>;
 }
 
 export function createState(seed = 1, islandSeed = 0, biome: BiomeId = "tidewater"): SimState {
@@ -222,7 +224,7 @@ export function createState(seed = 1, islandSeed = 0, biome: BiomeId = "tidewate
     buildings: {},
     nextId: 1,
     assignments: [],
-    trees: initialTrees(islandSeed),
+    trees: initialTrees(islandSeed, biome),
     extraTrees: [],
     landfill: [],
     loan: { owed: 0, perCycle: 0, taken: 0 },
@@ -243,6 +245,7 @@ export function createState(seed = 1, islandSeed = 0, biome: BiomeId = "tidewate
     happiness: 1,
     last: { cycle: 0, fishCaught: 0, fishSold: 0, shellfishSold: 0, income: 0, expenses: 0, immigrants: 0, tourism: 0, trade: 0 },
     log: [],
+    biomeState: {},
   };
 }
 

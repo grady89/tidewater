@@ -7,8 +7,8 @@ import { isleHeight, isleWeight } from "./isle";
 
 export type HeightFn = (x: number, z: number) => number;
 
-/** The main island's heightfield for one noise seed. Pure function of the seed. */
-export function islandHeight(seed: number): HeightFn {
+/** Seeded value noise and its fbm, the same functions islandHeight has always used, for the biomes' shapers. */
+export function noiseFor(seed: number): { vnoise: (x: number, z: number) => number; fbm: (x: number, z: number, oct: number, f0: number) => number } {
   const s = seed | 0;
   function hash(ix: number, iz: number): number {
     let n = Math.imul(ix, 374761393) + Math.imul(iz, 668265263) + Math.imul(s, 0x27d4eb2f);
@@ -28,6 +28,12 @@ export function islandHeight(seed: number): HeightFn {
     for (let i = 0; i < oct; i++) { s += vnoise(x * f + i * 17.3, z * f - i * 9.1) * amp; norm += amp; amp *= 0.5; f *= 2; }
     return s / norm;
   }
+  return { vnoise, fbm };
+}
+
+/** The main island's heightfield for one noise seed. Pure function of the seed. */
+export function islandHeight(seed: number): HeightFn {
+  const { fbm } = noiseFor(seed);
   return (x: number, z: number): number => {
     let e = (fbm(x + 40, z - 20, 5, 1 / 22) - 0.5) * 2.2;
     const r = Math.sqrt(x * x + z * z) / 32;

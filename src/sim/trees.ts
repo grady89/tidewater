@@ -2,6 +2,7 @@
 // per-site age in state.trees (1 = grown, 0 = just felled). Lumber camps fell grown trees nearby; felled trees
 // regrow over TREE_REGROW_CYCLES. The view scales each tree by its age.
 import { LUMBER_RADIUS, TREE_REGROW_CYCLES } from "./balance";
+import type { BiomeId } from "./biomes/registry";
 import { island } from "./island";
 import { Building, Cell, SimState } from "./state";
 
@@ -10,13 +11,13 @@ export interface TreeSite { x: number; z: number; s: number; cell: Cell }
 /** The original island's tree sites (seed 0), in a fixed order. Other islands: `island(seed).trees`. */
 export const TREE_SITES: readonly TreeSite[] = island(0).trees;
 
-export function initialTrees(islandSeed = 0): number[] {
-  return island(islandSeed).trees.map(() => 1);
+export function initialTrees(islandSeed = 0, biome: BiomeId = "tidewater"): number[] {
+  return island(islandSeed, biome).trees.map(() => 1);
 }
 
 /** Every tree site: the island's fixed ones, then any the player planted. Ages in state.trees line up. */
 export function treeSites(state: SimState): readonly TreeSite[] {
-  const fixed = island(state.world.seed).trees;
+  const fixed = island(state.world.seed, state.world.biome).trees;
   return state.extraTrees.length ? [...fixed, ...state.extraTrees] : fixed;
 }
 
