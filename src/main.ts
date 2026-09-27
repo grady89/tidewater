@@ -13,6 +13,7 @@ import { newGame } from "./sim/start";
 import { notify, SimState } from "./sim/state";
 import { advanceCycles, tick } from "./sim/tick";
 import { cycleFraction } from "./sim/tide";
+import { takeLoan } from "./sim/loan";
 import { orderPlanks } from "./sim/trade";
 import { Hud } from "./ui/hud";
 import { InfoPanel } from "./ui/infoPanel";
@@ -34,7 +35,7 @@ import { Trees } from "./view/trees";
 import { Walkers } from "./view/walkers";
 import { setGroundSampler } from "./view/ground";
 import { Wildlife } from "./view/wildlife";
-import { computeLighting, createLights, duskAt } from "./world/lighting";
+import { computeLighting, createLights, dayFraction, duskAt, Lighting, MORNING } from "./world/lighting";
 import { createSky } from "./world/sky";
 import { createTerrain } from "./world/terrain";
 import { createWater } from "./world/water";
@@ -97,7 +98,7 @@ const wildlife = new Wildlife(scene, grid);
 const ferry = new Ferry(scene, grid);
 const pierMarker = new PierMarker(scene, grid);
 const placement = new Placement(scene, camera, grid, canvas);
-const hud = new Hud(document.getElementById("hud")!, document.getElementById("resources")!, document.getElementById("notes")!, grid, tool => placement.setTool(tool), kind => overlays.show(kind), () => orderPlanks(state));
+const hud = new Hud(document.getElementById("hud")!, document.getElementById("resources")!, document.getElementById("notes")!, grid, tool => placement.setTool(tool), kind => overlays.show(kind), () => orderPlanks(state), () => takeLoan(state));
 const info = new InfoPanel(document.getElementById("info")!, grid);
 const tutorial = new Tutorial(document.getElementById("tutorial")!);
 const achievements = new AchievementPopup(document.getElementById("achievement")!);
@@ -166,6 +167,7 @@ window.addEventListener("keyup", e => cameraControl.keyUp(e.key));
 
 let acc = 0;
 let viewTime = 0;
+let lastLight: Lighting = MORNING;
 let stormMix = 0;
 let lastFrameTime = 0;
 
@@ -176,7 +178,8 @@ function syncView(): void {
   const target = state.storm.active ? 1 : 0;
   stormMix += (target - stormMix) * Math.min(1, frameDt / 3);
   // A storm drags the light toward the study's dusk palette; the tsunami crest rides the water shader.
-  const light = computeLighting(Math.max(duskAt(state.time), stormMix * 0.95));
+  const light = computeLighting(Math.max(duskAt(state.time), stormMix * 0.95), dayFraction(state.time));
+  lastLight = light;
   lights.apply(light);
   terrain.setLighting(light);
   water.setLighting(light);
@@ -205,7 +208,7 @@ function syncView(): void {
   markerLabel.update(pierMarker.cell ? api.screenOf(pierMarker.cell.i + 0.5, pierMarker.cell.j + 0.5, state.tide.level + 0.2) : null);
   achievements.update(state, viewTime);
   speedControls.update(speed, audio.muted, water.reflections);
-  audio.sync(state, stormMix);
+  audio.sync(state, stormMix, { gulls: wildlife.gullCount });
 }
 
 engine.runRenderLoop(() => {
@@ -322,9 +325,11 @@ const api = {
     ship: () => ship.pose,
     burning: () => effects.burning,
     dusk: () => duskAt(state.time),
+    sky: () => ({ day: dayFraction(state.time), sun: { x: lastLight.skySun.x, y: lastLight.skySun.y, z: lastLight.skySun.z }, moon: lastLight.moon, night: lastLight.night, lit: { x: lastLight.sunDir.x, y: lastLight.sunDir.y, z: lastLight.sunDir.z } }),
     stormMix: () => stormMix,
     drawCalls: () => scene.getActiveMeshes().length,
-    audio: () => ({ started: audio.started, state: audio.state, muted: audio.muted }),
+    audio: () => ({ started: audio.started, state: audio.state, muted: audio.muted, cries: audio.cries, hammers: audio.hammers }),
+    porters: () => ({ now: walkers.porters, spawned: walkers.portersSpawned }),
     reflections: () => water.reflections,
     chunks: () => views.chunkCount,
     caustics: () => water.caustics,
@@ -369,6 +374,11 @@ const api = {
   orderPlanks() {
     return orderPlanks(state);
   },
+  takeLoan() {
+    return takeLoan(state);
+  },
+  /** Play one gull cry (audio check). */
+  audioCry() { audio.cry(); },
   /** Set fire to the building at (i, j). */
   ignite(i: number, j: number) {
     const b = grid.buildingAt({ i, j });

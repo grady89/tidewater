@@ -1,7 +1,7 @@
 // The UI: resource bar, build menu by category, tide clock, last-cycle ledger, notifications. Plain DOM over the
 // canvas, read-only over the sim.
 import { Fate, Tool } from "../build/placement";
-import { BOAT_COST, BUILDING_KINDS, BuildingKind, BUILDINGS, CATEGORIES, Category, CLEAR_TIMBER, LANDFILL_COST, LANTERN_COST, LIFT_COST, LIFT_STEP, PLANK_ORDER_SIZE, PLANT_COST, TRADE_PLANK_PRICE } from "../sim/balance";
+import { BOAT_COST, BUILDING_KINDS, BuildingKind, BUILDINGS, CATEGORIES, Category, CLEAR_TIMBER, LANDFILL_COST, LANTERN_COST, LIFT_COST, LIFT_STEP, LOAN_AMOUNT, LOAN_INTEREST, LOAN_REPAY_CYCLES, PLANK_ORDER_SIZE, PLANT_COST, TRADE_PLANK_PRICE } from "../sim/balance";
 import { canAfford } from "../sim/economy";
 import { Grid } from "../sim/grid";
 import { population, SimState } from "../sim/state";
@@ -70,13 +70,15 @@ export class Hud {
   private readonly ledgerValue: HTMLElement;
   private readonly tradeStatus: HTMLElement;
   private readonly orderButton: HTMLButtonElement;
+  private readonly loanStatus: HTMLElement;
+  private readonly loanButton: HTMLButtonElement;
   private readonly notes: HTMLElement;
   private _category: Category = "Homes";
   private lastTool: Tool | null = null;
   private lastCycle = -1;
   private lastLogLen = -1;
 
-  constructor(root: HTMLElement, resources: HTMLElement, notes: HTMLElement, private readonly grid: Grid, private readonly onTool: (tool: Tool) => void, onOverlay: (kind: OverlayKind | null) => void, onOrder: () => void) {
+  constructor(root: HTMLElement, resources: HTMLElement, notes: HTMLElement, private readonly grid: Grid, private readonly onTool: (tool: Tool) => void, onOverlay: (kind: OverlayKind | null) => void, onOrder: () => void, onLoan: () => void = () => {}) {
     resources.innerHTML = RESOURCES.map(k => `<div class="res" data-res="${k}"><label>${k}</label><span>0</span></div>`).join("");
     for (const el of resources.querySelectorAll<HTMLElement>(".res")) this.res[el.dataset.res!] = el.querySelector("span")!;
     this.notes = notes;
@@ -109,6 +111,7 @@ export class Hud {
         <label></label>
         <div class="score-value">—</div>
         <div class="trade-row"><span class="trade-status"></span><button type="button" class="order">Order ${PLANK_ORDER_SIZE} planks · ${PLANK_ORDER_SIZE * TRADE_PLANK_PRICE}$</button></div>
+        <div class="trade-row loan-row"><span class="loan-status"></span><button type="button" class="order loan" title="${LOAN_AMOUNT}$ now, ${Math.round(LOAN_AMOUNT * (1 + LOAN_INTEREST))}$ back over ${LOAN_REPAY_CYCLES} tides">Borrow ${LOAN_AMOUNT}$</button></div>
       </div>`;
 
     const tabs = root.querySelector<HTMLElement>(".tabs")!;
@@ -157,6 +160,9 @@ export class Hud {
     this.tradeStatus = root.querySelector<HTMLElement>(".trade-status")!;
     this.orderButton = root.querySelector<HTMLButtonElement>(".order")!;
     this.orderButton.addEventListener("click", () => onOrder());
+    this.loanStatus = root.querySelector<HTMLElement>(".loan-status")!;
+    this.loanButton = root.querySelector<HTMLButtonElement>(".loan")!;
+    this.loanButton.addEventListener("click", () => onLoan());
     this.showCategory("Streets");
   }
 
@@ -264,6 +270,10 @@ export class Hud {
     this.tideShip.textContent = toShip < 0 ? "" : toShip === 0 ? "Trade ship in port" : `Trade ship in ${toShip} high tide${toShip > 1 ? "s" : ""}`;
     this.tradeStatus.textContent = state.trade.plankOrder > 0 ? `${state.trade.plankOrder} planks on order` : "";
     this.orderButton.hidden = toShip < 0;
+    const loan = state.loan;
+    const loanText = loan.owed > 0 ? `Loan: ${Math.ceil(loan.owed)}$ owed · ${Math.round(loan.perCycle)}$ a tide` : "";
+    if (this.loanStatus.textContent !== loanText) this.loanStatus.textContent = loanText;
+    this.loanButton.hidden = loan.owed > 0;
     const ts = state.tsunami.stage;
     this.tideEvent.textContent = ts === "drawdown" ? "The sea is pulling back" : ts === "wave" ? "A wave is coming in" : ts === "settle" ? "The water returns" : state.storm.active ? "Storm: the boats stay in" : "";
     this.tideEvent.classList.toggle("now", ts !== null || state.storm.active);

@@ -97,6 +97,11 @@ export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
   seaWall: { name: "Sea wall", category: "Sea", w: 1, d: 1, cls: "flat", cost: { money: 25, timber: 3 }, workers: 0, residents: 0, upkeep: 0.1, floor: "ground", network: "leaf", desc: "Per cell on the flats; shields what stands behind it from the wave" },
 };
 
+// Loans (one at a time): the lump sum, the interest on it, and how many settlements repay it.
+export const LOAN_AMOUNT = 300;
+export const LOAN_INTEREST = 0.2;
+export const LOAN_REPAY_CYCLES = 15;
+
 // Land tools
 /** Landfill raises a flat cell to this height: dry at every tide, still below the hill. */
 export const LANDFILL_HEIGHT = 0.9;
@@ -203,7 +208,7 @@ export const TAVERN_DRY_FACTOR = 0.5;
 
 export const BUILDING_KINDS = Object.keys(BUILDINGS) as BuildingKind[];
 
-export const STARTING_MONEY = 500;
+export const STARTING_MONEY = 650;
 export const STARTING_FISH = 10;
 
 // Boats

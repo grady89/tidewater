@@ -165,6 +165,8 @@ export interface SimState {
   extraTrees: TreeSite[];
   /** Cells raised to dry ground by landfill (cell indices). */
   landfill: number[];
+  /** The outstanding loan: what is still owed, the instalment per settlement, how many loans ever taken. */
+  loan: { owed: number; perCycle: number; taken: number };
   fields: Fields;
   /** Pollution sources for the current cycle: per-tick rates at cells (rebuilt at every settlement). */
   emitters: Emitter[];
@@ -212,6 +214,7 @@ export function createState(seed = 1): SimState {
     trees: initialTrees(),
     extraTrees: [],
     landfill: [],
+    loan: { owed: 0, perCycle: 0, taken: 0 },
     fields: { pollution: zeros(), fish: filled(FISH_CAP), coverage: emptyCoverage(), shark: zeros(), fire: zeros() },
     emitters: [],
     sharkEmitters: [],

@@ -22,7 +22,11 @@ interface Walker {
   /** Workers stay at the end of their walk (at work) until the shift ends; others go indoors and fade. */
   stay: boolean;
   seed: number;
+  /** Porters carry a basket of the catch from the harbour to the market. */
+  carry: boolean;
 }
+/** Porters per landing, at most. */
+const PORTERS_MAX = 4;
 
 /** People are a third of a cell tall, a little larger than a city builder's but readable from the default camera. */
 export const PERSON_SCALE = 0.62;
@@ -40,6 +44,10 @@ interface Loiterer {
 export class Walkers {
   private readonly mesh: Mesh;
   private readonly detail: Mesh;
+  private readonly basket: Mesh;
+  private readonly lastAtSea = new Map<number, boolean>();
+  /** Porters spawned so far (a smoke probe). */
+  portersSpawned = 0;
   private walkers: Walker[] = [];
   private loiterers: Loiterer[] = [];
   private lastPhase: Phase | null = null;
@@ -85,8 +93,44 @@ export class Walkers {
     hat.position.y = 0.56;
     fixedParts.push(tint(hat, "#e6d3a1"));
     this.detail = mergeFlat("walkerDetail", fixedParts, scene);
-    for (const m of [this.mesh, this.detail]) { m.isPickable = false; m.alwaysSelectAsActiveMesh = true; m.setEnabled(false); }
+    // The basket a porter carries in front, at hip height: a tub with a dark band and a few fish on top.
+    const tub = MeshBuilder.CreateCylinder("wk", { diameter: 0.17, diameterTop: 0.19, height: 0.12, tessellation: 6 }, scene);
+    tub.position.set(0, 0.2, 0.13);
+    const band = MeshBuilder.CreateCylinder("wkb", { diameter: 0.195, height: 0.025, tessellation: 6 }, scene);
+    band.position.set(0, 0.23, 0.13);
+    const catchTop = MeshBuilder.CreateSphere("wkf", { diameter: 0.14, segments: 3 }, scene);
+    catchTop.scaling.set(1, 0.35, 1);
+    catchTop.position.set(0, 0.265, 0.13);
+    this.basket = mergeFlat("baskets", [tint(tub, "#b9a377"), tint(band, "#5a4636"), tint(catchTop, "#5d6d7a")], scene);
+    for (const m of [this.mesh, this.detail, this.basket]) { m.isPickable = false; m.alwaysSelectAsActiveMesh = true; m.setEnabled(false); }
   }
+
+  /** The catch comes ashore: when a harbour's boats land, porters carry baskets from it to the market. */
+  private landings(state: SimState, now: number): void {
+    for (const h of Object.values(state.buildings)) {
+      if ((BUILDINGS[h.kind].slots ?? 0) === 0) continue;
+      const was = this.lastAtSea.get(h.id);
+      this.lastAtSea.set(h.id, h.atSea);
+      if (was !== true || h.atSea || h.boats === 0) continue;
+      const market = Object.values(state.buildings).find(b => b.kind === "market" && b.reached && !b.cut);
+      if (!market) continue;
+      const walk = this.route(h, market);
+      if (!walk || walk.length < 1) continue;
+      // Porters start on the deck itself: the harbour cell nearest the first step (a market right beside the
+      // pier gives a one-cell walk, which is still a walk).
+      const first = walk[0];
+      const on = h.cells.slice().sort((a, b) => Math.hypot(a.i + 0.5 - first.x, a.j + 0.5 - first.z) - Math.hypot(b.i + 0.5 - first.x, b.j + 0.5 - first.z))[0];
+      const path = [new Vector3(on.i + 0.5, h.floorY, on.j + 0.5), ...walk];
+      const n = Math.min(PORTERS_MAX, h.boats);
+      for (let k = 0; k < n; k++) {
+        const jitter = new Vector3((this.rand() - 0.5) * 0.3, 0, (this.rand() - 0.5) * 0.3);
+        this.walkers.push({ path: path.map(p => p.add(jitter)), t0: now + 0.5 + k * 0.9, duration: path.length / (SPEED * 0.8), color: Color4.FromHexString(COLORS[(h.id + k) % COLORS.length]), stay: false, seed: 0, carry: true });
+        this.portersSpawned++;
+      }
+    }
+  }
+
+  get porters(): number { return this.walkers.filter(w => w.carry).length; }
 
   get count(): number { return this.walkers.length; }
   get liveCount(): number { return this.walkers.length + this.loiterers.length; }
@@ -169,6 +213,7 @@ export class Walkers {
           color: Color4.FromHexString(COLORS[Math.floor(this.rand() * COLORS.length)]),
           stay: toWork,
           seed: this.rand() * 6.28,
+          carry: false,
         });
       }
     }
@@ -184,7 +229,7 @@ export class Walkers {
       const path = this.route(home, work);
       if (!path || path.length < 2) continue;
       const jitter = new Vector3((this.rand() - 0.5) * 0.4, 0, (this.rand() - 0.5) * 0.4);
-      this.walkers.push({ path: path.map(p => p.add(jitter)), t0: now + this.rand() * 4, duration: path.length / SPEED + 30, color: Color4.FromHexString(COLORS[Math.floor(this.rand() * COLORS.length)]), stay: false, seed: 0 });
+      this.walkers.push({ path: path.map(p => p.add(jitter)), t0: now + this.rand() * 4, duration: path.length / SPEED + 30, color: Color4.FromHexString(COLORS[Math.floor(this.rand() * COLORS.length)]), stay: false, seed: 0, carry: false });
       spawned++;
     }
     return spawned;
@@ -249,6 +294,7 @@ export class Walkers {
     }
     if (Math.floor(viewTime / 5) !== Math.floor(this.lastTime / 5)) this.refreshLoiterers(state);
     this.lastTime = viewTime;
+    this.landings(state, viewTime);
     this.walkers = this.walkers.filter(w => w.stay || viewTime < w.t0 + w.duration + FADE);
     const swimmers = this.swimmerPoses(state, viewTime);
 
@@ -256,9 +302,12 @@ export class Walkers {
     if (this.matrices.length !== n * 16) { this.matrices = new Float32Array(n * 16); this.colors = new Float32Array(n * 4); }
     const scale = new Vector3(1, 1, 1);
     let k = 0;
-    const put = (pos: Vector3, yaw: number, color: Color4, s = 1) => {
+    const baskets: number[] = [];
+    const put = (pos: Vector3, yaw: number, color: Color4, s = 1, carry = false) => {
       scale.set(s * PERSON_SCALE, s * PERSON_SCALE, s * PERSON_SCALE);
-      Matrix.Compose(scale, Quaternion.FromEulerAngles(0, yaw, 0), pos).copyToArray(this.matrices, k * 16);
+      const m = Matrix.Compose(scale, Quaternion.FromEulerAngles(0, yaw, 0), pos);
+      m.copyToArray(this.matrices, k * 16);
+      if (carry) m.copyToArray(baskets, baskets.length);
       this.colors[k * 4] = color.r; this.colors[k * 4 + 1] = color.g; this.colors[k * 4 + 2] = color.b; this.colors[k * 4 + 3] = 1;
       k++;
     };
@@ -282,7 +331,7 @@ export class Walkers {
         // Home: step inside — shrink away over FADE seconds.
         s = Math.max(0, 1 - (viewTime - (w.t0 + w.duration)) / FADE);
       }
-      put(pos, yaw, w.color, s);
+      put(pos, yaw, w.color, s, w.carry);
     }
     for (const l of this.loiterers) {
       // Loiterers stand, then walk a few steps to a new spot and stand again — never glide. Each bout has a
@@ -304,11 +353,14 @@ export class Walkers {
     this.mesh.thinInstanceSetBuffer("matrix", this.matrices, 16, false);
     this.mesh.thinInstanceSetBuffer("color", this.colors, 4, false);
     this.detail.thinInstanceSetBuffer("matrix", this.matrices, 16, false);
+    if (baskets.length) { this.basket.thinInstanceSetBuffer("matrix", new Float32Array(baskets), 16, false); this.basket.setEnabled(true); }
+    else this.basket.setEnabled(false);
   }
 
   clear(): void {
     this.walkers = [];
     this.loiterers = [];
+    this.lastAtSea.clear();
     this.lastPhase = null;
     this.mesh.setEnabled(false);
   }

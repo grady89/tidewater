@@ -1,11 +1,14 @@
 // Sim-only unit checks. Nothing here may pull in Babylon; the hygiene test enforces that for src/sim/**.
 import { describe, expect, it } from "vitest";
 import { HIGH_WATER_MARK, LOW_WATER_MARK, SPRING_HI, SPRING_LO, STILT_LENGTH, TIDE_HI, TIDE_LO, TIDE_PERIOD, WALKWAY_SNAP } from "../src/config";
-import { BEACH_MAX_HEIGHT, BOAT_COST, BOAT_MIN_RANGE, BOAT_RANGE, BUILDINGS, CAP_BASE, DRAWDOWN_LEVEL, DRAWDOWN_SECONDS, FIRE_BURN_SECONDS, FIRE_IGNITE_THRESHOLD, FISH_CAP, HAPPY, INJURY_NATURAL_CYCLES, LEVEL_UP_HAPPINESS, MAX_LEVEL, OYSTER_POLLUTION_KILL, CLEAR_TIMBER, LANDFILL_COST, LANDFILL_HEIGHT, LIFT_COST, LIFT_MAX, LIFT_STEP, PLANK_ORDER_SIZE, REMOVE_REFUND, STARTING_MONEY, TRADE_EVERY, TRADE_EVERY_LIGHTHOUSE, TREATMENT_RADIUS, TREE_REGROW_CYCLES, WAREHOUSE_CAP } from "../src/sim/balance";
+import { BEACH_MAX_HEIGHT, BOAT_COST, BOAT_MIN_RANGE, BOAT_RANGE, BUILDINGS, CAP_BASE, DRAWDOWN_LEVEL, DRAWDOWN_SECONDS, FIRE_BURN_SECONDS, FIRE_IGNITE_THRESHOLD, FISH_CAP, HAPPY, INJURY_NATURAL_CYCLES, LEVEL_UP_HAPPINESS, MAX_LEVEL, OYSTER_POLLUTION_KILL, CLEAR_TIMBER, LANDFILL_COST, LANDFILL_HEIGHT, LIFT_COST, LIFT_MAX, LIFT_STEP, LOAN_AMOUNT, LOAN_INTEREST, LOAN_REPAY_CYCLES, PLANK_ORDER_SIZE, REMOVE_REFUND, STARTING_MONEY, TRADE_EVERY, TRADE_EVERY_LIGHTHOUSE, TREATMENT_RADIUS, TREE_REGROW_CYCLES, WAREHOUSE_CAP } from "../src/sim/balance";
 import { ACHIEVEMENTS, checkAchievements } from "../src/sim/achievements";
 import { deserialize, serialize } from "../src/sim/save";
 import { DISTRICT_MIN, districtName, districtOf, districts } from "../src/sim/districts";
 import { addLandfill, clearBlocker, clearTree, landfillBlocker, plantBlocker, plantTree, treeAt } from "../src/sim/land";
+import { dayFraction, duskAt, isDaytime, moonVector, NOON_SUN, sunVector } from "../src/sim/daylight";
+import { canBorrow, loanInstalment, takeLoan } from "../src/sim/loan";
+import { DAY_CYCLES } from "../src/config";
 import { ISLE } from "../src/sim/isle";
 import { startCell, suggestPier } from "../src/sim/start";
 import { TREE_SITES } from "../src/sim/trees";
@@ -789,7 +792,8 @@ describe("second island (backlog 6)", () => {
     const isleFlat = { i: 22, j: 17 };
     expect(grid.classAt(isleFlat)).toBe("flat");
     expect(grid.canPlace("hut", [isleFlat])).toBe(false);
-    expect(placeEdge(state, grid, "pier", { i: 22, j: 22 })).toBeNull();
+    const stray = placeEdge(state, grid, "pier", { i: 22, j: 22 }); // the nearest legal site is off the isle
+    expect(stray === null || !grid.onIsle(stray.cells)).toBe(true);
     state.resources.money += 5000; state.resources.planks += 200;
     const harbor = placeHarbor(state, grid, t.pier.cells[0]);
     expect(harbor).not.toBeNull();
@@ -947,6 +951,56 @@ describe("placement (streets, docks, refunds)", () => {
     expect(grid.canPlace("pier", fp)).toBe(true);
     const hut = Object.values(state.buildings)[0];
     expect(Math.hypot(s!.i - hut.cells[0].i, s!.j - hut.cells[0].j)).toBeLessThan(12);
+  });
+});
+
+describe("day clock: sun and moon", () => {
+  it("the sun rises in the east, stands at the study's noon direction a quarter in, sets at half, and the moon is opposite", () => {
+    const at = (d: number) => sunVector(d);
+    expect(at(0).y).toBeCloseTo(0, 6);
+    expect(at(0.25).x).toBeCloseTo(NOON_SUN.x, 6); expect(at(0.25).y).toBeCloseTo(NOON_SUN.y, 6); expect(at(0.25).z).toBeCloseTo(NOON_SUN.z, 6);
+    expect(at(0.5).y).toBeCloseTo(0, 6);
+    expect(at(0.5).x).toBeCloseTo(-at(0).x, 6);
+    expect(at(0.75).y).toBeLessThan(-0.8);
+    const m = moonVector(0.75);
+    expect(m.y).toBeGreaterThan(0.8);
+    expect(m.x).toBeCloseTo(-at(0.75).x, 6);
+    // Unit length all the way round.
+    for (let d = 0; d < 1; d += 0.05) { const v = at(d); expect(Math.hypot(v.x, v.y, v.z)).toBeCloseTo(1, 5); }
+    // A day is DAY_CYCLES tides: three quarters of a day is midnight and the dusk curve agrees.
+    const midnight = 0.75 * DAY_CYCLES * TIDE_PERIOD;
+    expect(dayFraction(midnight)).toBeCloseTo(0.75, 6);
+    expect(duskAt(midnight)).toBeCloseTo(1, 6);
+    expect(isDaytime(midnight)).toBe(false);
+    expect(isDaytime(0.25 * DAY_CYCLES * TIDE_PERIOD)).toBe(true);
+  });
+});
+
+describe("loans", () => {
+  it("lends the lump sum once, takes an instalment each settlement, and is paid off with interest", () => {
+    const { state, grid } = town();
+    expect(canBorrow(state)).toBe(true);
+    const money = state.resources.money;
+    expect(takeLoan(state)).toBe(true);
+    expect(state.resources.money).toBe(money + LOAN_AMOUNT);
+    expect(state.loan.owed).toBeCloseTo(LOAN_AMOUNT * (1 + LOAN_INTEREST), 6);
+    expect(canBorrow(state)).toBe(false);
+    expect(takeLoan(state)).toBe(false);
+    expect(state.log[state.log.length - 1]).toMatch(/Borrowed/);
+    let paid = 0;
+    for (let c = 0; c < LOAN_REPAY_CYCLES; c++) {
+      const before = state.loan.owed;
+      advanceCycles(state, grid, 1);
+      paid += before - state.loan.owed;
+      if (c < LOAN_REPAY_CYCLES - 1) expect(state.last.expenses).toBeGreaterThanOrEqual(loanInstalment() - 1e-6);
+    }
+    expect(state.loan.owed).toBe(0);
+    expect(paid).toBeCloseTo(LOAN_AMOUNT * (1 + LOAN_INTEREST), 4);
+    expect(state.log.some(m => /paid off/.test(m))).toBe(true);
+    expect(canBorrow(state)).toBe(true);
+    const old = JSON.parse(serialize(state)) as Partial<SimState>;
+    delete old.loan;
+    expect(deserialize(JSON.stringify(old)).loan.owed).toBe(0);
   });
 });
 

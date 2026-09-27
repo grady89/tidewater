@@ -155,6 +155,19 @@ try {
   });
   assert(marker.marker !== null && marker.n === laid.n - 1, "a fresh town shows the pier suggestion; the starter town came back");
 
+  // Loans: the button under the ledger lends once; the HUD shows what is owed until it is repaid.
+  const loan = await page.evaluate(() => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    const before = api.sim.resources.money;
+    (document.querySelector("#hud .loan") as HTMLButtonElement).click();
+    api.tickSeconds(0.1);
+    const status = document.querySelector("#hud .loan-status")?.textContent ?? "";
+    const hidden = (document.querySelector("#hud .loan") as HTMLButtonElement).hidden;
+    return { gained: api.sim.resources.money - before, owed: api.sim.loan.owed, status, hidden };
+  });
+  console.log("Loan:", JSON.stringify(loan));
+  assert(loan.gained === 300 && loan.owed === 360 && /360\$ owed/.test(loan.status) && loan.hidden, "borrowing 300$ shows 360$ owed and hides the button");
+
   // Land tools: landfill raises the rendered ground and the cell's class; a tree can be planted on it.
   const land = await page.evaluate(() => {
     const api = (window as unknown as { __tidewater: Api }).__tidewater;
@@ -222,15 +235,20 @@ try {
     const api = (window as unknown as { __tidewater: Api }).__tidewater;
     api.setTide(null);
     const market = (Object.values(api.sim.buildings) as any[]).find(b => b.kind === "market");
+    const removed: { i: number; j: number; kind: string }[] = [];
     for (const c of market.cells) for (const n of api.grid.neighbors(c)) {
       const b = api.grid.buildingAt(n);
-      if (b && (b.kind === "walkway" || b.kind === "raisedWalkway")) api.remove(n.i, n.j);
+      if (b && (b.kind === "walkway" || b.kind === "raisedWalkway")) { removed.push({ i: n.i, j: n.j, kind: b.kind }); api.remove(n.i, n.j); }
     }
     api.advance(1);
-    return { reached: market.reached, sold: api.sim.last.fishSold, fish: api.sim.resources.fish };
+    const out = { reached: market.reached, sold: api.sim.last.fishSold, fish: api.sim.resources.fish, restored: 0 };
+    // Put the street back so the later milestones inherit a working market.
+    for (const r of removed) if (api.place(r.kind, r.i, r.j)) out.restored++;
+    return out;
   });
   console.log("M2 market cut:", JSON.stringify(cut));
   assert(!cut.reached && cut.sold === 0, "sales stop when the market is cut off");
+  assert(cut.restored > 0, "the market's walkway went back");
 
   // M3: low-water producers and a raised walkway go in; the 4th cycle is a spring tide.
   const m3 = await page.evaluate(async () => {
@@ -344,6 +362,25 @@ try {
   assert(low.crabs > 0, "crabs on the exposed flats at low water");
   await page.waitForTimeout(300);
   await page.screenshot({ path: "shots/m4-low.png" });
+  // The catch comes ashore: porters with baskets walked from the piers to the market when the boats landed.
+  const porters = await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.view.porters());
+  console.log("Porters:", JSON.stringify(porters));
+  assert(porters.spawned > 0, "porters carried the catch off the pier");
+
+  // Day clock: from a fresh town, three quarters of a day on it is midnight — the sun is under the horizon,
+  // the moon up, the stars out, and the scene lit by the moon; a quarter-day later it is noon again.
+  const night = await page.evaluate(() => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    api.tickSeconds(0.75 * 2 * 120 - (api.sim.time % (2 * 120)));
+    api.frameTown(26);
+    return api.view.sky();
+  });
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: "shots/night.png" });
+  const noon = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; api.tickSeconds(0.5 * 2 * 120); return api.view.sky(); });
+  console.log("Sky:", JSON.stringify({ night, noon }));
+  assert(night.sun.y < -0.7 && night.moon > 0.5 && night.night > 0.5 && night.lit.y > 0.5, "midnight: sun down, moon and stars up, moonlit");
+  assert(noon.sun.y > 0.8 && noon.moon === 0 && noon.night === 0 && noon.lit.y === noon.sun.y, "noon: sun high, no moon, sunlit");
 
   // M5: on a fresh town, the wood chain — camp on the hill, sawmill, shipyard — launches a boat within 12 cycles;
   // trees near the camp thin out.
@@ -732,6 +769,10 @@ try {
   assert(!audioBefore.started, "no audio context before the first gesture");
   assert(audioAfter.started && audioAfter.state === "running", "audio context runs after a click");
   assert(audioMuted.muted, "mute button mutes");
+  // The ambient layer may already have called a gull on its own (gulls are up); a manual cry adds exactly one.
+  const cried = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; const before = api.view.audio().cries; api.audioCry(); return { before, after: api.view.audio().cries }; });
+  console.log("Gull cries:", JSON.stringify(cried));
+  assert(cried.after === cried.before + 1, "a gull cry plays through the ambient layer");
 
   // Backlog 2: caustics brighten the shallows over a beach at high water and add nothing when off.
   const b2 = await page.evaluate(async () => {

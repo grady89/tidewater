@@ -585,6 +585,35 @@ What other builders do and what was taken from each:
   that grows like a felled tree regrows; **Clear tree** sets the age to −1 (never regrows) and pays a timber for
   a grown one. Lumber camps see planted trees. Saves from before get empty lists.
 
+### Sun and moon, ambient audio, porters, loans, seed money
+- The sun now arcs: `sim/daylight.ts › sunVector(d)` is a great circle from the east horizon at the day's start
+  (d = 0, dawn) through the study's late-morning direction at d = 0.25 (so noon *is* the settled look) to the
+  west horizon at d = 0.5, under the world at night; the moon is its antipode. `computeLighting(dusk, day)`
+  lights the scene from the sun while it is up and from the moon (cool, 0.35 intensity, rising with it) once the
+  sun is under; both are dim near the horizon so the hand-over is between two faint states. The sky shader
+  gained `moonDir/moon/night` and two additive terms — a moon disc with a halo, and a hashed star field that
+  fades toward the horizon; the sun disc uses the true sun, the terrain/water/props the current light. The
+  palette lerp (`dusk`) is unchanged for the sunset; past it a `night` factor (dusk > 0.6 and the sun under)
+  pulls the zenith, horizon and fog toward a deep blue-black and dims both ambients by 62 %, so midnight reads
+  as night (stars, lanterns, moonlit water) rather than a long sunset. All of that is uniform values; the
+  shader colour math is the study's. Consequence: a new town starts at dawn (orange light, sun on the horizon)
+  and reaches noon a minute in.
+- Ambient audio (`view/audio.ts`): a pad (root + fifth in detuned triangle pairs, a sine voice gliding through a
+  pentatonic set every 6–14 s, low-passed, breathing on a 0.07 Hz LFO, a little fuller at dusk and dawn, ducked
+  under a storm); gull cries (a sawtooth swept down through a band-pass with a 28 Hz tremolo, a second shorter
+  yelp 70 % of the time) every 4–14 s while gulls are up, more often with more of them, never at night; and
+  hammering (a filtered noise tick with a woody knock) twice a second while a shipyard has a boat on the ways.
+  Still no samples. `__tidewater.audioCry()` and `view.audio().cries/hammers` for checks.
+- Porters: when a harbour's boats land (atSea true → false, seen by the view), up to four figures carrying a
+  basket (a third thin-instanced mesh sharing the walkers' matrices) walk the street from the pier to the first
+  working market and go in. The catch is the game's income; now you see it arrive. `view.porters()`.
+- Loans (`sim/loan.ts`): one at a time, 300$ now, 360$ back at 24$ per settlement over 15 tides (Cities:
+  Skylines-style instalments rather than SimCity bonds; Anno and Banished have neither). The button sits under
+  the ledger; the HUD shows what is owed; the "stuck" hint offers it. It is the way out of the first playtest's
+  soft-lock without a reset, and priced so it is not free money.
+- Seed money 500 → 650$: the scripted starter town ended with ~4$ from 500, which is exact for a script and
+  cruel for a first player. 650 leaves ~150$ of slack for a wrong walkway or two; the tests use the constant.
+
 ### Chunk merge (the M12 perf pass, done for the mirror)
 - `view/buildingViews.ts` now merges every building in an 8×8-cell chunk into one mesh (`chunk:i,j`), rebuilt
   when any building in the chunk appears, leaves or changes its mesh signature. 300 buildings → 15 chunk meshes;

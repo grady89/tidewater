@@ -29,6 +29,7 @@ milestone and drops screenshots in `shots/`.
 | Place | click a cell — the ghost is green when it fits, amber if spring tides will flood it, red if every high tide will, grey when it can't go there (the line under the palette says why) |
 | Lay a run | with a walkway, path, raised walkway, breakwater, net or sea wall selected, drag and the run follows your pointer; the hint prices it |
 | Land | the Land tab: landfill raises a flat cell to dry ground (45$ + 4 timber), plant and clear trees on the hill |
+| Borrow | **Borrow 300$** under the ledger: 360$ back at 24$ a tide over 15 tides, one loan at a time |
 | Deck height | with a walkway selected, `]` raises the deck 0.2 m (+2$ a step), `[` lowers it; the ghost's colour tells you what the tide will do |
 | Inspect | click any building; Esc closes the panel |
 | Remove | right-click — half the money comes back |
@@ -58,6 +59,9 @@ milestone and drops screenshots in `shots/`.
   sharks to busy beaches; storms keep boats in and take the unsheltered ones; after cycle 20 the sea may pull back
   and return as a wave that damages everything low and unshielded. Breakwaters shelter harbours; sea walls shield
   the flats behind them; a lighthouse sees every boat home.
+- **A day is two tides.** The sun rises with the first, stands at noon a quarter-day in, sets at the second,
+  and the moon and stars take over; lanterns light at dusk. Boats trail their nets while they fish, porters
+  carry the catch from the pier to the market when the boats land, and a shipyard hammers while it builds.
 - **Districts** are clusters of three or more touching buildings; click anything to see its district's name and
   numbers. **The isle** off the south-east is locked until you build a harbor — then the ferry runs and it takes a
   pier and a town of its own. Milestones (first boat, fifty residents, first trade…) pop up as you reach them.

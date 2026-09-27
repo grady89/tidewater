@@ -83,7 +83,7 @@ export class Tutorial {
     const bs = Object.values(state.buildings);
     if (bs.some(b => b.kind === "pier" || b.kind === "dock" || b.kind === "harbor")) return null;
     if (state.resources.money >= BUILDINGS.pier.cost.money) return null;
-    return `No pier and not enough for one (${BUILDINGS.pier.cost.money}$). Right-click a building to remove it — half its cost comes back.`;
+    return `No pier and not enough for one (${BUILDINGS.pier.cost.money}$). Borrow (the button under the ledger), or right-click a building to remove it — half its cost comes back.`;
   }
 
   update(state: SimState): void {

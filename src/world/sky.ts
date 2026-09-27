@@ -12,7 +12,7 @@ export function createSky(scene: Scene): Sky {
   const dome = MeshBuilder.CreateSphere("sky", { diameter: 600, segments: 24, sideOrientation: Mesh.BACKSIDE }, scene);
   const material = new ShaderMaterial("sky", scene, { vertexSource: skyVS, fragmentSource: skyFS }, {
     attributes: ["position"],
-    uniforms: ["worldViewProjection", "zenith", "horizon", "sunDir", "sunColor", "dusk"],
+    uniforms: ["worldViewProjection", "zenith", "horizon", "sunDir", "sunColor", "dusk", "moonDir", "moon", "night"],
   });
   material.disableDepthWrite = true;
   material.backFaceCulling = false;
@@ -23,7 +23,8 @@ export function createSky(scene: Scene): Sky {
     mesh: dome,
     setLighting(l) {
       material.setVector3("zenith", l.zenith).setVector3("horizon", l.horizon)
-        .setVector3("sunDir", l.sunDir).setVector3("sunColor", l.sunColor).setFloat("dusk", l.k);
+        .setVector3("sunDir", l.skySun).setVector3("sunColor", l.sunColor).setFloat("dusk", l.k)
+        .setVector3("moonDir", l.moonDir).setFloat("moon", l.moon).setFloat("night", l.night);
     },
   };
   sky.setLighting(MORNING);

@@ -13,6 +13,7 @@ import {
 import { at } from "./fields";
 import { active, damageNear, fireSources, repairDamage, rollIgnitions } from "./fire";
 import { LIFT_COST, LIFT_MAX, REMOVE_REFUND } from "./balance";
+import { repayLoan } from "./loan";
 import { Grid } from "./grid";
 import { depleteGround, fishAt, pollutionAt, routeWaste, settleFields } from "./pollution";
 import { chooseGround } from "./sea";
@@ -283,6 +284,7 @@ export function settleCycle(state: SimState, grid: Grid): void {
 
   // Upkeep.
   for (const b of buildings) stats.expenses += BUILDINGS[b.kind].upkeep;
+  stats.expenses += repayLoan(state);
   r.money += stats.income - stats.expenses;
 
   // The trade ship and the tourists (they move money themselves; the stats just record it).
