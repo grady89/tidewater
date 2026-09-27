@@ -354,7 +354,7 @@ canvas.addEventListener("pointermove", e => {
   if (f !== null && f !== hoverCandidate) {
     hoverCandidate = f;
     clearTimeout(hoverTimer);
-    hoverTimer = window.setTimeout(() => { if (mode === "world" && hoverCandidate === f && !worldDown) worldUi.showCard(f, faceMeta(f)); }, 120);
+    hoverTimer = window.setTimeout(() => { if (mode === "world" && !transition && hoverCandidate === f && !worldDown) worldUi.showCard(f, faceMeta(f)); }, 120);
   }
   if (f === null) hoverCandidate = null;
 });

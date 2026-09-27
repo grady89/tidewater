@@ -118,7 +118,9 @@ export class World {
   private phase: "entering" | "idle" | "flying" | "away" = "idle";
   private entrance = 0;
   private lighting: Lighting = computeLighting(DUSK_MIN, 0.25);
-  private flightAnim: { from: Pose; to: Pose; t: number; seconds: number; done: () => void } | null = null;
+  /** Flights and the entrance run on the wall clock, so a tab that stalls or throttles its frames lands them on its next frame. */
+  private flightAnim: { from: Pose; to: Pose; start: number; seconds: number; done: () => void } | null = null;
+  private entranceStart = 0;
   private orbitPose: { alpha: number; beta: number; radius: number } | null = null;
   entranceDone = true;
 
@@ -514,7 +516,7 @@ export class World {
   /** Begin the entrance choreography (docs/globe/hero.md). */
   enter(): void {
     this.time = 0; this.lastInput = 0; this.idle = 0;
-    this.phase = "entering"; this.entrance = 0; this.entranceDone = false;
+    this.phase = "entering"; this.entrance = 0; this.entranceStart = performance.now(); this.entranceDone = false;
     if (this.opts.reducedMotion()) { this.finishEntrance(); return; }
     this.root.position.y = RISE_FROM;
     for (const fv of this.faces) { fv.surfaced = fv.record ? 0 : 1; fv.swell = SWELL_FROM; }
@@ -567,7 +569,7 @@ export class World {
     return new Promise(resolve => {
       const done = () => { this.applyPose(to); this.phase = "away"; resolve(); };
       if (seconds <= 0 || this.opts.reducedMotion()) { done(); return; }
-      this.flightAnim = { from, to, t: 0, seconds, done };
+      this.flightAnim = { from, to, start: performance.now(), seconds, done };
     });
   }
 
@@ -593,7 +595,7 @@ export class World {
         resolve();
       };
       if (seconds <= 0 || this.opts.reducedMotion()) { done(); return; }
-      this.flightAnim = { from, to, t: 0, seconds, done };
+      this.flightAnim = { from, to, start: performance.now(), seconds, done };
     });
   }
 
@@ -639,7 +641,7 @@ export class World {
     const reduced = this.opts.reducedMotion();
     // Entrance.
     if (this.phase === "entering") {
-      this.entrance += dt;
+      this.entrance = (performance.now() - this.entranceStart) / 1000;
       const e = this.entrance;
       this.root.position.y = RISE_FROM * (1 - outCubic(e / RISE_SECONDS));
       const order = this.surfacingOrder();
@@ -659,11 +661,16 @@ export class World {
     // Flights.
     if (this.flightAnim) {
       const a = this.flightAnim;
-      a.t += dt;
-      const k = inOutCubic(a.t / a.seconds);
+      const t = (performance.now() - a.start) / 1000;
+      const k = inOutCubic(t / a.seconds);
       const pose: Pose = { position: Vector3.Lerp(a.from.position, a.to.position, k), target: Vector3.Lerp(a.from.target, a.to.target, k), up: Vector3.Lerp(a.from.up, a.to.up, k).normalize() };
       this.applyPose(pose);
-      if (a.t >= a.seconds) { this.flightAnim = null; a.done(); }
+      if (t >= a.seconds) { this.flightAnim = null; a.done(); }
+    } else if (this.scene.activeCamera === this.flight && this.phase !== "away") {
+      // Watchdog: a flight camera left active with no flight running is a bug elsewhere; the orbit is the safe place.
+      this.scene.activeCamera = this.camera;
+      this.camera.attachControl(this.canvas, true);
+      this.phase = "idle";
     }
     // The spin: a drag's leftover speed decays; keyboard and lookAt goals are eased to; idle drifts the globe.
     if (this.scene.activeCamera === this.camera) {
