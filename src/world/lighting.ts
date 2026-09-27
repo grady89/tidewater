@@ -11,6 +11,15 @@ const NOON = { sun: c3("#fff5e2"), zen: c3("#6fb0de"), hor: c3("#dbeef8"), skyAm
 const DUSK = { sun: c3("#ff9855"), zen: c3("#4a3f7e"), hor: c3("#f2a878"), skyAmb: c3("#6a5a8e"), grAmb: c3("#3b2e44"), fog: c3("#d99a7d"), water: c3("#c98f86") };
 /** Moonlight: cool and dim. */
 const MOON = c3("#b9c8e0");
+/**
+ * Exposure: the study lit a fixed low sun, and with the sun arcing overhead the sand's sunlight plus ambient
+ * passes white by late morning (a neon glow once bloom catches it). Above EXPOSURE_KNEE of elevation the eye
+ * stops down: sun and ambient scale by 1 / (1 + EXPOSURE_GAIN × (elevation − knee)), ≈ 0.65 at noon, so flat
+ * ground stays about as bright at noon as at nine. The sky, fog and horizon are not exposed (they are the
+ * light source, not the lit).
+ */
+const EXPOSURE_KNEE = 0.3;
+const EXPOSURE_GAIN = 1.0;
 
 export interface Lighting {
   /** The study's blend factor k = dusk^0.8. */
@@ -56,7 +65,8 @@ export function computeLighting(dusk: number, day = 0.25, fogTint: { tint: strin
   const sunUp = smooth(-0.02, 0.25, sv.y), moonUp = smooth(0.0, 0.3, mv.y);
   const useMoon = sv.y < 0.02;
   const sunColor = useMoon ? MOON : lerp3(NOON.sun, DUSK.sun, k);
-  const sunIntensity = useMoon ? 0.35 * moonUp : (1.0 - 0.35 * k) * (0.25 + 0.75 * sunUp);
+  const exposure = 1 / (1 + EXPOSURE_GAIN * Math.max(0, sv.y - EXPOSURE_KNEE));
+  const sunIntensity = (useMoon ? 0.35 * moonUp : (1.0 - 0.35 * k) * (0.25 + 0.75 * sunUp)) * exposure;
   // Past dusk the sky keeps darkening toward a deep blue-black as the sun sinks: the study's dusk palette is
   // the sunset, not the night. Everything the sky feeds (horizon, fog, ambient, the water's sky) dims together.
   const night = smooth(0.6, 0.95, dusk) * smooth(-0.1, 0.05, -sv.y);
@@ -70,8 +80,8 @@ export function computeLighting(dusk: number, day = 0.25, fogTint: { tint: strin
     night,
     zenith: lerp3(lerp3(NOON.zen, DUSK.zen, k), NIGHT_ZEN, night),
     horizon: fogTint && fogTint.mix > 0 ? lerp3(lerp3(lerp3(NOON.hor, DUSK.hor, k), NIGHT_HOR, night), c3(fogTint.tint).scale(dim), fogTint.mix * 0.6) : lerp3(lerp3(NOON.hor, DUSK.hor, k), NIGHT_HOR, night),
-    skyAmbient: lerp3(NOON.skyAmb, DUSK.skyAmb, k).scale(dim),
-    groundAmbient: lerp3(NOON.grAmb, DUSK.grAmb, k).scale(dim),
+    skyAmbient: lerp3(NOON.skyAmb, DUSK.skyAmb, k).scale(dim * exposure),
+    groundAmbient: lerp3(NOON.grAmb, DUSK.grAmb, k).scale(dim * exposure),
     fog: fogTint && fogTint.mix > 0 ? lerp3(lerp3(lerp3(NOON.fog, DUSK.fog, k), NIGHT_HOR, night), c3(fogTint.tint).scale(dim), fogTint.mix) : lerp3(lerp3(NOON.fog, DUSK.fog, k), NIGHT_HOR, night),
     waterSky: lerp3(NOON.water, DUSK.water, k).scale(1 - 0.5 * night),
     lamp: Math.pow(Math.max(0, (dusk - 0.45) / 0.55), 1.5) * 2.2,
