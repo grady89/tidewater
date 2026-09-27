@@ -57,3 +57,4 @@ Nothing left on ROADMAP.md: M0–M14 and backlog 1–7 are DONE, nothing BLOCKED
 - 2026-09-26 11:50 · Backlog 5 · da96ee7 · headless 165 fps
 - 2026-09-26 12:30 · Backlog 6 · 56a188a · headless 165 fps
 - 2026-09-26 12:55 · Backlog 7 · ee5c2f1 · headless 165 fps
+- 2026-09-26 (daytime playtest session) · a34ec6e → c149d07 · save-shape guard, CS camera, placement rework, walkthrough card, art pass from reference/, level streets + dirt trails + hill homes, land tools, loans, sun/moon/night, ambient audio, porters · headless 165 fps throughout · 60 sim tests
