@@ -4,8 +4,9 @@ Values are what the code uses (src/globe/*). Easings by name: `outCubic` 1−(1�
 
 | Motion | Values | Easing |
 |---|---|---|
-| Drag spin | ArcRotateCamera, angularSensibilityX/Y 900 (rad per px⁻¹ in Babylon's units), inertia 0.92 per frame at 60 Hz (≈ 0.6 s to rest), pinch precision 60, wheel precision 24 | Babylon's inertial damping |
-| Idle drift | +0.035 rad/s in alpha after 4 s without input; fades in over 2 s; stops on any input | outCubic ramp |
+| Drag spin | the globe turns as a trackball: 0.0055 rad per px about the camera's up (horizontal) and right (vertical) axes, the flick's speed capped at 2.5 px/ms, inertia 0.92 per frame at 60 Hz (≈ 0.6 s to rest); a 5 px dead zone keeps clicks clicks; pinch precision 60, wheel precision 24 for the zoom | exponential decay |
+| Idle drift | the globe turns +0.035 rad/s about world up after 4 s without input; fades in over 2 s; stops on any input | outCubic ramp |
+| Selection ring | shown on the face whose card is open; lantern-lit rails just inside the outline, 0.9 units above the water | — |
 | Zoom | radius 340 by default, 230 → 420, wheel and pinch | inertial |
 | Hover lift | 2 units along the face normal, 180 ms up, 240 ms down; sun boost +20 % | outCubic |
 | Card / text reveal | opacity 0→1 and 6 px rise over 220 ms; 120 ms hover intent delay; the launch card waits for the entrance | outCubic |
@@ -14,7 +15,7 @@ Values are what the code uses (src/globe/*). Easings by name: `outCubic` 1−(1�
 | Clouds on a flight | alpha 0.92 → 0 as the camera passes 175 → 115 units from the centre (through their layer) | smoothstep |
 | Dive | 1.4 s camera flight to the face framing, 250 ms DOM crossfade, then the island eases radius 22 → 30 (its camera's easing, ~0.3 s) | inOutCubic (flight), exponential (settle) |
 | Return | mirror of the dive: 1.2 s flight from the face framing back to the orbit | inOutCubic |
-| Keyboard rotate | arrows step alpha ±0.4 rad / beta ±0.3 rad, eased over 300 ms | outCubic |
+| Keyboard rotate | arrows turn the globe 0.4 rad about the camera's up (left/right) or right (up/down) axis, eased (rate 10/s) | exponential ease |
 
 **Pointer, trackpad, touch.** Left drag spins; wheel and trackpad scroll zoom (Babylon's wheel input, precision
 24, delta clamped); pinch zooms (Babylon's multi-touch pinch); tap = click; a drag under 5 px is a click.

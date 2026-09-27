@@ -333,11 +333,21 @@ async function returnToWorld(opts: { instant?: boolean } = {}): Promise<boolean>
   return true;
 }
 // Pointer on the globe: hover lifts a face and opens its card after a short intent delay; a still click dives
-// into a built face (or opens the new-sector card on an empty one). Drags belong to the camera.
+// into a built face (or opens the new-sector card on an empty one); a drag spins the globe (a trackball under
+// the pointer, with inertia); two fingers are the camera's pinch zoom, not a spin.
 let hoverTimer = 0, hoverCandidate: number | null = null;
-let worldDown: { x: number; y: number } | null = null;
+let worldDown: { x: number; y: number; lastX: number; lastY: number; spinning: boolean } | null = null;
+let worldPointers = 0;
+const DRAG_DEAD_ZONE = 5;
 canvas.addEventListener("pointermove", e => {
   if (mode !== "world" || transition) return;
+  if (worldDown && (e.buttons & 1) && worldPointers === 1) {
+    const dx = e.clientX - worldDown.lastX, dy = e.clientY - worldDown.lastY;
+    if (!worldDown.spinning && Math.hypot(e.clientX - worldDown.x, e.clientY - worldDown.y) > DRAG_DEAD_ZONE) worldDown.spinning = true;
+    if (worldDown.spinning) world.drag(dx, dy);
+    worldDown.lastX = e.clientX; worldDown.lastY = e.clientY;
+    return;
+  }
   const f = world.pickFace(e.clientX, e.clientY);
   canvas.classList.toggle("hovering", f !== null);
   if (f !== world.hover) world.setHover(f);
@@ -348,20 +358,31 @@ canvas.addEventListener("pointermove", e => {
   }
   if (f === null) hoverCandidate = null;
 });
-canvas.addEventListener("pointerdown", e => { if (mode === "world") { worldDown = { x: e.clientX, y: e.clientY }; canvas.classList.add("dragging"); } });
-canvas.addEventListener("pointerup", e => {
+canvas.addEventListener("pointerdown", e => {
+  worldPointers++;
+  if (mode !== "world" || e.button !== 0) return;
+  worldDown = { x: e.clientX, y: e.clientY, lastX: e.clientX, lastY: e.clientY, spinning: false };
+  canvas.classList.add("dragging");
+  canvas.setPointerCapture(e.pointerId);
+  world.grab();
+});
+const worldPointerEnd = (e: PointerEvent) => {
+  worldPointers = Math.max(0, worldPointers - 1);
   canvas.classList.remove("dragging");
-  if (mode !== "world" || !worldDown) return;
-  const moved = Math.hypot(e.clientX - worldDown.x, e.clientY - worldDown.y) > 5;
+  if (mode !== "world" || !worldDown || e.button !== 0) return;
+  const down = worldDown;
   worldDown = null;
-  if (moved || transition) return;
+  world.release();
+  if (down.spinning || transition || e.type === "pointercancel") return;
   const f = world.pickFace(e.clientX, e.clientY);
   if (f === null) return;
   const m = faceMeta(f);
   if (m && worldUi.shownFace === f) { void enterSector(f); return; }
   worldUi.showCard(f, m);
-});
-canvas.addEventListener("pointerleave", () => { if (mode === "world") { world.setHover(null); canvas.classList.remove("hovering"); hoverCandidate = null; } });
+};
+canvas.addEventListener("pointerup", worldPointerEnd);
+canvas.addEventListener("pointercancel", worldPointerEnd);
+canvas.addEventListener("pointerleave", () => { if (mode === "world" && !worldDown) { world.setHover(null); canvas.classList.remove("hovering"); hoverCandidate = null; } });
 
 // ---------- quality presets ----------
 // Remembered in localStorage; on the first launch a PROBE_SECONDS frame-rate probe at High picks one.
@@ -486,6 +507,7 @@ let cardAfterEntrance: number | null = null;
 engine.runRenderLoop(() => {
   const realDt = Math.min(engine.getDeltaTime() / 1000, 0.1);
   if (mode === "world") {
+    world.setSelected(worldUi.shownFace);
     world.render(realDt);
     if (cardAfterEntrance !== null && world.entranceDone) { worldUi.showCard(cardAfterEntrance, faceMeta(cardAfterEntrance)); cardAfterEntrance = null; }
     if (probe) probeFrame();
@@ -731,6 +753,10 @@ const api = {
     scene: world.scene,
     /** The globe's height (0 once the entrance has landed it). */
     globeY: () => world.globeY,
+    /** The globe's spin as a quaternion [x, y, z, w]. */
+    spin: () => world.spin.asArray(),
+    /** Spin the globe as a pointer drag of (dx, dy) pixels would (without the flick). */
+    drag: (dx: number, dy: number) => { world.grab(); world.drag(dx, dy, false); world.release(); },
   },
   /** The ledger as JSON (what a save slot would hold). */
   saveJson: () => serialize(state),

@@ -42,3 +42,12 @@ One line each, in the order they were made. The reasoning is "most consistent wi
     opened the Town menu. The menu still opens from the speed bar and has the "World" button.
 15. **The World's frame-rate probe.** The first-launch quality probe now measures the World (that is what a first
     launch shows); the preset it picks applies to both scenes.
+16. **The globe spins; the camera only zooms** (replacing #2, at Grady's request after playing: an orbiting
+    camera can't cross the poles). A drag is a trackball turn about the camera's up and right axes with a capped
+    flick and 0.92 inertia; arrows step the same turns; lookAt turns the globe so the face looks at the camera
+    with its standing "up" toward the top of the screen; idle drift turns it about world up. The sun is still
+    fixed in the world, so the night side is still a real place — it just moves over the globe as you turn it.
+    Every per-face uniform is recomputed from the node's world matrix each frame, as it already was.
+17. **Selection ring.** The face whose card is open wears five lantern-lit rails just inside its outline (a
+    merged flat mesh per face, one shown at a time), because the hover lift alone did not say which sea a click
+    would dive into.

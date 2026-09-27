@@ -27,10 +27,12 @@ faces instead of ringing the equator.
 **Night side.** One sun by the real clock; faces whose normal faces away from it get the shaders' ambient only
 and darker per-face sky/sun uniforms; the sky shows moon and stars when the clock says night.
 
-**Camera.** ArcRotateCamera on the globe's centre: radius 340, zoom 230–420, beta 0.45–2.1 rad so both polar
-faces can be looked at, alpha free; a ring face is looked at from 0.14 rad under its normal so the horizon's
-glow shows along the top of the frame. The globe stays centred: at 1280 wide the card clears it (the 12-unit
-offset planned here was not needed).
+**Camera and spin.** The camera sits still on the globe's centre (radius 340, zoom 230–420 by wheel and
+pinch) at 0.14 rad under a ring face's normal, so the horizon's glow shows along the top of the frame; the
+globe itself turns under the pointer — a trackball, so any face including the poles comes round — with a
+flick and inertia, and the sun stays fixed in the world. The face whose card is open wears a lantern-lit ring
+just inside its outline. The globe stays centred: at 1280 wide the card clears it (the 12-unit offset planned
+here was not needed).
 
 **Typography.** "Tiny Tides" top-left, Instrument Serif 44 px, the sub-line IBM Plex Sans 13 px dim. The card is
 the island's glass panel (same radius, blur, line). The hint sits bottom-centre in the speed bar's slot.

@@ -15,17 +15,20 @@ import { computeLighting, createLights, Lighting, SceneLights } from "../world/l
 import { createSky, Sky } from "../world/sky";
 import { encodeHeightInto, TERRAIN_UNIFORMS } from "../world/terrain";
 import { WATER_UNIFORMS } from "../world/water";
-import { clampToPentagon, EDGE, EDGES, Face, FACE_CIRCUMRADIUS, FACES, faceToward, insidePentagon, pentagonDisc, SOLID_INRADIUS, V3 } from "./geometry";
+import { clampToPentagon, EDGE, EDGES, Face, FACE_CIRCUMRADIUS, FACES, faceToward, insidePentagon, pentagonDisc, SOLID_INRADIUS, toLocal, V3 } from "./geometry";
 import { MINI_CELLS, miniatureHeights, roofPlacements } from "./miniature";
 
 // ---------- tuning (docs/globe/motion.md) ----------
 const CAM_RADIUS = 340, CAM_MIN = 230, CAM_MAX = 420;
-const CAM_BETA_MIN = 0.45, CAM_BETA_MAX = 2.1;
-const INERTIA = 0.92, ANGULAR = 900, WHEEL_PRECISION = 24, PINCH_PRECISION = 60;
+const INERTIA = 0.92, WHEEL_PRECISION = 24, PINCH_PRECISION = 60;
 const IDLE_AFTER = 4, IDLE_RATE = 0.035, IDLE_RAMP = 2;
 const HOVER_LIFT = 2, HOVER_UP = 0.18, HOVER_DOWN = 0.24, HOVER_SUN = 0.2;
-const KEY_STEP_ALPHA = 0.4, KEY_STEP_BETA = 0.3, KEY_EASE = 0.3;
+/** The globe is the thing that turns (a trackball under the pointer); the camera only zooms. */
+const SPIN_RAD_PER_PX = 0.0055, SPIN_EASE = 10, SPIN_STOP = 0.0004, SPIN_FLICK_MAX = 2.5;
+const KEY_STEP = 0.4;
+/** The camera looks at the globe from a touch below a ring face's normal, so the horizon's glow shows along the top. */
 const LOOK_TILT = 0.14;
+const RING_Y = 0.9, RING_INSET = 0.965;
 // Fog bands from the camera (which orbits at 230–420): a built sea is nearly clear at the front and hazes toward
 // the far side; an uncharted sea is half fog at the front — a pale wash that still reads as water; the entrance
 // starts inside the fog and pulls it out.
@@ -69,6 +72,7 @@ interface FaceView {
   terrain: Mesh | null;
   terrainMat: ShaderMaterial | null;
   roofs: Mesh[];
+  ring: Mesh;
   record: SectorRecord | null;
   lift: number;
   liftGoal: number;
@@ -100,10 +104,16 @@ export class World {
   /** The thirty edge rails with their sea-lane gates, one merged mesh. */
   readonly edges: Mesh;
   hover: number | null = null;
-  /** Pointer lift only; the keyboard/front face is `focus`. */
+  private selected: number | null = null;
   private lastInput = 0;
   private idle = 0;
-  private keyGoal: { alpha: number; beta: number; t: number } | null = null;
+  /** The globe's spin: where it is, where it is easing to, and the drag's leftover velocity (pixels per frame). */
+  private spinNow = Quaternion.Identity();
+  private spinGoal = Quaternion.Identity();
+  private spinVel = { x: 0, y: 0 };
+  private dragging = false;
+  private dragAt = 0;
+  private readonly ringMat: StandardMaterial;
   private time = 0;
   private phase: "entering" | "idle" | "flying" | "away" = "idle";
   private entrance = 0;
@@ -117,13 +127,15 @@ export class World {
     this.scene = scene;
     scene.clearColor = new Color4(0.81, 0.90, 0.95, 1);
     scene.autoClear = true;
-    this.camera = new ArcRotateCamera("worldCam", -1.1, 1.2, CAM_RADIUS, Vector3.Zero(), scene);
+    // The camera sits still (its angles are pinned) and only zooms; drags spin the globe under it.
+    const lookBeta = Math.acos(FACES[1].normal.y) + LOOK_TILT, lookAlpha = -Math.PI / 2;
+    this.camera = new ArcRotateCamera("worldCam", lookAlpha, lookBeta, CAM_RADIUS, Vector3.Zero(), scene);
     const cam = this.camera;
     cam.minZ = 1; cam.maxZ = 2000;
     cam.lowerRadiusLimit = CAM_MIN; cam.upperRadiusLimit = CAM_MAX;
-    cam.lowerBetaLimit = CAM_BETA_MIN; cam.upperBetaLimit = CAM_BETA_MAX;
+    cam.lowerAlphaLimit = lookAlpha; cam.upperAlphaLimit = lookAlpha;
+    cam.lowerBetaLimit = lookBeta; cam.upperBetaLimit = lookBeta;
     cam.inertia = INERTIA;
-    cam.angularSensibilityX = ANGULAR; cam.angularSensibilityY = ANGULAR;
     cam.wheelPrecision = WHEEL_PRECISION; cam.pinchPrecision = PINCH_PRECISION;
     cam.panningSensibility = 0;
     cam.useNaturalPinchZoom = true;
@@ -136,16 +148,61 @@ export class World {
     this.pipe.fxaaEnabled = true;
     this.pipe.bloomEnabled = true; this.pipe.bloomThreshold = 0.9; this.pipe.bloomWeight = 0.15; this.pipe.bloomKernel = 48; this.pipe.bloomScale = 0.5;
     this.root = new TransformNode("globe", scene);
+    this.root.rotationQuaternion = Quaternion.Identity();
     const dummy = new Uint8Array([120, 160, 180, 255]);
     this.dummyReflect = RawTexture.CreateRGBATexture(dummy, 1, 1, scene, false, false, Texture.NEAREST_SAMPLINGMODE);
+    // The selection ring's material: lantern light, a little of it self-lit so the bloom catches it.
+    this.ringMat = flatMaterial(scene).clone("ringMat") as StandardMaterial;
+    this.ringMat.emissiveColor = Color3.FromHexString("#ffb859").scale(0.45);
     for (const face of FACES) this.faces.push(this.buildFace(face));
     this.edges = this.buildEdges();
     this.cloudMesh = this.buildClouds();
     this.setCloudCount(this.cloudCount);
-    // The globe stands in the World's frame; the camera's own pointer inputs move only the camera.
+    // The camera's own inputs keep only the zoom (wheel, pinch): its angles are pinned above.
     cam.attachControl(canvas, true);
     for (const ev of ["pointerdown", "pointermove", "wheel", "touchstart"]) canvas.addEventListener(ev, () => { this.lastInput = this.time; }, { passive: true });
   }
+
+  // ---------- the spin ----------
+
+  /** `q` followed by a turn of `angle` about a world-space `axis`. */
+  private static turned(q: Quaternion, axis: Vector3, angle: number): Quaternion {
+    if (angle === 0) return q.clone();
+    return Quaternion.FromRotationMatrix(q.toRotationMatrix(new Matrix()).multiply(Matrix.RotationAxis(axis, angle)));
+  }
+
+  /** A pointer drag of (dx, dy) pixels turns the globe about the camera's up and right axes. */
+  drag(dx: number, dy: number, flick = true): void {
+    this.lastInput = this.time;
+    this.dragging = true;
+    // The flick's speed in pixels per millisecond from the gap since the last event, capped (bursts can't over-spin).
+    const now = performance.now();
+    const ms = Math.min(100, Math.max(4, now - this.dragAt));
+    this.dragAt = now;
+    const cap = (v: number) => Math.max(-SPIN_FLICK_MAX, Math.min(SPIN_FLICK_MAX, v));
+    this.spinVel = flick ? { x: cap(dx / ms), y: cap(dy / ms) } : { x: 0, y: 0 };
+    this.spinNow = this.turnBy(this.spinNow, dx, dy);
+    this.spinGoal = this.spinNow.clone();
+  }
+  /** The pointer went down: whatever was still turning stops. */
+  grab(): void { this.spinVel = { x: 0, y: 0 }; this.dragging = true; this.dragAt = performance.now(); this.spinGoal = this.spinNow.clone(); }
+  /** The pointer came up: the last drag's speed carries on and decays. */
+  release(): void { this.dragging = false; }
+
+  private turnBy(q: Quaternion, dx: number, dy: number): Quaternion {
+    const up = this.camera.getDirection(Vector3.Up()), right = this.camera.getDirection(Vector3.Right());
+    return World.turned(World.turned(q, up, -dx * SPIN_RAD_PER_PX), right, -dy * SPIN_RAD_PER_PX);
+  }
+
+  /** The face the camera sees head-on, in the globe's own (unspun) frame. */
+  private toGlobe(dirWorld: Vector3): V3 {
+    const inv = Matrix.Invert(this.spinNow.toRotationMatrix(new Matrix()));
+    const d = Vector3.TransformNormal(dirWorld, inv);
+    return { x: d.x, y: d.y, z: d.z };
+  }
+
+  /** The globe's spin, for probes. */
+  get spin(): Quaternion { return this.spinNow.clone(); }
 
   // ---------- construction ----------
 
@@ -187,7 +244,30 @@ export class World {
     heightTex.wrapU = Texture.CLAMP_ADDRESSMODE; heightTex.wrapV = Texture.CLAMP_ADDRESSMODE;
     const waterMat = this.waterMaterial(`seaMat${face.index}`, heightTex);
     water.material = waterMat;
-    return { face, node, land, water, waterMat, heightTex, hdata, terrain: null, terrainMat: null, roofs: [], record: null, lift: 0, liftGoal: 0, surfaced: 1, fog: FOG_UNCHARTED, swell: 1 };
+    const ring = this.buildRing(face);
+    ring.parent = node;
+    ring.setEnabled(false);
+    return { face, node, land, water, waterMat, heightTex, hdata, terrain: null, terrainMat: null, roofs: [], ring, record: null, lift: 0, liftGoal: 0, surfaced: 1, fog: FOG_UNCHARTED, swell: 1 };
+  }
+
+  /** The selection ring: five lantern-lit rails just inside a face's outline, shown on the face whose card is open. */
+  private buildRing(face: Face): Mesh {
+    const parts: Mesh[] = [];
+    const up = Vector3.Up();
+    for (let k = 0; k < 5; k++) {
+      const a = toLocal(face, face.corners[k]), b = toLocal(face, face.corners[(k + 1) % 5]);
+      const along = new Vector3(b.x - a.x, 0, b.z - a.z).normalize();
+      const across = Vector3.Cross(along, up).normalize();
+      const seg = MeshBuilder.CreateBox("ringSeg", { width: EDGE * RING_INSET - 1.2, height: 0.35, depth: 0.6 }, this.scene);
+      const rot = Matrix.Identity();
+      Matrix.FromXYZAxesToRef(along, up, across, rot);
+      seg.rotationQuaternion = Quaternion.FromRotationMatrix(rot);
+      seg.position.set(((a.x + b.x) / 2) * RING_INSET, RING_Y, ((a.z + b.z) / 2) * RING_INSET);
+      parts.push(tint(seg, "#ffb859"));
+    }
+    const ring = mergeFlat(`ring${face.index}`, parts, this.scene);
+    ring.material = this.ringMat;
+    return ring;
   }
 
   private buildEdges(): Mesh {
@@ -250,12 +330,14 @@ export class World {
 
   private syncClouds(): void {
     if (!this.clouds.length) return;
-    const scale = new Vector3();
+    const tilt = new Quaternion(), tiltMat = new Matrix();
     this.clouds.forEach((c, k) => {
       const a = c.phase + this.time * c.speed;
       const pos = c.u.scale(Math.cos(a) * c.r).add(c.v.scale(Math.sin(a) * c.r));
-      scale.setAll(c.scale);
-      Matrix.Compose(scale, Quaternion.FromEulerAngles(0, c.yaw + a, 0), pos).copyToArray(this.cloudMatrices, k * 16);
+      // A cloud lies flat over the face beneath it: its up is the radial direction, whatever the globe's spin.
+      Quaternion.FromUnitVectorsToRef(Vector3.Up(), pos.normalizeToNew(), tilt);
+      Matrix.FromQuaternionToRef(tilt, tiltMat);
+      Matrix.Scaling(c.scale, c.scale, c.scale).multiply(Matrix.RotationY(c.yaw + a)).multiply(tiltMat).multiply(Matrix.Translation(pos.x, pos.y, pos.z)).copyToArray(this.cloudMatrices, k * 16);
     });
     this.cloudMesh.thinInstanceSetBuffer("matrix", this.cloudMatrices, 16, false);
   }
@@ -366,9 +448,9 @@ export class World {
 
   /** The face under a client position, or null. */
   pickFace(clientX: number, clientY: number): number | null {
+    // Client pixels: Babylon's picking ray applies the hardware scaling level itself.
     const r = this.canvas.getBoundingClientRect();
-    const k = this.engine.getHardwareScalingLevel();
-    const hit = this.scene.pick((clientX - r.left) / k, (clientY - r.top) / k, m => m.metadata?.face !== undefined, false, this.scene.activeCamera);
+    const hit = this.scene.pick(clientX - r.left, clientY - r.top, m => m.metadata?.face !== undefined, false, this.scene.activeCamera);
     return hit?.hit && hit.pickedMesh ? (hit.pickedMesh.metadata as { face: number }).face : null;
   }
 
@@ -377,33 +459,50 @@ export class World {
     this.faces.forEach((fv, k) => { fv.liftGoal = k === face ? HOVER_LIFT : 0; });
   }
 
-  /** The face the camera looks at most squarely (keyboard focus and the default card). */
-  get frontFace(): number {
-    return faceToward({ x: this.camera.position.x, y: this.camera.position.y, z: this.camera.position.z });
+  /** The face whose card is open wears the ring. */
+  setSelected(face: number | null): void {
+    if (face === this.selected) return;
+    this.selected = face;
+    this.faces.forEach((fv, k) => fv.ring.setEnabled(k === face));
   }
 
-  /** Arrow keys: a quarter-turn-ish step, eased. */
-  step(dAlpha: number, dBeta: number): void {
+  /** The face the camera sees head-on (keyboard focus and the default card). */
+  get frontFace(): number {
+    return faceToward(this.toGlobe(this.camera.position.subtract(this.root.position).normalize()));
+  }
+
+  /** Arrow keys: a step of the globe about the camera's up (dx) or right (dy) axis, eased. */
+  step(dx: number, dy: number): void {
     this.lastInput = this.time;
-    const goal = this.keyGoal ?? { alpha: this.camera.alpha, beta: this.camera.beta, t: 0 };
-    goal.alpha += dAlpha * KEY_STEP_ALPHA;
-    goal.beta = Math.min(CAM_BETA_MAX, Math.max(CAM_BETA_MIN, goal.beta + dBeta * KEY_STEP_BETA));
-    goal.t = 0;
-    this.keyGoal = goal;
-    if (this.opts.reducedMotion()) { this.camera.alpha = goal.alpha; this.camera.beta = goal.beta; this.keyGoal = null; }
+    this.spinVel = { x: 0, y: 0 };
+    this.spinGoal = this.turnBy(this.spinGoal, dx * KEY_STEP / SPIN_RAD_PER_PX, dy * KEY_STEP / SPIN_RAD_PER_PX);
+    if (this.opts.reducedMotion()) this.spinNow = this.spinGoal.clone();
   }
 
   /**
-   * Turn the camera to look at a face (the returning launch settles on the last-played face). Ring faces are
-   * looked at from a touch below their normal, so the horizon's glow shows along the top of the frame.
+   * Turn the globe so a face looks at the camera (the returning launch settles on the last-played face), with
+   * the face's original "up" as near the top of the screen as it can be.
    */
   lookAt(face: number, instant = false): void {
-    const n = FACES[face].normal;
-    const ring = Math.abs(n.y) < 0.99;
-    const alpha = Math.atan2(n.z, n.x), beta = Math.acos(Math.max(-1, Math.min(1, n.y))) + (ring ? LOOK_TILT : 0);
-    const b = Math.min(CAM_BETA_MAX, Math.max(CAM_BETA_MIN, beta));
-    if (instant || this.opts.reducedMotion()) { this.camera.alpha = alpha; this.camera.beta = b; this.keyGoal = null; return; }
-    this.keyGoal = { alpha, beta: b, t: 0 };
+    const f = FACES[face];
+    const n = new Vector3(f.normal.x, f.normal.y, f.normal.z);
+    const to = this.camera.position.subtract(this.root.position).normalize();
+    const q = new Quaternion();
+    Quaternion.FromUnitVectorsToRef(n, to, q);
+    // Roll about the view axis: the direction that was world-up on the standing globe (or, on a polar face, the
+    // face's own −z) should point toward the camera's up.
+    const polar = Math.abs(f.normal.y) > 0.99;
+    const upL = polar ? new Vector3(0, 0, -1) : new Vector3(f.xAxis.y, f.normal.y, f.zAxis.y);
+    const camUp = this.camera.getDirection(Vector3.Up());
+    const flat = (v: Vector3) => v.subtract(to.scale(Vector3.Dot(v, to))).normalize();
+    const have = flat(Vector3.TransformNormal(upL, q.toRotationMatrix(new Matrix()))), want = flat(camUp);
+    const angle = Math.acos(Math.max(-1, Math.min(1, Vector3.Dot(have, want))));
+    // Try the turn both ways round the axis and keep the one that lands closer (no handedness guesswork).
+    const a = World.turned(q, to, angle), b = World.turned(q, to, -angle);
+    const score = (r: Quaternion) => Vector3.Dot(flat(Vector3.TransformNormal(upL, r.toRotationMatrix(new Matrix()))), want);
+    this.spinGoal = score(a) >= score(b) ? a : b;
+    this.spinVel = { x: 0, y: 0 };
+    if (instant || this.opts.reducedMotion()) this.spinNow = this.spinGoal.clone();
   }
 
   /** Quality preset: bloom and how many clouds. */
@@ -436,13 +535,12 @@ export class World {
 
   /** The world-space pose of an island framing on a face. */
   poseFor(face: number, f: Framing): Pose {
-    const fc = FACES[face];
-    const w = (p: V3) => V({ x: fc.centre.x + fc.xAxis.x * p.x + fc.normal.x * p.y + fc.zAxis.x * p.z, y: fc.centre.y + fc.xAxis.y * p.x + fc.normal.y * p.y + fc.zAxis.y * p.z, z: fc.centre.z + fc.xAxis.z * p.x + fc.normal.z * p.y + fc.zAxis.z * p.z });
-    const target = w({ x: f.cx, y: f.targetY, z: f.cz });
-    const position = w(arcPosition(f));
-    const lift = this.faces[face].lift;
-    const up = V(fc.normal);
-    return { position: position.add(up.scale(lift)), target: target.add(up.scale(lift)), up };
+    // The face node carries the face's frame, its hover lift, and the globe's spin and rise.
+    const node = this.faces[face].node;
+    node.computeWorldMatrix(true);
+    const m = node.getWorldMatrix();
+    const w = (p: V3) => Vector3.TransformCoordinates(new Vector3(p.x, p.y, p.z), m);
+    return { position: w(arcPosition(f)), target: w({ x: f.cx, y: f.targetY, z: f.cz }), up: Vector3.TransformNormal(Vector3.Up(), m).normalize() };
   }
 
   private orbitAsPose(): Pose {
@@ -567,21 +665,23 @@ export class World {
       this.applyPose(pose);
       if (a.t >= a.seconds) { this.flightAnim = null; a.done(); }
     }
-    // Keyboard steps and idle drift, only on the orbit camera.
+    // The spin: a drag's leftover speed decays; keyboard and lookAt goals are eased to; idle drifts the globe.
     if (this.scene.activeCamera === this.camera) {
-      if (this.keyGoal) {
-        const g = this.keyGoal;
-        g.t += dt;
-        const k = outCubic(g.t / KEY_EASE);
-        this.camera.alpha += (g.alpha - this.camera.alpha) * Math.min(1, k + dt * 4);
-        this.camera.beta += (g.beta - this.camera.beta) * Math.min(1, k + dt * 4);
-        if (g.t >= KEY_EASE) { this.camera.alpha = g.alpha; this.camera.beta = g.beta; this.keyGoal = null; }
-      } else if (!reduced && this.phase === "idle") {
+      const ms = dt * 1000, stop = SPIN_STOP / SPIN_RAD_PER_PX / 16;
+      if (!this.dragging && (Math.abs(this.spinVel.x) > stop || Math.abs(this.spinVel.y) > stop)) {
+        this.spinGoal = this.turnBy(this.spinGoal, this.spinVel.x * ms, this.spinVel.y * ms);
+        this.spinNow = this.spinGoal.clone();
+        const decay = Math.pow(INERTIA, dt * 60);
+        this.spinVel = { x: this.spinVel.x * decay, y: this.spinVel.y * decay };
+      } else if (!reduced && this.phase === "idle" && !this.dragging) {
         const since = this.time - this.lastInput;
         this.idle = since > IDLE_AFTER ? Math.min(1, this.idle + dt / IDLE_RAMP) : 0;
-        if (this.idle > 0) this.camera.alpha += IDLE_RATE * outCubic(this.idle) * dt;
+        if (this.idle > 0) { this.spinGoal = World.turned(this.spinGoal, Vector3.Up(), IDLE_RATE * outCubic(this.idle) * dt); this.spinNow = this.spinGoal.clone(); }
       }
+      if (!this.spinNow.equalsWithEpsilon(this.spinGoal, 1e-7)) Quaternion.SlerpToRef(this.spinNow, this.spinGoal, reduced ? 1 : 1 - Math.exp(-SPIN_EASE * dt), this.spinNow);
     }
+    this.root.rotationQuaternion!.copyFrom(this.spinNow);
+    const spinMat = this.spinNow.toRotationMatrix(new Matrix());
     // Hover lifts.
     for (const fv of this.faces) {
       const rate = fv.liftGoal > fv.lift ? 1 / HOVER_UP : 1 / HOVER_DOWN;
@@ -598,7 +698,8 @@ export class World {
     // Clouds thin out as a flight drops through their layer (they orbit 18–30 units above the faces).
     (this.cloudMesh.material as StandardMaterial).alpha = CLOUD_ALPHA * smooth(CLOUD_FADE_NEAR, CLOUD_FADE_FAR, camPos.length());
     for (const fv of this.faces) {
-      const facing = fv.face.normal.x * light.sunDir.x + fv.face.normal.y * light.sunDir.y + fv.face.normal.z * light.sunDir.z;
+      const nW = Vector3.TransformNormal(V(fv.face.normal), spinMat);
+      const facing = nW.x * light.sunDir.x + nW.y * light.sunDir.y + nW.z * light.sunDir.z;
       // Faces turned from the sun sit in shade (the shaders' own lambert term already loses the sun on them);
       // the floor keeps their land readable by day, and the moonlit floor in clockLighting() does the same by night.
       const day = SHADE_FLOOR + (1 - SHADE_FLOOR) * smooth(-0.3, 0.3, facing);

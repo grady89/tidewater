@@ -1234,10 +1234,29 @@ try {
   // Keyboard: Escape closes the card, arrows turn the globe, Enter opens the front face's card then dives, Escape
   // on the island (nothing open) returns.
   await page.keyboard.press("Escape");
-  const kb0 = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { card: api.world.shownCard(), alpha: api.world.pose().alpha, front: api.world.front() }; });
+  const kb0 = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { card: api.world.shownCard(), spin: api.world.spin(), front: api.world.front(), at: api.world.screenOf(1) }; });
   await page.keyboard.press("ArrowRight");
   await page.waitForTimeout(500);
-  const kb1 = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { card: api.world.shownCard(), alpha: api.world.pose().alpha, front: api.world.front() }; });
+  const kb1 = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { card: api.world.shownCard(), spin: api.world.spin(), front: api.world.front(), at: api.world.screenOf(1) }; });
+  // The angle between the two spins (ArrowRight turns the globe 0.4 rad about the camera's up; face 1 moves right).
+  const spun = 2 * Math.acos(Math.min(1, Math.abs(kb0.spin.reduce((s, v, i) => s + v * kb1.spin[i], 0))));
+  // A drag spins the same way: a rightward drag moves the front face right, a downward drag moves it down.
+  const dragged = await page.evaluate(async () => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    api.world.lookAt(1);
+    await new Promise(r => setTimeout(r, 50));
+    const a = api.world.screenOf(1);
+    api.world.drag(60, 0);
+    await new Promise(r => setTimeout(r, 50));
+    const b = api.world.screenOf(1);
+    api.world.lookAt(1);
+    await new Promise(r => setTimeout(r, 50));
+    api.world.drag(0, 60);
+    await new Promise(r => setTimeout(r, 50));
+    const c = api.world.screenOf(1);
+    api.world.lookAt(1);
+    return { right: b.x - a.x, down: c.y - a.y };
+  });
   await page.keyboard.press("Enter");
   const kb2 = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { card: api.world.shownCard(), front: api.world.front(), built: !!api.world.faces()[api.world.front()] }; });
   await page.keyboard.press("Enter");
@@ -1247,8 +1266,9 @@ try {
   // The mode flips as the return starts; the card comes back when the flight has landed on the orbit.
   await page.waitForFunction(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return api.mode === "world" && api.world.pose().camera === "orbit"; }, null, { timeout: 10_000 });
   const kb4 = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { mode: api.mode, card: api.world.shownCard() }; });
-  console.log("World keyboard:", JSON.stringify({ kb0, kb1, kb2, kb3, kb4 }));
-  assert(kb0.card === null && Math.abs(kb1.alpha - kb0.alpha - 0.4) < 0.02 && kb1.card === null, "Escape closes the card; ArrowRight turns the globe 0.4 rad");
+  console.log("World keyboard:", JSON.stringify({ kb0, kb1, spun, dragged, kb2, kb3, kb4 }));
+  assert(kb0.card === null && Math.abs(spun - 0.4) < 0.02 && kb1.at.x > kb0.at.x + 20 && kb1.card === null, "Escape closes the card; ArrowRight turns the globe 0.4 rad, the front face moving right");
+  assert(dragged.right > 20 && dragged.down > 20, "a drag takes the globe with the pointer: " + JSON.stringify(dragged));
   assert(kb2.card === kb1.front && kb2.built && kb3.mode === "island" && kb3.active === kb2.front && !kb3.menuOpen, "Enter opens the front face's card; Enter again dives into it");
   assert(kb4.mode === "world" && kb4.card === kb3.active, "Escape on the island returns to the World with the sea's card open");
   // Back onto the island for the frame-rate check.
