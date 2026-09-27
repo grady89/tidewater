@@ -659,6 +659,23 @@ What other builders do and what was taken from each:
   below 0.7. Not migrated — the shape check passes and a wrong-height street is visible and cheap to replace; a
   migration would have to guess the lift.
 
+### Task 2: the known-broken hour
+- `PERSON_SCALE` 0.62 → 0.4: the figure is 0.63 units tall at scale 1, so a person is now a quarter of a cell
+  (Cities: Skylines is ≈ 0.22). Read "≈ 0.4 of a cell" as the scale value the handoff had been discussing, not a
+  height, since 0.62 already gave 0.39 of a cell and the complaint was "a touch large". Baskets, hats and porters
+  share the matrix and scale with it; swimmers' waterline offset became `CHEST` = 0.34 × scale.
+- Shark-net floats and the marker buoy left the static building mesh for `view/effects.ts › syncNets`: five
+  floats (red/white per-instance colour) and a buoy per net, placed on `tide.level + waveHeight` every frame, so
+  they ride the tide and the swell and sit on the mud at a spring low. The net panel stays static, hung from the
+  seabed to 0.7. Smoke: the same net's floats sit 0.95 lower at −0.35 than at 0.6.
+- The shift bell is gated by `isSunUp` (the sun vector's y > 0, i.e. the first half of the day) — not
+  `isDaytime`, whose dusk threshold runs a little past sunset. Smoke walks eight shift changes and expects the
+  bell exactly on the four with the sun up.
+- Sea wall class `flat` → `shore` (a flat cell orthogonally against the hill), as the brief says. NOTES M11 argued
+  a shore wall protects nothing on the flats; that stands — it now protects what is *behind* the shore along the
+  wave axis (hill homes, the landward street), and the flats rely on breakwaters and lifted decks. The tsunami
+  test now guards a hut on the hill behind a shore wall instead of a house on the open flats.
+
 ### Chunk merge (the M12 perf pass, done for the mirror)
 - `view/buildingViews.ts` now merges every building in an 8×8-cell chunk into one mesh (`chunk:i,j`), rebuilt
   when any building in the chunk appears, leaves or changes its mesh signature. 300 buildings → 15 chunk meshes;

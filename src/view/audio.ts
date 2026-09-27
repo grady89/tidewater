@@ -2,7 +2,7 @@
 // storm; a soft bell at each shift change; a low thrum while the sea pulls back and the wave comes in; a quiet
 // harmonic pad that breathes with the day; gull cries when a flock is about; hammering from a busy shipyard.
 // The context is created on the first click or key (browsers require a gesture). Mute is remembered. View only.
-import { dayFraction } from "../sim/daylight";
+import { dayFraction, isSunUp } from "../sim/daylight";
 import { Phase, SimState } from "../sim/state";
 import { tideNormalized } from "../sim/tide";
 
@@ -31,9 +31,10 @@ export class Audio {
   private nextCry = 0;
   private nextStep = 0;
   private nextHammer = 0;
-  /** Gull cries played so far (a smoke probe). */
+  /** Gull cries, hammer blows and bells played so far (smoke probes). */
   cries = 0;
   hammers = 0;
+  bells = 0;
   muted = false;
 
   constructor() {
@@ -221,7 +222,8 @@ export class Audio {
     const stage = state.tsunami.stage;
     const thrum = stage === "drawdown" ? 0.18 : stage === "wave" ? 0.3 : 0;
     this.thrumGain.gain.setTargetAtTime(thrum, t, 0.5);
-    if (this.lastPhase !== null && state.phase !== this.lastPhase && state.phase !== "slack") this.bell();
+    // The shift bell rings by day only: nobody rings a bell over a sleeping town.
+    if (this.lastPhase !== null && state.phase !== this.lastPhase && state.phase !== "slack" && isSunUp(state.time)) { this.bell(); this.bells++; }
     this.lastPhase = state.phase;
 
     // The pad: quiet by day, a little fuller at dusk and dawn, ducked under a storm; the voice wanders.

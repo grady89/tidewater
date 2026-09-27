@@ -621,21 +621,15 @@ function seaWall(scene: Scene, b: Building): BuildingMeshes {
   return { root: mergeFlat("seaWall", parts, scene) };
 }
 
-/** After reference/seaworks: a red buoy on a post, a rope of floats, a net hanging beneath. */
+/** After reference/seaworks: the net itself, hung from the seabed's stakes to just above the ordinary high tide.
+ *  The floats and the marker buoy ride the water and are drawn by the effects layer every frame. */
 function sharkNet(scene: Scene, b: Building): BuildingMeshes {
   const { x, z } = cellCenter(b.cells[0]);
   const parts: Mesh[] = [];
-  const y = 0.15;
-  const buoy = MeshBuilder.CreatePolyhedron("buoy", { type: 1, size: 0.11 }, scene);
-  buoy.position.set(x - 0.35, y + 0.05, z);
-  parts.push(tint(buoy, PALETTE.roofs[0]));
-  parts.push(cyl(scene, 0.03, 0.4, x - 0.35, y + 0.3, z, PALETTE.wood, 4));
-  for (let k = 0; k < 5; k++) {
-    const fx = x - 0.15 + k * 0.14;
-    parts.push(cyl(scene, 0.08, 0.1, fx, y, z, k % 2 ? PALETTE.roofs[0] : PALETTE.sail, 5));
-  }
-  parts.push(box(scene, 0.96, 0.02, 0.02, x, y, z, ROPE));
-  parts.push(box(scene, 0.96, 0.9, 0.02, x, y - 0.46, z, PALETTE.sail));
+  const bed = ground(x, z);
+  const top = 0.7;
+  parts.push(box(scene, 0.96, top - bed, 0.02, x, (top + bed) / 2, z, PALETTE.sail));
+  for (const sx of [-0.46, 0.46]) parts.push(cyl(scene, 0.04, top - bed + 0.1, x + sx, (top + bed) / 2, z, PALETTE.wood, 4));
   return { root: mergeFlat("sharkNet", parts, scene) };
 }
 

@@ -28,8 +28,10 @@ interface Walker {
 /** Porters per landing, at most. */
 const PORTERS_MAX = 4;
 
-/** People are a third of a cell tall, a little larger than a city builder's but readable from the default camera. */
-export const PERSON_SCALE = 0.62;
+/** The figure is 0.63 units tall at scale 1; at 0.4 a person is a quarter of a cell, about Cities: Skylines' ratio. */
+export const PERSON_SCALE = 0.4;
+/** The figure's chest height at PERSON_SCALE: swimmers sit so the waterline crosses here. */
+const CHEST = 0.34 * PERSON_SCALE;
 /** Seconds a homecoming walker takes to go indoors at the end of the walk. */
 const FADE = 0.5;
 
@@ -274,8 +276,8 @@ export class Walkers {
         const k = round;
         const t = viewTime * 0.5 + k * 1.7 + sk * 0.01;
         const x = water.i + 0.5 + Math.cos(t) * 0.28 + (k - 1) * 0.22, z = water.j + 0.5 + Math.sin(t * 0.8) * 0.28;
-        // Chest-deep: the figure is PERSON_SCALE × 0.6 tall, so its middle sits at the waterline.
-        const y = Math.max(level + Math.sin(viewTime * 2 + k) * 0.03 - 0.2, terrainHeight(x, z) + 0.02);
+        // Chest-deep: the waterline crosses the tunic.
+        const y = Math.max(level + Math.sin(viewTime * 2 + k) * 0.02 - CHEST, terrainHeight(x, z) + 0.02);
         out.push({ pos: new Vector3(x, y, z), yaw: t, color: Color4.FromHexString(COLORS[(k + sk) % COLORS.length]) });
       }
     }

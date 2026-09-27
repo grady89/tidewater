@@ -31,8 +31,8 @@ Live status. Update after every milestone (and mid-milestone if you compact). On
 
 | Task | Status | Notes |
 |---|---|---|
-| 1 Replace the stilt rule | IN PROGRESS | code, tests (65) and smoke green; sub-task: NOTES + commit |
-| 2 Known-broken hour | TODO | PERSON_SCALE ≈ 0.4 cell, net floats follow the water, no night bell, sea wall on shore |
+| 1 Replace the stilt rule | DONE | db146ad · floor = max(terrain + 0.5, tide + 0.1): walkways clear TIDE_HI, buildings SPRING_HI; only walkways under terrain 0.35 flood, at spring; cost 6$/unit of stilt on the ghost; `street` class spans flats + beach, paths dry ground; tsunami warned a tide ahead, walkways rebuild first; 65 tests, smoke 165 fps; starter town 650 → +52 over 4 cycles |
+| 2 Known-broken hour | IN PROGRESS | sub-task: PERSON_SCALE 0.4 done, night bell done, sea wall shore class done; net floats → per-frame layer |
 | 3 Ferry carries workers | TODO | harbor ↔ isle pier edge in the distance field, crossing cost, passengers on deck; else remove ferry + isle unlock |
 | 4 Seeded islands | TODO | only if 1–3 DONE |
 

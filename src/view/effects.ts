@@ -1,11 +1,13 @@
 // Ambient effects driven by the ledger: shark fins patrolling the riskiest water; flames and smoke over burning
-// buildings. Storm and wave effects join in M11. View only.
+// buildings; the floats and buoys of every shark net, riding the water. View only.
 import { Color3, Matrix, Mesh, MeshBuilder, Quaternion, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
 import { CELLS } from "../sim/fields";
-import { HALF } from "../sim/grid";
+import { cellCenter, HALF } from "../sim/grid";
 import { Building, SimState } from "../sim/state";
-import { mergeFlat, tint } from "../world/flatMesh";
+import { flatMaterial, mergeFlat, tint } from "../world/flatMesh";
 import { waveHeight } from "../world/water";
+
+const FLOATS_PER_NET = 5;
 
 const FIN_COUNT = 3;
 const FIN_MIN_RISK = 0.25;
@@ -17,6 +19,11 @@ export class Effects {
   private readonly fins: Mesh;
   private readonly flames: Mesh;
   private readonly smoke: Mesh;
+  private readonly netFloats: Mesh;
+  private readonly netBuoys: Mesh;
+  /** Floats drawn this frame and the height of the first, for checks. */
+  netFloatCount = 0;
+  netFloatY = 0;
   private finCells: number[] = [];
   private frame = 0;
   private finMatrices = new Float32Array(FIN_COUNT * 16);
@@ -49,7 +56,41 @@ export class Effects {
     smokeMat.alpha = 0.7;
     this.smoke.material = smokeMat;
 
-    for (const m of [this.fins, this.flames, this.smoke]) { m.isPickable = false; m.alwaysSelectAsActiveMesh = true; m.setEnabled(false); }
+    // Shark-net floats (red and white, per-instance colour) and the marker buoy, placed on the water each frame.
+    const fl = MeshBuilder.CreateCylinder("nf", { diameter: 0.08, height: 0.1, tessellation: 5 }, scene);
+    this.netFloats = mergeFlat("sharkFloats", [tint(fl, "#ffffff")], scene);
+    this.netFloats.material = flatMaterial(scene).clone("sharkFloatMat") as StandardMaterial;
+    const bu = MeshBuilder.CreatePolyhedron("nb", { type: 1, size: 0.11 }, scene);
+    this.netBuoys = mergeFlat("sharkBuoys", [tint(bu, "#c9674f")], scene);
+    for (const m of [this.fins, this.flames, this.smoke, this.netFloats, this.netBuoys]) { m.isPickable = false; m.alwaysSelectAsActiveMesh = true; m.setEnabled(false); }
+  }
+
+  /** Every net's floats sit on the water: the tide and the swell carry them, the net hangs below. */
+  private syncNets(state: SimState, viewTime: number): void {
+    const nets: Building[] = [];
+    for (const b of Object.values(state.buildings)) if (b.kind === "sharkNet") nets.push(b);
+    this.netFloatCount = nets.length * FLOATS_PER_NET;
+    if (!nets.length) { this.netFloats.setEnabled(false); this.netBuoys.setEnabled(false); return; }
+    const level = state.tide.level;
+    const fm = new Float32Array(nets.length * FLOATS_PER_NET * 16), fc = new Float32Array(nets.length * FLOATS_PER_NET * 4), bm = new Float32Array(nets.length * 16);
+    const red = Color3.FromHexString("#c9674f"), white = Color3.FromHexString("#f7f3e8");
+    nets.forEach((b, n) => {
+      const { x, z } = cellCenter(b.cells[0]);
+      for (let k = 0; k < FLOATS_PER_NET; k++) {
+        const fx = x - 0.15 + k * 0.14;
+        const y = level + waveHeight(fx, z, viewTime) + 0.02;
+        if (n === 0 && k === 0) this.netFloatY = y;
+        const idx = n * FLOATS_PER_NET + k;
+        Matrix.Translation(fx, y, z).copyToArray(fm, idx * 16);
+        const c = k % 2 ? red : white;
+        fc[idx * 4] = c.r; fc[idx * 4 + 1] = c.g; fc[idx * 4 + 2] = c.b; fc[idx * 4 + 3] = 1;
+      }
+      Matrix.Translation(x - 0.35, level + waveHeight(x - 0.35, z, viewTime) + 0.06, z).copyToArray(bm, n * 16);
+    });
+    this.netFloats.setEnabled(true); this.netBuoys.setEnabled(true);
+    this.netFloats.thinInstanceSetBuffer("matrix", fm, 16, false);
+    this.netFloats.thinInstanceSetBuffer("color", fc, 4, false);
+    this.netBuoys.thinInstanceSetBuffer("matrix", bm, 16, false);
   }
 
   /** The riskiest water cells, refreshed every second or so. */
@@ -133,5 +174,6 @@ export class Effects {
     this.frame++;
     this.syncFins(state, viewTime);
     this.syncFire(state, viewTime);
+    this.syncNets(state, viewTime);
   }
 }

@@ -32,7 +32,7 @@ import { PierMarker } from "./view/marker";
 import { OverlayKind, Overlays } from "./view/overlays";
 import { Ship } from "./view/ship";
 import { Trees } from "./view/trees";
-import { Walkers } from "./view/walkers";
+import { PERSON_SCALE, Walkers } from "./view/walkers";
 import { setGroundSampler } from "./view/ground";
 import { Wildlife } from "./view/wildlife";
 import { computeLighting, createLights, dayFraction, duskAt, Lighting, MORNING } from "./world/lighting";
@@ -328,7 +328,9 @@ const api = {
     sky: () => ({ day: dayFraction(state.time), sun: { x: lastLight.skySun.x, y: lastLight.skySun.y, z: lastLight.skySun.z }, moon: lastLight.moon, night: lastLight.night, lit: { x: lastLight.sunDir.x, y: lastLight.sunDir.y, z: lastLight.sunDir.z } }),
     stormMix: () => stormMix,
     drawCalls: () => scene.getActiveMeshes().length,
-    audio: () => ({ started: audio.started, state: audio.state, muted: audio.muted, cries: audio.cries, hammers: audio.hammers }),
+    audio: () => ({ started: audio.started, state: audio.state, muted: audio.muted, cries: audio.cries, hammers: audio.hammers, bells: audio.bells }),
+    netFloats: () => ({ count: effects.netFloatCount, y: effects.netFloatY }),
+    personScale: () => PERSON_SCALE,
     porters: () => ({ now: walkers.porters, spawned: walkers.portersSpawned }),
     reflections: () => water.reflections,
     chunks: () => views.chunkCount,

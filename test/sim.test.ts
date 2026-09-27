@@ -658,16 +658,21 @@ describe("storms and the tsunami (M11)", () => {
     const homes = placeByWalkway(state, grid, "house", 4);
     expect(homes.length).toBeGreaterThanOrEqual(2);
     const dir = waveDirection(grid);
-    // Wall off one house: a sea wall on a free flat cell in front of it along the wave axis.
+    // Wall off one home: sea walls go on the shore (a flat cell against the hill), so the guarded home stands on
+    // the ground behind the wall along the wave axis — on the hill, where the shore is the last of the flats.
     let guarded: Building | null = null, wall: Building | null = null;
-    for (const home of homes) {
-      for (let s = 1; s <= 8 && !wall; s++) {
-        const c = { i: Math.floor(home.cells[0].i + 0.5 - dir.x * s), j: Math.floor(home.cells[0].j + 0.5 - dir.z * s) };
-        if (grid.classAt(c) === "flat" && !grid.buildingAt(c)) wall = tryPlace(state, grid, "seaWall", c);
-      }
-      if (wall) { guarded = home; break; }
+    for (let i = -30; i < 30 && !wall; i++) for (let j = -30; j < 30 && !wall; j++) {
+      const c = { i, j };
+      if (!grid.classOk("shore", [c]) || grid.buildingAt(c)) continue;
+      const behind = { i: Math.floor(c.i + 0.5 + dir.x * 1.5), j: Math.floor(c.j + 0.5 + dir.z * 1.5) };
+      if (!grid.canPlace("hut", [behind]) || !grid.classOk("shore", [c])) continue;
+      const w = tryPlace(state, grid, "seaWall", c);
+      if (!w) continue;
+      const h = tryPlace(state, grid, "hut", behind);
+      if (h && shielded(grid, dir, behind)) { wall = w; guarded = h; }
     }
     expect(wall).not.toBeNull();
+    expect(grid.canPlace("seaWall", [homes[0].cells[0]])).toBe(false); // not on open flats
     expect(shielded(grid, dir, guarded!.cells[0])).toBe(true);
     const exposed = homes.filter(h => h !== guarded && !h.cells.some(c => shielded(grid, dir, c)));
     expect(exposed.length).toBeGreaterThan(0);

@@ -514,6 +514,21 @@ try {
   });
   console.log("M8:", JSON.stringify(m8));
   assert(m8.maxSwimmers > 0, "swimmers appear at the beach at high water");
+  // Shark-net floats ride the water: the same net's floats sit ~a metre lower at low water than at high.
+  const floats = await page.evaluate(() => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    api.grant(200);
+    let net = null;
+    for (let i = -30; i < 30 && !net; i++) for (let j = -30; j < 30 && !net; j++) { const c = { i, j }; if (api.grid.classAt(c) === "deep" && !api.grid.buildingAt(c) && api.grid.neighbors(c).some((n: any) => api.grid.classAt(n) === "flat")) net = api.place("sharkNet", i, j); }
+    api.setTide(0.6); api.tickSeconds(0.1);
+    const high = api.view.netFloats();
+    api.setTide(-0.35); api.tickSeconds(0.1);
+    const low = api.view.netFloats();
+    api.setTide(null);
+    return { placed: !!net, high, low };
+  });
+  console.log("Net floats:", JSON.stringify(floats));
+  assert(floats.placed && floats.high.count > 0 && floats.high.y - floats.low.y > 0.8, "net floats follow the water level");
   assert(m8.risk > 0 && m8.fins > 0, "shark risk builds off the market and a fin patrols it");
   assert(m8.incidents >= 1, "an unguarded beach sees an incident");
   await page.waitForTimeout(400);
@@ -773,6 +788,21 @@ try {
   const cried = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; const before = api.view.audio().cries; api.audioCry(); return { before, after: api.view.audio().cries }; });
   console.log("Gull cries:", JSON.stringify(cried));
   assert(cried.after === cried.before + 1, "a gull cry plays through the ambient layer");
+  // The shift bell rings by day and stays silent between sunset and sunrise: walk eight shift changes and see.
+  const bells = await page.evaluate(() => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    const out: { sunUp: boolean; rang: boolean }[] = [];
+    for (let k = 0; k < 8; k++) {
+      const before = api.view.audio().bells;
+      api.advanceTo(0.65); api.advanceTo(0.8); // slack water → high water: a shift change
+      out.push({ sunUp: api.view.sky().day < 0.5, rang: api.view.audio().bells > before });
+    }
+    return out;
+  });
+  console.log("Bells:", JSON.stringify(bells));
+  assert(bells.some(b => b.sunUp) && bells.some(b => !b.sunUp), "the eight shifts span day and night");
+  assert(bells.every(b => b.rang === b.sunUp), "the bell rings exactly at the daytime shift changes");
+  assert((await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.view.personScale())) === 0.4, "people are 0.4 scale");
 
   // Backlog 2: caustics brighten the shallows over a beach at high water and add nothing when off.
   const b2 = await page.evaluate(async () => {

@@ -21,6 +21,11 @@ export function isDaytime(time: number): boolean {
   return duskAt(time) < NIGHT_DUSK;
 }
 
+/** Is the sun above the horizon (the first half of the day, sunrise to sunset)? */
+export function isSunUp(time: number): boolean {
+  return sunVector(dayFraction(time)).y > 0;
+}
+
 export interface Vec3 { x: number; y: number; z: number }
 
 function unit(v: Vec3): Vec3 { const l = Math.hypot(v.x, v.y, v.z); return { x: v.x / l, y: v.y / l, z: v.z / l }; }
