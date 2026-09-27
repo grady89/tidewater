@@ -106,7 +106,7 @@ describe("sector records", () => {
     const parsed = JSON.parse(json) as { version: number; meta: { name: string }; state: { version: number } };
     expect(parsed.version).toBe(1);
     expect(parsed.meta.name).toBe("Exported");
-    expect(parsed.state.version).toBe(2);
+    expect(parsed.state.version).toBe(3);
     const meta = importSector(store, 7, json, 200);
     expect(meta).toMatchObject({ face: 7, name: "Exported", band: "tropical", created: 100, lastPlayed: 200 });
     expect(stateHash(readSector(store, 7)!.state)).toBe(stateHash(state));

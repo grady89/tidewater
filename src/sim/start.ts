@@ -1,4 +1,5 @@
 // A new game: fresh ledger, grid index, and the free starting hut on the best of the flats.
+import { BiomeId } from "./biomes";
 import { Cell, createState, notify, SimState } from "./state";
 import { Grid } from "./grid";
 
@@ -54,8 +55,8 @@ export function seedTown(state: SimState, grid: Grid): void {
 }
 
 /** A fresh ledger and grid: `seed` drives the RNG, `islandSeed` the ground (0 = the original island). */
-export function newGame(seed = 1, islandSeed = 0): { state: SimState; grid: Grid } {
-  const state = createState(seed, islandSeed);
+export function newGame(seed = 1, islandSeed = 0, biome: BiomeId = "tidewater"): { state: SimState; grid: Grid } {
+  const state = createState(seed, islandSeed, biome);
   const grid = new Grid(state);
   seedTown(state, grid);
   return { state, grid };

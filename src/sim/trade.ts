@@ -7,6 +7,7 @@ import {
   TRADE_PRICE_SMOKED,
 } from "./balance";
 import { addCapped } from "./economy";
+import { GOOD_IDS, GoodId, GOODS } from "./goods";
 import { Grid } from "./grid";
 import { moveMoney } from "./money";
 import { Building, buildingList, notify, population, SimState } from "./state";
@@ -31,10 +32,21 @@ export function innCapacity(state: SimState): number {
   return n;
 }
 
-/** Queue planks for the next ship. Returns the order size now pending. */
+/** Queue `count` units of a good for the next ship. Returns the units of it now pending. */
+export function orderGood(state: SimState, good: GoodId, count: number): number {
+  const o = state.trade.orders;
+  o[good] = (o[good] ?? 0) + count;
+  return o[good]!;
+}
+
+/** Queue planks for the next ship (the original order button). Returns the planks now pending. */
 export function orderPlanks(state: SimState, count = PLANK_ORDER_SIZE): number {
-  state.trade.plankOrder += count;
-  return state.trade.plankOrder;
+  return orderGood(state, "planks", count);
+}
+
+/** Units of a good on order. */
+export function onOrder(state: SimState, good: GoodId): number {
+  return state.trade.orders[good] ?? 0;
 }
 
 /** Is there somewhere for a tourist to spend? */
@@ -76,13 +88,17 @@ export function settleTrade(state: SimState, grid: Grid): { trade: number; touri
     const reserve = (population(state) + IMMIGRANTS_PER_CYCLE) * FOOD_PER_CYCLE * FOOD_RESERVE_CYCLES;
     const fish = Math.max(0, r.fish - reserve);
     r.fish -= fish; trade += fish * TRADE_PRICE_FISH;
-    // Deliver planks that were ordered, as many as the purse allows.
-    if (t.plankOrder > 0) {
-      const affordable = Math.min(t.plankOrder, Math.floor((r.money + trade) / TRADE_PLANK_PRICE));
-      const delivered = addCapped(state, "planks", affordable);
-      trade -= delivered * TRADE_PLANK_PRICE;
-      t.plankOrder = Math.max(0, t.plankOrder - delivered);
-      if (delivered > 0) notify(state, `The trade ship unloaded ${delivered} planks`);
+    // Deliver what was ordered, good by good in registry order, as much as the purse allows.
+    for (const good of GOOD_IDS) {
+      const pending = t.orders[good] ?? 0;
+      if (pending <= 0) continue;
+      const price = good === "planks" ? TRADE_PLANK_PRICE : GOODS[good].sells;
+      const affordable = Math.min(pending, Math.floor((r.money + trade) / price));
+      const delivered = addCapped(state, good, affordable);
+      trade -= delivered * price;
+      const left = Math.max(0, pending - delivered);
+      if (left > 0) t.orders[good] = left; else delete t.orders[good];
+      if (delivered > 0) notify(state, `The trade ship unloaded ${delivered} ${GOODS[good].name}`);
     }
     moveMoney(state, trade, "trade");
     // Tourists: the last party sails, a new one lands if there is room.

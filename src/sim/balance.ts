@@ -1,5 +1,6 @@
 // Every tunable number in the economy, and the building catalog. No system may hard-code a value that lives here.
 import { CLEARANCE, DRY_TERRAIN, RAISED_FLOOR, SPRING_HI } from "../config";
+import { GoodId, GOOD_IDS, GOODS } from "./goods";
 
 export type BuildingKind =
   | "hut" | "house" | "tallHouse"
@@ -23,8 +24,9 @@ export const CATEGORIES: Category[] = ["Homes", "Streets", "Sea", "Production", 
  * a walkway on stilts is the street; paths take over on dry ground above it.
  */
 export type PlacementClass = "flat" | "deep" | "high" | "flatOrHigh" | "flatOrDeep" | "shore" | "edge" | "beach" | "highOrEdge" | "street";
-export type ResourceKind = "money" | "fish" | "shellfish" | "smoked" | "timber" | "planks";
-export type GoodKind = Exclude<ResourceKind, "money">;
+export type ResourceKind = "money" | GoodId;
+/** A stockpiled good: any id in the goods registry (sim/goods.ts). */
+export type GoodKind = GoodId;
 
 export interface Cost { money: number; planks?: number; timber?: number }
 
@@ -319,5 +321,5 @@ export const FISH_DEPLETE_PER_BOAT = 0.12;
 export const FISH_FLOOR = 0.05;
 
 // Stockpile caps before warehouses
-export const CAP_BASE: Record<GoodKind, number> = { fish: 100, shellfish: 100, smoked: 60, timber: 80, planks: 60 };
+export const CAP_BASE: Record<GoodKind, number> = Object.fromEntries(GOOD_IDS.map(g => [g, GOODS[g].cap])) as Record<GoodKind, number>;
 export const WAREHOUSE_CAP = 100;

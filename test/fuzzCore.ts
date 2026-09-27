@@ -6,6 +6,7 @@ import { SIM_TICK } from "../src/config";
 import { BuildingKind, BUILDINGS, FISH_CAP, GoodKind, LIFT_MAX, MAX_LEVEL } from "../src/sim/balance";
 import { addCapped, buyBoat, capFor, isHarbour, removeBuilding, tryPlace } from "../src/sim/economy";
 import { startStorm, startTsunami } from "../src/sim/events";
+import { emptyStock, GOOD_IDS } from "../src/sim/goods";
 import { ignite } from "../src/sim/fire";
 import { cellIndex, Grid, HALF, inBounds } from "../src/sim/grid";
 import { addLandfill, clearTree, plantTree } from "../src/sim/land";
@@ -44,7 +45,7 @@ export interface FuzzResult {
 }
 
 const KINDS = Object.keys(BUILDINGS) as BuildingKind[];
-const GOODS: GoodKind[] = ["fish", "shellfish", "smoked", "timber", "planks"];
+const GOODS: readonly GoodKind[] = GOOD_IDS;
 const TICKS_PER_CYCLE = 120 / SIM_TICK;
 const ACTIONS_PER_CYCLE = 6;
 const RECENT = 40;
@@ -188,7 +189,7 @@ export function runSeed(seed: number, cycles: number, onProgress?: (cycle: numbe
   const note = (s: string) => { recent.push(`c${state.tide.cycle} t${state.tick} ${s}`); if (recent.length > RECENT) recent.shift(); };
   let entries = 0;
   auditMoney(e => { entries += e.amount; });
-  const ledger: Ledger = { money: state.resources.money, entries: 0, stocks: { fish: 0, shellfish: 0, smoked: 0, timber: 0, planks: 0 } };
+  const ledger: Ledger = { money: state.resources.money, entries: 0, stocks: emptyStock() };
   const rebase = () => { ledger.money = state.resources.money; ledger.entries = 0; entries = 0; for (const g of GOODS) ledger.stocks[g] = state.resources[g]; };
   rebase();
   let speed = 1;

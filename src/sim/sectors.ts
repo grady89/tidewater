@@ -3,6 +3,7 @@
 // live under "tidewater.sector.N" (the state, LZW-packed) and "tidewater.sector.N.meta" (a small metadata
 // object read at every launch). The autosave and the three old save slots migrate here once.
 import { BAND_GATING } from "../config";
+import { BIOME_LABEL, BiomeId } from "./biomes";
 import { compress, decompress, isPacked } from "./compress";
 import { deserialize, serialize } from "./save";
 import { population, SimState } from "./state";
@@ -14,8 +15,8 @@ export function bandOf(face: number): Band {
   return face === 0 || face === 11 ? "polar" : face <= 5 ? "temperate" : "tropical";
 }
 
-export type Biome = "tidewater" | "delta" | "dunes" | "atoll" | "cinder" | "fjord";
-export const BIOME_LABEL: Record<Biome, string> = { tidewater: "Tidewater", delta: "Delta", dunes: "Dunes", atoll: "Atoll", cinder: "Cinder", fjord: "Fjord" };
+export type Biome = BiomeId;
+export { BIOME_LABEL };
 export const BIOMES_BY_BAND: Record<Band, Biome[]> = { temperate: ["tidewater", "delta", "dunes"], tropical: ["atoll", "cinder", "delta"], polar: ["fjord"] };
 /** Only Tidewater exists tonight; everything else is uncharted. */
 export const CHARTED: ReadonlySet<Biome> = new Set<Biome>(["tidewater"]);
