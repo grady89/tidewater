@@ -15,8 +15,9 @@ import { waterFS, waterVS } from "../../shaders/water";
 import { flatMaterial, mergeFlat, tint } from "../world/flatMesh";
 import { computeLighting, createLights, Lighting, SceneLights } from "../world/lighting";
 import { createSky, Sky } from "../world/sky";
-import { encodeHeightInto, TERRAIN_UNIFORMS } from "../world/terrain";
-import { WATER_UNIFORMS } from "../world/water";
+import { applyTerrainLook, encodeHeightInto, TERRAIN_SAMPLERS, TERRAIN_UNIFORMS } from "../world/terrain";
+import { applyWaterLook, WATER_UNIFORMS } from "../world/water";
+import { lookFor, TIDEWATER_LOOK } from "../view/biomes";
 import { clampToPentagon, EDGE, EDGES, Face, FACE_CIRCUMRADIUS, FACES, faceToward, insidePentagon, pentagonDisc, SOLID_INRADIUS, toLocal, V3 } from "./geometry";
 import { MINI_CELLS, miniatureHeights, roofPlacements } from "./miniature";
 
@@ -219,6 +220,7 @@ export class World {
     m.setFloat("waveAmp", 1).setVector2("waveDir", new Vector2(0, 1)).setFloat("waveFront", -999).setFloat("waveHeight", 0).setFloat("waveWidth", 3);
     m.setFloat("reflectMix", 0).setFloat("caustics", 0).setFloat("time", 0).setMatrix("frame", Matrix.Identity());
     m.setFloat("fogNear", FOG_WORLD[0]).setFloat("fogFar", FOG_WORLD[1]);
+    applyWaterLook(m, TIDEWATER_LOOK);
     m.backFaceCulling = false;
     return m;
   }
@@ -376,7 +378,9 @@ export class World {
     };
     for (let row = 0; row < HEIGHT_TEX; row++) for (let col = 0; col < HEIGHT_TEX; col++) {
       const x = (col / (HEIGHT_TEX - 1) - 0.5) * SIZE, z = (row / (HEIGHT_TEX - 1) - 0.5) * SIZE;
-      encodeHeightInto(fv.hdata, HEIGHT_TEX, row, col, height(x, z));
+      const ci = Math.floor(x), cj = Math.floor(z);
+      const mat = ci < -SIZE / 2 || ci >= SIZE / 2 || cj < -SIZE / 2 || cj >= SIZE / 2 ? 0 : isl.materials[(ci + SIZE / 2) * SIZE + (cj + SIZE / 2)];
+      encodeHeightInto(fv.hdata, HEIGHT_TEX, row, col, height(x, z), mat);
     }
     fv.heightTex.update(fv.hdata);
     fv.fog = FOG_WORLD;
@@ -402,7 +406,11 @@ export class World {
     terrain.convertToFlatShadedMesh();
     terrain.parent = fv.land;
     terrain.isPickable = false;
-    const terrainMat = new ShaderMaterial(`miniMat${index}`, this.scene, { vertexSource: terrainVS, fragmentSource: terrainFS }, { attributes: ["position", "normal"], uniforms: TERRAIN_UNIFORMS });
+    const terrainMat = new ShaderMaterial(`miniMat`, this.scene, { vertexSource: terrainVS, fragmentSource: terrainFS }, { attributes: ["position", "normal"], uniforms: TERRAIN_UNIFORMS, samplers: TERRAIN_SAMPLERS });
+    const look = lookFor(record.state), tideScale = tidesFor(biomeOf(record.state.world.biome).tide);
+    terrainMat.setTexture("heightTex", fv.heightTex);
+    applyTerrainLook(terrainMat, look, tideScale.scale);
+    applyWaterLook(fv.waterMat, look, tideScale.scale);
     terrainMat.setFloat("clipY", -999).setMatrix("frame", Matrix.Identity()).setFloat("fogNear", FOG_WORLD[0]).setFloat("fogFar", FOG_WORLD[1]);
     terrainMat.setFloat("waterLevel", level).setFloat("wetLevel", level + 0.1);
     terrain.material = terrainMat;

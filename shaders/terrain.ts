@@ -2,7 +2,9 @@
 // its discard at the top of the fragment shader (the water's reflection pass); `frame` (mat4, identity for the
 // island), which maps the world position and normal into a face's own frame before the study's height and slope
 // bands so the World's tilted miniatures are coloured as if flat; and `fogNear`/`fogFar` in place of the fog
-// literals (45, 140), with the same defaults. The colour math is verbatim.
+// literals (45, 140), with the same defaults. The biomes (docs/biomes) turned the five band colours into uniforms with the
+// study's values as defaults, and added three terms after the bands: snow above `snowLine` (999 = never), a
+// per-material tint read from the height texture's blue channel (0 = none), both additive. The colour math is verbatim.
 import { COMMON } from "./common";
 
 export const terrainVS = `
@@ -19,21 +21,25 @@ export const terrainFS = COMMON + `
     uniform float waterLevel, wetLevel;
     uniform float clipY; // added: the reflection pass discards everything under the water plane
     uniform mat4 frame; uniform float fogNear, fogFar;
+    uniform vec3 sandDeep, sand, grassLo, grassHi, rock; // the study's bands, as uniforms (biomes)
+    uniform float snowLine; uniform vec3 snowColor;       // snow above the line (999 = never)
+    uniform sampler2D heightTex; uniform vec3 matTints[9]; uniform float matMix[9]; // per-material tint, code in the blue channel
+    uniform float tideScale;                                // the biome's tide multiplier: the bands follow the water line
     void main(){
       if (vW.y < clipY) discard;
       vec3 L = (frame * vec4(vW, 1.0)).xyz;
       vec3 LN = normalize((frame * vec4(vN, 0.0)).xyz);
-      float y = L.y;
-      vec3 sandDeep = vec3(0.62,0.55,0.40);
-      vec3 sand     = vec3(0.90,0.83,0.63);
-      vec3 grassLo  = vec3(0.66,0.78,0.47);
-      vec3 grassHi  = vec3(0.45,0.66,0.36);
-      vec3 rock     = vec3(0.56,0.54,0.51);
+      float y = L.y / tideScale;
       vec3 col = mix(sandDeep, sand, smoothstep(-1.2, 0.0, y));
       col = mix(col, grassLo, smoothstep(0.55, 0.95, y));
       col = mix(col, grassHi, smoothstep(1.4, 3.2, y));
       col = mix(col, rock, smoothstep(4.2, 5.6, y));
       col = mix(col, rock, smoothstep(0.80, 0.62, LN.y) * step(0.5, y));
+      // biomes: snow above the line, and the cell material's tint
+      col = mix(col, snowColor, smoothstep(snowLine, snowLine + 0.8, L.y));
+      float mcode = texture2D(heightTex, L.xz / 64.0 + 0.5).b * 255.0;
+      for (int k = 1; k < 9; k++) col = mix(col, matTints[k], matMix[k] * step(abs(mcode - float(k)), 0.5));
+      y = L.y;
       // submerged and wet sand
       col *= mix(1.0, 0.72, smoothstep(waterLevel + 0.02, waterLevel - 0.02, y));
       float wet = smoothstep(waterLevel - 0.01, waterLevel + 0.03, y) * (1.0 - smoothstep(wetLevel - 0.05, wetLevel + 0.08, y));

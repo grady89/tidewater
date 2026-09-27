@@ -5,6 +5,7 @@
 import { dayFraction, isSunUp } from "../sim/daylight";
 import { Phase, SimState } from "../sim/state";
 import { tideNormalized } from "../sim/tide";
+import { BiomeLook } from "./biomes";
 
 const MUTE_KEY = "tidewater.muted";
 
@@ -13,6 +14,9 @@ export interface Ambient {
   /** Gulls in the air right now. */
   gulls: number;
 }
+/** The biome's ambience (view/biomes): levels 0..1 for the voices this layer can add on top of Tidewater's. */
+export type Ambience = BiomeLook["ambience"];
+const TIDEWATER_AMBIENCE: Ambience = { surf: 1, gulls: true, wind: 0, ice: 0, palms: 0, birds: 0, padRoot: 110 };
 
 /** The pad's wandering voice steps through these (Hz): a pentatonic set two octaves up from the root. */
 const PAD_ROOT = 110, PAD_FIFTH = 165;
@@ -31,6 +35,17 @@ export class Audio {
   private nextCry = 0;
   private nextStep = 0;
   private nextHammer = 0;
+  private nextCreak = 0;
+  private nextChirp = 0;
+  private windGain: GainNode | null = null;
+  private windFilter: BiquadFilterNode | null = null;
+  private rustleGain: GainNode | null = null;
+  private ambience: Ambience = TIDEWATER_AMBIENCE;
+  /** Creaks and chirps played (checks). */
+  creaks = 0;
+  chirps = 0;
+  /** The biome look's ambience parameters; applied every frame in sync. */
+  setLook(look: BiomeLook): void { this.ambience = look.ambience; }
   /** Gull cries, hammer blows and bells played so far (smoke probes). */
   cries = 0;
   hammers = 0;
@@ -70,6 +85,21 @@ export class Audio {
     this.surfGain.gain.value = 0.05;
     noise.connect(this.surfFilter).connect(this.surfGain).connect(this.master);
     noise.start();
+    // Wind (a biome voice): the same noise through a slow-swept band-pass, silent unless the look asks for it.
+    this.windFilter = ctx.createBiquadFilter();
+    this.windFilter.type = "bandpass";
+    this.windFilter.frequency.value = 240;
+    this.windFilter.Q.value = 0.8;
+    this.windGain = ctx.createGain();
+    this.windGain.gain.value = 0;
+    noise.connect(this.windFilter).connect(this.windGain).connect(this.master);
+    // Palm rustle: a high-passed hiss that swells with the wind, likewise silent by default.
+    const rustle = ctx.createBiquadFilter();
+    rustle.type = "highpass";
+    rustle.frequency.value = 3200;
+    this.rustleGain = ctx.createGain();
+    this.rustleGain.gain.value = 0;
+    noise.connect(rustle).connect(this.rustleGain).connect(this.master);
 
     // Thrum: a low sine with a slow wobble, silent until the sea does something.
     const thrum = ctx.createOscillator();
@@ -212,12 +242,67 @@ export class Audio {
     this.hammers++;
   }
 
+  /** Sea ice: a low groan that bends downward, with a grainy edge from a detuned partner. */
+  creak(): void {
+    if (!this.ctx || !this.master) return;
+    const ctx = this.ctx, t = ctx.currentTime;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.05, t + 0.4);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 2.2);
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass"; lp.frequency.value = 220;
+    lp.connect(g).connect(this.master);
+    for (const [f0, f1] of [[68, 44], [71, 47]] as [number, number][]) {
+      const o = ctx.createOscillator();
+      o.type = "sawtooth";
+      o.frequency.setValueAtTime(f0, t);
+      o.frequency.exponentialRampToValueAtTime(f1, t + 2.0);
+      o.connect(lp);
+      o.start(t); o.stop(t + 2.3);
+    }
+    this.creaks++;
+  }
+
+  /** A small bird: two or three quick rising sine chirps. */
+  chirp(): void {
+    if (!this.ctx || !this.master) return;
+    const ctx = this.ctx, t = ctx.currentTime;
+    const n = 2 + Math.floor(Math.random() * 2);
+    for (let k = 0; k < n; k++) {
+      const s = t + k * 0.16;
+      const o = ctx.createOscillator();
+      o.type = "sine";
+      const base = 2400 + Math.random() * 900;
+      o.frequency.setValueAtTime(base, s);
+      o.frequency.exponentialRampToValueAtTime(base * 1.5, s + 0.07);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, s);
+      g.gain.exponentialRampToValueAtTime(0.03, s + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.0001, s + 0.1);
+      o.connect(g).connect(this.master);
+      o.start(s); o.stop(s + 0.12);
+    }
+    this.chirps++;
+  }
+
   /** Every frame: follow the ledger and the view. */
   sync(state: SimState, stormMix: number, ambient: Ambient = { gulls: 0 }): void {
     if (!this.ctx || !this.surfGain || !this.surfFilter || !this.thrumGain || !this.padGain || !this.padVoice || !this.padFilter) return;
     const t = this.ctx.currentTime;
     const water = Math.max(0, Math.min(1.2, tideNormalized(state.tide)));
-    this.surfGain.gain.setTargetAtTime(0.04 + 0.08 * water + 0.25 * stormMix, t, 0.3);
+    const amb = this.ambience;
+    this.surfGain.gain.setTargetAtTime((0.04 + 0.08 * water + 0.25 * stormMix) * amb.surf, t, 0.3);
+    // The biome voices: wind that gusts on a slow cycle, the palms hissing under it, ice creaking now and then,
+    // small birds by day.
+    if (this.windGain && this.windFilter && this.rustleGain) {
+      const gust = 0.6 + 0.4 * Math.sin(t * 0.37) * Math.sin(t * 0.11 + 1.3);
+      this.windGain.gain.setTargetAtTime(amb.wind * (0.05 + 0.06 * gust + 0.12 * stormMix), t, 0.6);
+      this.windFilter.frequency.setTargetAtTime(180 + 220 * gust + 300 * stormMix, t, 0.6);
+      this.rustleGain.gain.setTargetAtTime(amb.palms * (0.012 + 0.02 * gust + 0.04 * stormMix), t, 0.5);
+    }
+    if (amb.ice > 0 && t > this.nextCreak) { this.creak(); this.nextCreak = t + 9 + Math.random() * 16 / amb.ice; }
+    if (amb.birds > 0 && t > this.nextChirp && isSunUp(state.time)) { this.chirp(); this.nextChirp = t + 3 + Math.random() * 9 / amb.birds; }
     this.surfFilter.frequency.setTargetAtTime(350 + 400 * water + 900 * stormMix, t, 0.3);
     const stage = state.tsunami.stage;
     const thrum = stage === "drawdown" ? 0.18 : stage === "wave" ? 0.3 : 0;
@@ -238,7 +323,7 @@ export class Audio {
     }
 
     // Gulls: the more in the air, the more often one calls; never at night.
-    if (ambient.gulls > 0 && state.phase !== "slack" && d < 0.55) {
+    if (amb.gulls && ambient.gulls > 0 && state.phase !== "slack" && d < 0.55) {
       if (t > this.nextCry) {
         this.cry();
         this.nextCry = t + 4 + Math.random() * 10 / Math.min(4, Math.max(1, ambient.gulls / 3));

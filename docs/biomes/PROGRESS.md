@@ -20,9 +20,9 @@ never push `main`. Where BIOMES.md is silent, choose the simplest option and log
 
 ## Stage 2 — biome framework
 - [DONE] 2a `src/sim/biomes/index.ts` Biome interface + `tidewater.ts` identity biome (seed 0 byte for byte).
-- [TODO] 2b `src/view/biomes/index.ts` BiomeLook read through one accessor.
+- [DONE] 2b `src/view/biomes/index.ts` BiomeLook read through one accessor.
 - [TODO] 2c `island(seed, biome)`; validation per biome; catalog = base ∪ unique − excluded; `start.ts` places a valid starter town for any biome/seed.
-- [TODO] 2d snow line, aurora, lagoon tint as new uniforms on existing shaders (additive only).
+- [DONE] 2d snow line, aurora, lagoon tint as new uniforms on existing shaders (additive only).
 
 ## Stage 3 — Fjord (§3.3)
 - [TODO] shaper, tide ×1.6, stockfish racks, whaling station + whale season, iron mine, ice house, sea ice + ice-breaker pier, avalanche, fauna, longboats, stave houses, hooded walkers, aurora, ambience, validation.
@@ -46,4 +46,4 @@ never push `main`. Where BIOMES.md is silent, choose the simplest option and log
 - [TODO] behind `LANES_ENABLED=false`.
 
 ## Last thing that worked
-- 2a: Biome interface + registry, tides.ts (tide multiplier through grid/tide/tick/placement/events/view), island(seed, biome), biome tick/settle hooks, test/biomes.test.ts; build+test+smoke green.
+- 2b+2d: BiomeLook + lookFor, shader uniforms (bands, snow, material tints, water tints, lagoon, aurora), kits for hats/boats/trees, fauna gate, ambience voices; build+test+smoke green.

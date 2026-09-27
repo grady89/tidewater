@@ -46,7 +46,7 @@ const smooth = (a: number, b: number, x: number) => { const t = Math.min(1, Math
  * @param dusk the palette blend, 0 = the study's noon, 1 = its dusk (storms push it up)
  * @param day the day fraction, 0 = dawn, 0.25 = noon, 0.5 = sunset, 0.75 = midnight
  */
-export function computeLighting(dusk: number, day = 0.25): Lighting {
+export function computeLighting(dusk: number, day = 0.25, fogTint: { tint: string; mix: number } | null = null): Lighting {
   const sv = sunVector(day), mv = moonVector(day);
   const skySun = new Vector3(sv.x, sv.y, sv.z);
   const moonDir = new Vector3(mv.x, mv.y, mv.z);
@@ -69,10 +69,10 @@ export function computeLighting(dusk: number, day = 0.25): Lighting {
     moon: moonUp * smooth(0.5, 0.75, dusk),
     night,
     zenith: lerp3(lerp3(NOON.zen, DUSK.zen, k), NIGHT_ZEN, night),
-    horizon: lerp3(lerp3(NOON.hor, DUSK.hor, k), NIGHT_HOR, night),
+    horizon: fogTint && fogTint.mix > 0 ? lerp3(lerp3(lerp3(NOON.hor, DUSK.hor, k), NIGHT_HOR, night), c3(fogTint.tint).scale(dim), fogTint.mix * 0.6) : lerp3(lerp3(NOON.hor, DUSK.hor, k), NIGHT_HOR, night),
     skyAmbient: lerp3(NOON.skyAmb, DUSK.skyAmb, k).scale(dim),
     groundAmbient: lerp3(NOON.grAmb, DUSK.grAmb, k).scale(dim),
-    fog: lerp3(lerp3(NOON.fog, DUSK.fog, k), NIGHT_HOR, night),
+    fog: fogTint && fogTint.mix > 0 ? lerp3(lerp3(lerp3(NOON.fog, DUSK.fog, k), NIGHT_HOR, night), c3(fogTint.tint).scale(dim), fogTint.mix) : lerp3(lerp3(NOON.fog, DUSK.fog, k), NIGHT_HOR, night),
     waterSky: lerp3(NOON.water, DUSK.water, k).scale(1 - 0.5 * night),
     lamp: Math.pow(Math.max(0, (dusk - 0.45) / 0.55), 1.5) * 2.2,
   };

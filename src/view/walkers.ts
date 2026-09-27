@@ -9,6 +9,7 @@ import { ground as groundHeight } from "./ground";
 import { ferryTerminals } from "../sim/network";
 import { Building, Cell, Phase, population, SimState } from "../sim/state";
 import { flatMaterial, mergeFlat, tint } from "../world/flatMesh";
+import { BiomeLook, HatKit } from "./biomes";
 
 export const MAX_WALKERS = 200;
 const SPEED = 1.6; // cells per second
@@ -50,8 +51,13 @@ interface Loiterer {
 
 export class Walkers {
   private readonly mesh: Mesh;
-  private readonly detail: Mesh;
+  private detail: Mesh;
   private readonly basket: Mesh;
+  private readonly scene: Scene;
+  /** The body parts the hat kits share (trousers, feet, hands); the head and hat are the kit. */
+  private readonly fixedParts: Mesh[];
+  private hatKit: HatKit = "straw";
+  private palette: readonly string[] = COLORS;
   private readonly lastAtSea = new Map<number, boolean>();
   /** Porters spawned so far (a smoke probe). */
   portersSpawned = 0;
@@ -96,13 +102,10 @@ export class Walkers {
       hand.position.set(side * 0.14, 0.215, 0);
       fixedParts.push(tint(hand, "#f4d9c6"));
     }
-    const head = MeshBuilder.CreateSphere("wh", { diameter: 0.17, segments: 5 }, scene);
-    head.position.y = 0.47;
-    fixedParts.push(tint(head, "#f4d9c6"));
-    const hat = MeshBuilder.CreateCylinder("wt", { diameterTop: 0, diameterBottom: 0.38, height: 0.14, tessellation: 8 }, scene);
-    hat.position.y = 0.56;
-    fixedParts.push(tint(hat, "#e6d3a1"));
-    this.detail = mergeFlat("walkerDetail", fixedParts, scene);
+    for (const p of fixedParts) p.setEnabled(false);
+    this.scene = scene;
+    this.fixedParts = fixedParts;
+    this.detail = this.buildDetail("straw");
     // The basket a porter carries in front, at hip height: a tub with a dark band and a few fish on top.
     const tub = MeshBuilder.CreateCylinder("wk", { diameter: 0.17, diameterTop: 0.19, height: 0.12, tessellation: 6 }, scene);
     tub.position.set(0, 0.2, 0.13);
@@ -113,6 +116,44 @@ export class Walkers {
     catchTop.position.set(0, 0.265, 0.13);
     this.basket = mergeFlat("baskets", [tint(tub, "#b9a377"), tint(band, "#5a4636"), tint(catchTop, "#5d6d7a")], scene);
     for (const m of [this.mesh, this.detail, this.basket]) { m.isPickable = false; m.alwaysSelectAsActiveMesh = true; m.setEnabled(false); }
+  }
+
+  /** The head and the biome's hat over the shared body: a straw cone, a knit cap, or a hood that closes round the face. */
+  private buildDetail(hat: HatKit): Mesh {
+    const scene = this.scene;
+    const parts = this.fixedParts.map(p => p.clone(p.name)!);
+    const head = MeshBuilder.CreateSphere("wh", { diameter: 0.17, segments: 5 }, scene);
+    head.position.y = 0.47;
+    parts.push(tint(head, "#f4d9c6"));
+    if (hat === "straw") {
+      const cone = MeshBuilder.CreateCylinder("wt", { diameterTop: 0, diameterBottom: 0.38, height: 0.14, tessellation: 8 }, scene);
+      cone.position.y = 0.56;
+      parts.push(tint(cone, "#e6d3a1"));
+    } else if (hat === "knit") {
+      const cap = MeshBuilder.CreateSphere("wt", { diameter: 0.19, segments: 5 }, scene);
+      cap.scaling.set(1, 0.7, 1);
+      cap.position.y = 0.52;
+      parts.push(tint(cap, "#b9543f"));
+      const bobble = MeshBuilder.CreateSphere("wtb", { diameter: 0.06, segments: 3 }, scene);
+      bobble.position.y = 0.6;
+      parts.push(tint(bobble, "#f2ece0"));
+    } else {
+      const hood = MeshBuilder.CreateCylinder("wt", { diameterTop: 0.05, diameterBottom: 0.26, height: 0.26, tessellation: 6 }, scene);
+      hood.position.set(0, 0.5, -0.02);
+      parts.push(tint(hood, "#3d2e26"));
+    }
+    const m = mergeFlat("walkerDetail", parts, scene);
+    m.isPickable = false; m.alwaysSelectAsActiveMesh = true; m.setEnabled(false);
+    return m;
+  }
+
+  /** The biome look: hat kit and tunic colours (view/biomes). Rebuilds the detail mesh when the hat changes. */
+  setLook(look: BiomeLook): void {
+    this.palette = look.walker.colors;
+    if (look.walker.hat === this.hatKit) return;
+    this.hatKit = look.walker.hat;
+    this.detail.dispose();
+    this.detail = this.buildDetail(this.hatKit);
   }
 
   /** The catch comes ashore: when a harbour's boats land, porters carry baskets from it to the market. */
@@ -134,7 +175,7 @@ export class Walkers {
       const n = Math.min(PORTERS_MAX, h.boats);
       for (let k = 0; k < n; k++) {
         const jitter = new Vector3((this.rand() - 0.5) * 0.3, 0, (this.rand() - 0.5) * 0.3);
-        this.walkers.push({ path: path.map(p => p.add(jitter)), t0: now + 0.5 + k * 0.9, duration: path.length / (SPEED * 0.8), color: Color4.FromHexString(COLORS[(h.id + k) % COLORS.length]), stay: false, seed: 0, carry: true });
+        this.walkers.push({ path: path.map(p => p.add(jitter)), t0: now + 0.5 + k * 0.9, duration: path.length / (SPEED * 0.8), color: Color4.FromHexString(this.palette[(h.id + k) % this.palette.length]), stay: false, seed: 0, carry: true });
         this.portersSpawned++;
       }
     }
@@ -230,7 +271,7 @@ export class Walkers {
         if (this.rand() > keep) continue;
         if (this.walkers.length >= this.cap) return;
         const jitter = new Vector3((this.rand() - 0.5) * 0.4, 0, (this.rand() - 0.5) * 0.4);
-        const color = Color4.FromHexString(COLORS[Math.floor(this.rand() * COLORS.length)]);
+        const color = Color4.FromHexString(this.palette[Math.floor(this.rand() * this.palette.length)]);
         const start = now + this.rand() * 2;
         legs.forEach((leg, li) => {
           const last = li === legs.length - 1;
@@ -258,7 +299,7 @@ export class Walkers {
       const path = this.route(home, work);
       if (!path || path.length < 2) continue;
       const jitter = new Vector3((this.rand() - 0.5) * 0.4, 0, (this.rand() - 0.5) * 0.4);
-      this.walkers.push({ path: path.map(p => p.add(jitter)), t0: now + this.rand() * 4, duration: path.length / SPEED + 30, color: Color4.FromHexString(COLORS[Math.floor(this.rand() * COLORS.length)]), stay: false, seed: 0, carry: false });
+      this.walkers.push({ path: path.map(p => p.add(jitter)), t0: now + this.rand() * 4, duration: path.length / SPEED + 30, color: Color4.FromHexString(this.palette[Math.floor(this.rand() * this.palette.length)]), stay: false, seed: 0, carry: false });
       spawned++;
     }
     return spawned;
@@ -271,12 +312,12 @@ export class Walkers {
       const cx = (Math.min(...is) + Math.max(...is) + 1) / 2, cz = (Math.min(...js) + Math.max(...js) + 1) / 2;
       if ((b.kind === "market" || b.kind === "marketSquare") && b.reached && !b.cut && (b.kind === "marketSquare" || b.workers > 0)) {
         for (let k = 0; k < LOITERERS_PER_MARKET; k++) {
-          this.loiterers.push({ centre: new Vector3(cx, b.floorY, cz), seed: b.id * 7 + k, color: Color4.FromHexString(COLORS[(b.id + k) % COLORS.length]), scale: 1 });
+          this.loiterers.push({ centre: new Vector3(cx, b.floorY, cz), seed: b.id * 7 + k, color: Color4.FromHexString(this.palette[(b.id + k) % this.palette.length]), scale: 1 });
         }
       }
       // Kids play around homes that have grown.
       if (BUILDINGS[b.kind].residents > 0 && b.level >= 2 && b.residents > 0 && b.reached) {
-        this.loiterers.push({ centre: new Vector3(cx, b.floorY, cz), seed: b.id * 11, color: Color4.FromHexString(COLORS[(b.id + 3) % COLORS.length]), scale: 0.6 });
+        this.loiterers.push({ centre: new Vector3(cx, b.floorY, cz), seed: b.id * 11, color: Color4.FromHexString(this.palette[(b.id + 3) % this.palette.length]), scale: 0.6 });
       }
     }
   }
@@ -305,7 +346,7 @@ export class Walkers {
         const x = water.i + 0.5 + Math.cos(t) * 0.28 + (k - 1) * 0.22, z = water.j + 0.5 + Math.sin(t * 0.8) * 0.28;
         // Chest-deep: the waterline crosses the tunic.
         const y = Math.max(level + Math.sin(viewTime * 2 + k) * 0.02 - CHEST, groundHeight(x, z) + 0.02);
-        out.push({ pos: new Vector3(x, y, z), yaw: t, color: Color4.FromHexString(COLORS[(k + sk) % COLORS.length]) });
+        out.push({ pos: new Vector3(x, y, z), yaw: t, color: Color4.FromHexString(this.palette[(k + sk) % this.palette.length]) });
       }
     }
     return out;
@@ -377,7 +418,7 @@ export class Walkers {
       put(pos, Math.atan2(to.x - from.x, to.z - from.z), l.color, l.scale);
     }
     for (const s of swimmers) put(s.pos, s.yaw, s.color);
-    riders.forEach((r, k) => put(r.pos, r.yaw, Color4.FromHexString(COLORS[(k + 5) % COLORS.length])));
+    riders.forEach((r, k) => put(r.pos, r.yaw, Color4.FromHexString(this.palette[(k + 5) % this.palette.length])));
     if (n === 0) { this.mesh.setEnabled(false); this.detail.setEnabled(false); return; }
     this.mesh.setEnabled(true); this.detail.setEnabled(true);
     this.mesh.thinInstanceSetBuffer("matrix", this.matrices, 16, false);

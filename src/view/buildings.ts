@@ -8,13 +8,16 @@ import { STILT_SINK } from "../config";
 import { BUILDINGS } from "../sim/balance";
 import { cellCenter, DIRS, Grid } from "../sim/grid";
 import { ground } from "./ground";
-import { roofFor, roofShape } from "./roofs";
+import { roofFor, roofShape, setRoofPalette } from "./roofs";
+import { BiomeLook } from "./biomes";
 import { Building, Cell } from "../sim/state";
 import { mergeFlat, tint } from "../world/flatMesh";
 
+// The palette is mutable in two fields: applyPalette swaps the walls and roofs (and the accents below) for the
+// island's biome look; every factory reads it at build time, and the chunks are rebuilt when the island changes.
 export const PALETTE = {
-  walls: ["#f2ece0", "#f4d9c6", "#d5e6ea", "#ece3c3", "#f7e7d3"],
-  roofs: ["#c9674f", "#4c5a66", "#b9543f", "#5d6d7a"],
+  walls: ["#f2ece0", "#f4d9c6", "#d5e6ea", "#ece3c3", "#f7e7d3"] as readonly string[],
+  roofs: ["#c9674f", "#4c5a66", "#b9543f", "#5d6d7a"] as readonly string[],
   wood: "#5a4636",
   planks: "#8a6f52",
   lantern: "#ffb859",
@@ -23,7 +26,16 @@ export const PALETTE = {
   hulls: ["#f2ece0", "#4c5a66", "#c9674f", "#2f6f8f"],
 };
 /** Accents the reference sheets lean on: the blue of doors and shutters, pale stone, dark window glass. */
-const BLUE = "#2f6f8f";
+let BLUE = "#2f6f8f";
+let TRIM = "#e6dccb";
+/** The biome look's walls, roofs and accents become the palette every factory builds from. */
+export function applyPalette(look: BiomeLook): void {
+  PALETTE.walls = look.walls;
+  PALETTE.roofs = look.roofs;
+  BLUE = look.accents.door;
+  TRIM = look.accents.trim;
+  setRoofPalette(look.roofs, look.roofShapeFor);
+}
 const STONE = "#8d8a83";
 const STONE_LIGHT = "#b9b6ae"; // new hex: dry quay stone (noted in NOTES)
 const GLASS = "#2b3a45";      // new hex: window glass
@@ -285,7 +297,7 @@ function home(scene: Scene, b: Building, bodyW: number, baseH: number): Building
   const bx = cx - 0.06, bz = cz + 0.05;
   parts.push(box(scene, bodyW, bodyH, bodyD, bx, F + bodyH / 2, bz, wall));
   // Plank lines: two thin bands so the wall reads as boards.
-  for (const k of [0.33, 0.66]) parts.push(box(scene, bodyW + 0.01, 0.015, bodyD + 0.01, bx, F + bodyH * k, bz, "#e6dccb"));
+  for (const k of [0.33, 0.66]) parts.push(box(scene, bodyW + 0.01, 0.015, bodyD + 0.01, bx, F + bodyH * k, bz, TRIM));
   door(scene, parts, bx - bodyW * 0.15, F, bz - bodyD / 2 - 0.005, false, 0.18, Math.min(0.32, bodyH * 0.55));
   window_(scene, parts, bx + bodyW / 2 + 0.005, F + bodyH * 0.6, bz, true, 0.14, 0.14, b.kind !== "hut");
   if (bodyH > 1.1) {
@@ -802,7 +814,7 @@ function warehouse(scene: Scene, b: Building): BuildingMeshes {
   const parts: Mesh[] = [];
   deck(scene, parts, cx, cz, w, d, F);
   parts.push(box(scene, 1.5, 1.05, 1.4, cx - 0.15, F + 0.525, cz, PALETTE.walls[0]));
-  for (const k of [0.25, 0.5, 0.75]) parts.push(box(scene, 1.51, 0.015, 1.41, cx - 0.15, F + 1.05 * k, cz, "#e6dccb"));
+  for (const k of [0.25, 0.5, 0.75]) parts.push(box(scene, 1.51, 0.015, 1.41, cx - 0.15, F + 1.05 * k, cz, TRIM));
   gable(scene, parts, cx - 0.15, cz, 1.5, 1.4, F + 1.05, 0.6, PALETTE.roofs[0], false, 0.16);
   door(scene, parts, cx - 0.15, F, cz - 0.705, false, 0.5, 0.62);
   parts.push(box(scene, 0.03, 0.6, 0.02, cx - 0.15, F + 0.31, cz - 0.72, PALETTE.wood));

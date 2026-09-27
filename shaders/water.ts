@@ -11,6 +11,9 @@
 // position and facet normal into a face's own frame before the study's height/depth/uv math, so a tilted face of
 // the globe is shaded as if it lay flat; `fogNear`/`fogFar` replace the study's fog literals (45, 140) with the
 // same defaults. With identity and the defaults every line computes what it did.
+// The biomes (docs/biomes) turned the three depth tints into uniforms with the study's values as defaults, added a
+// `depthScale` (1 = the study) so a biome's deeper or shallower water keeps its bands, and one additive term: lagoon
+// cells (material code 1, carried in the height texture's blue channel) pulled toward `lagoonTint` by `lagoonMix` (0 = off).
 // The only substitution is ${SIZE}, which the reference also interpolated from its SIZE constant.
 import { COMMON } from "./common";
 import { SIZE } from "../src/config";
@@ -41,6 +44,9 @@ export const waterFS = `
     uniform vec3 sunDir, sunColor, skyColor, fogColor, camPos;
     uniform float time, dusk, reflectMix, caustics;
     uniform mat4 frame; uniform float fogNear, fogFar;
+    uniform vec3 shallow, mid, deep;          // the study's three tints, as uniforms (biomes)
+    uniform vec3 lagoonTint; uniform float lagoonMix; // lagoon cells (material code 1 in the blue channel) pulled toward a tint
+    uniform float depthScale;                 // the biome's tide multiplier: the depth bands follow the water line
     void main(){
       vec3 L = (frame * vec4(vW, 1.0)).xyz;
       vec2 uv = L.xz / ${SIZE}.0 + 0.5;
@@ -51,9 +57,10 @@ export const waterFS = `
       vec3 n = normalize(cross(dFdx(vW), dFdy(vW)));
       if ((frame * vec4(n, 0.0)).y < 0.0) n = -n;
       vec3 V = normalize(camPos - vW);
-      vec3 shallow = vec3(0.58,0.86,0.82), mid = vec3(0.22,0.63,0.70), deep = vec3(0.09,0.34,0.52);
-      vec3 col = mix(shallow, mid, smoothstep(0.0, 0.9, depth));
-      col = mix(col, deep, smoothstep(0.8, 3.2, depth));
+      float bd = depth / depthScale;
+      vec3 col = mix(shallow, mid, smoothstep(0.0, 0.9, bd));
+      col = mix(col, deep, smoothstep(0.8, 3.2, bd));
+      col = mix(col, lagoonTint, lagoonMix * step(abs(t.b*255.0 - 1.0), 0.5));
       col = mix(col, vec3(0.10,0.24,0.42), dusk*0.55);
       float alpha = mix(0.34, 0.92, smoothstep(0.0, 1.4, depth));
       // fresnel toward sky

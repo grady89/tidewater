@@ -52,3 +52,15 @@ Calls made where BIOMES.md is silent, or where the code's balance and BIOMES.md 
 12. **Island cache keyed by `${biome}:${seed}`;** a biome's validation is the base thresholds (overridable per
     biome) plus its own `validate(stats)`; stats now count cells per material, deep-enough cells and cells above
     4.0 for the biomes' rules. Seed 0 only bypasses validation for Tidewater.
+13. **The look is data, the kits stay where they were** (`view/biomes/index.ts`): a `BiomeLook` carries the
+    water and terrain tints, material tints, sky fog/aurora, walls, roofs, accents, house/boat/hat/tree kit
+    names, fauna picks and ambience levels; `lookFor(state)` is the one accessor. `main.applyLook` pushes it into
+    the terrain and water materials (uniforms), the building palette (a mutable `PALETTE` read at build time;
+    chunks rebuild on `views.clear()`), the roof palette, and `setLook` on walkers, boats, trees, wildlife and
+    audio, each rebuilding its base meshes only when its kit changes.
+14. **Shader additions are uniforms with the study's values as defaults:** terrain bands (five vec3), `snowLine`
+    / `snowColor`, `matTints[9]` / `matMix[9]` read against the material code carried in the height texture's
+    blue channel (it was always 0), `tideScale`; water `shallow/mid/deep`, `lagoonTint/lagoonMix` (code 1 in the
+    same channel), `depthScale`; sky `aurora/auroraTime`. With the defaults every fragment computes what it did.
+15. **The World's miniatures read each sector's own look** (terrain and water uniforms per face, roofs from the
+    sector's palette), so Stage 5's face tinting is already half done.

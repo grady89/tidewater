@@ -6,6 +6,7 @@ import { BUILDINGS } from "../sim/balance";
 import { LANDFILL_HEIGHT } from "../sim/balance";
 import { HeightFn } from "../sim/heightfield";
 import { SimState } from "../sim/state";
+import { lookFor } from "../view/biomes";
 import { hasRoof, roofFor, roofShape, RoofShape } from "../view/roofs";
 
 /** Cells across the island square in the miniature (2-unit cells): 32 → 33 × 33 vertices. */
@@ -53,6 +54,7 @@ export interface RoofPlacement {
 /** The roofs to show on a miniature: one per building with walls, at its floor plus a kind-sized body. */
 export function roofPlacements(state: SimState): RoofPlacement[] {
   const out: RoofPlacement[] = [];
+  const look = lookFor(state);
   for (const b of Object.values(state.buildings)) {
     if (!hasRoof(b)) continue;
     const is = b.cells.map(c => c.i), js = b.cells.map(c => c.j);
@@ -61,7 +63,7 @@ export function roofPlacements(state: SimState): RoofPlacement[] {
     const body = home ? 0.55 + 0.14 * (b.level - 1) : 0.7;
     out.push({
       shape: home ? roofShape(b) : "hipped",
-      colour: home ? roofFor(b) : "#4c5a66",
+      colour: home ? roofFor(b, look.roofs) : look.roofs[1 % look.roofs.length],
       x: (minI + maxI + 1) / 2, z: (minJ + maxJ + 1) / 2, y: b.floorY + body,
       w: maxI - minI + 1, d: maxJ - minJ + 1,
     });

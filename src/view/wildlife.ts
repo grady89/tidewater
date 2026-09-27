@@ -7,6 +7,7 @@ import { cellIndex, Grid, HALF, inBounds } from "../sim/grid";
 import { ground as groundHeight } from "./ground";
 import { Building, SimState } from "../sim/state";
 import { mergeFlat, tint } from "../world/flatMesh";
+import { BiomeLook, FaunaKind } from "./biomes";
 
 const GULLS_PER_HARBOUR = 2;
 const GULLS_PER_BOAT = 1;
@@ -34,6 +35,9 @@ export class Wildlife {
   gullCount = 0;
   /** The Low quality preset turns the gulls off. */
   showGulls = true;
+  /** The biome look's fauna picks (view/biomes): which of the kits fly and scuttle here. */
+  private fauna: ReadonlySet<FaunaKind> = new Set<FaunaKind>(["gulls", "crabs"]);
+  setLook(look: BiomeLook): void { this.fauna = new Set(look.fauna); }
   crabCount = 0;
 
   constructor(scene: Scene, private readonly grid: Grid) {
@@ -129,7 +133,7 @@ export class Wildlife {
     let n = 0;
     const scale = new Vector3(0.7, 0.7, 0.7);
     for (const h of Object.values(state.buildings) as Building[]) {
-      if (!this.showGulls || (BUILDINGS[h.kind].slots ?? 0) === 0 || h.boats === 0) continue;
+      if (!this.showGulls || !this.fauna.has("gulls") || (BUILDINGS[h.kind].slots ?? 0) === 0 || h.boats === 0) continue;
       const is = h.cells.map(c => c.i), js = h.cells.map(c => c.j);
       const cx = (Math.min(...is) + Math.max(...is) + 1) / 2, cz = (Math.min(...js) + Math.max(...js) + 1) / 2;
       const flock = Math.min(5, GULLS_PER_HARBOUR + GULLS_PER_BOAT * h.boats);
@@ -161,6 +165,7 @@ export class Wildlife {
   }
 
   private syncCrabs(state: SimState, viewTime: number): void {
+    if (!this.fauna.has("crabs")) { this.crabCount = 0; this.crabs.setEnabled(false); return; }
     this.pickSites(state);
     const level = state.tide.level;
     let n = 0;

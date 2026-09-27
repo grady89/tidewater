@@ -32,7 +32,8 @@ import { MarkerLabel } from "./ui/markerLabel";
 import { Tutorial } from "./ui/tutorial";
 import { Audio } from "./view/audio";
 import { Boats } from "./view/boats";
-import { roofShape } from "./view/buildings";
+import { BiomeLook, lookFor } from "./view/biomes";
+import { applyPalette, roofShape } from "./view/buildings";
 import { BuildingViews } from "./view/buildingViews";
 import { Effects } from "./view/effects";
 import { Ferry } from "./view/ferry";
@@ -111,6 +112,7 @@ const overlays = new Overlays(scene, grid);
 const effects = new Effects(scene);
 const ship = new Ship(scene, grid);
 const wildlife = new Wildlife(scene, grid);
+const audio = new Audio();
 const ferry = new Ferry(scene, grid);
 const pierMarker = new PierMarker(scene, grid);
 const placement = new Placement(scene, camera, grid, canvas);
@@ -122,13 +124,25 @@ const markerLabel = new MarkerLabel(document.getElementById("markerLabel")!, "Pi
 achievements.adopt(state);
 placement.onSelect = b => info.select(b);
 placement.onLandfill = c => { terrain.raise([c], grid.tides.landfillHeight); trees.groundKey++; views.clear(); };
-if (state.landfill.length || state.world.seed !== 0) syncGround();
 cameraControl.onHome = () => api.frameTown(30);
 
-/** Swap the whole ledger (load, new town) and let every view rebuild from it. */
-/** The ground as the ledger has it: the heightfield plus every landfill cell. */
+/** The look the island wears now (view/biomes): everything that reads a palette reads it from here. */
+let look: BiomeLook = lookFor(state);
+function applyLook(): void {
+  look = lookFor(state);
+  terrain.setLook(look, grid.tides.scale);
+  water.setLook(look, grid.tides.scale);
+  applyPalette(look);
+  walkers.setLook(look);
+  boats.setLook(look);
+  trees.setLook(look);
+  wildlife.setLook(look);
+  audio.setLook(look);
+}
 function syncGround(): void {
-  terrain.reset(grid.island.height);
+  applyLook();
+  const mats = grid.materials;
+  terrain.reset(grid.island.height, (x, z) => { const i = Math.floor(x), j = Math.floor(z); return i < -SIZE / 2 || i >= SIZE / 2 || j < -SIZE / 2 || j >= SIZE / 2 ? 0 : mats[(i + SIZE / 2) * SIZE + (j + SIZE / 2)]; });
   terrain.raise(state.landfill.map(k => ({ i: Math.floor(k / SIZE) - SIZE / 2, j: (k % SIZE) - SIZE / 2 })), grid.tides.landfillHeight);
   trees.groundKey++;
   views.clear();
@@ -143,6 +157,8 @@ function adopt(next: SimState): void {
   achievements.adopt(state);
   syncView();
 }
+// The loaded ledger's ground and look, once every view exists (a seeded island, landfill, or another biome).
+if (state.landfill.length || state.world.seed !== 0 || state.world.biome !== "tidewater") syncGround();
 /** A fresh town on island `seed` (0 = the original island), replacing the active sector's town. */
 function newTown(seed = 0): void {
   tutorial.reset();
@@ -181,7 +197,6 @@ const menu = new SaveMenu(document.getElementById("menu")!, {
   },
 });
 let speed: Speed = 1;
-const audio = new Audio();
 /** The reflections toggle flips the live setting; the quality preset decides what a launch starts with. */
 function setReflections(on: boolean): void {
   water.setReflections(on);
@@ -465,12 +480,13 @@ function syncView(): void {
   const target = state.storm.active ? 1 : 0;
   stormMix += (target - stormMix) * Math.min(1, frameDt / 3);
   // A storm drags the light toward the study's dusk palette; the tsunami crest rides the water shader.
-  const light = computeLighting(Math.max(duskAt(state.time), stormMix * 0.95), dayFraction(state.time));
+  const light = computeLighting(Math.max(duskAt(state.time), stormMix * 0.95), dayFraction(state.time), { tint: look.sky.fogTint, mix: look.sky.fogMix });
   lastLight = light;
   lights.apply(light);
   terrain.setLighting(light);
   water.setLighting(light);
   sky.setLighting(light);
+  sky.setAurora(look.sky.aurora * (1 - stormMix), viewTime);
   water.setSwell(1 + (STORM_WAVE_AMP - 1) * stormMix);
   const ts = state.tsunami;
   water.setCrest(ts.dir, ts.stage === "wave" ? ts.front : -999, ts.stage === "wave" ? grid.tides.waveHeight : 0, WAVE_WIDTH);
