@@ -6,6 +6,13 @@ shellfish, trade, tourists) and the sea takes (pollution, sharks, storms, and on
 
 ![A stilt town at high water with boats on their grounds](shots/m4-high.png)
 
+The game opens on **the World** — a floating globe of twelve seas ("Tiny Tides"). Each face is a sea; pick one,
+name it, and dive: the camera drops onto its island. A built sea shows a miniature of its real town from up
+there. Towns live in their seas (twelve saves), and Escape or the Town menu's **World** button brings you back
+up. (On branch `globe` until merged; docs/globe/ has its design notes.)
+
+![The World: twelve seas, one built](shots/globe/world-wide.png)
+
 **Play it:** https://grady89.github.io/tidewater/ — built and published from `main` by GitHub Actions
 (`.github/workflows/ci.yml`: build + tests on every push, Pages deploy on `main`). One-time setup in the
 repository: Settings → Pages → Build and deployment → Source: **GitHub Actions**; until then the deploy job fails
@@ -21,11 +28,17 @@ npm run dev
 Open http://localhost:5180. `npm run build` typechecks and bundles to `dist/`; `npm run preview` serves that;
 `npm run check:dist` loads the build under the GitHub Pages path in headless Chrome and fails on any 404.
 QA tools: `npm run fuzz` (sim fuzzer, 50 seeds × 2000 cycles across worker threads), `npm run monkey` (15 minutes
-of random real input in headless Chrome), `npm run quality` (the three presets measured on the software renderer).
-`npm run test` runs the simulation's unit checks; `npm run smoke` drives the whole game headlessly through every
-milestone and drops screenshots in `shots/`.
+of random real input in headless Chrome, from the World), `npm run quality` (the three presets measured on the
+software renderer, island and World). `npm run test` runs the simulation's unit checks; `npm run smoke` launches
+into the World, dives into a sea, drives the whole game headlessly through every milestone, then checks the
+World, and drops screenshots in `shots/` and `shots/globe/`.
 
 ## Controls
+
+On the World: drag to spin, scroll or pinch to zoom, hover a sea for its card, click it (or **Enter**) to dive;
+the arrow keys turn the globe; **Escape** closes the card. An empty sea's card is the new-town form (island seed,
+coast, name, **Begin**); a built sea's card has Enter, Rename, Export and Delete; **Import a sea…** at the bottom
+takes an exported file. On the island, **Escape** with nothing open returns to the World.
 
 | Do | How |
 | --- | --- |
@@ -48,7 +61,7 @@ milestone and drops screenshots in `shots/`.
 | Order planks | the button in the panel once you have a harbor; the trade ship brings them |
 | Overlays | Pollution, Fish, Sharks, Fire — the buttons above the ledger line |
 | Speed | the bar at the bottom: pause (space), 1×, 2×, 4× |
-| Save / load / new town | **Town…** at the bottom, or Esc. **New town** starts on the island of the seed in the field (0 is the original island; **Random** picks another) |
+| Save / new town / back to the World | **Town…** at the bottom. The town saves itself into its sea at every high tide and when you leave; **World** goes back up; **New town** replaces this sea's town with one on the island of the seed in the field (0 is the original island; **Random** picks another) |
 | Playtest log | in **Town…**: tick *Record a playtest log* and the first 30 minutes of what you do and what the game tells you are kept on this machine; **Export playtest log** downloads them as JSON, with your notes |
 | Sound | the speaker button; it starts on your first click |
 | Reflections | **Reflections** at the bottom — a second render of the scene in the water; the quality preset decides the start |
@@ -80,6 +93,8 @@ milestone and drops screenshots in `shots/`.
 ## Layout
 
 `src/sim` is the ledger: every number, ticking on a fixed timestep, importing nothing from Babylon. `src/view`
-draws it and never writes to it. `src/ui` is the DOM. `shaders/` is the water and sky study, byte for byte, plus a
-handful of uniforms. `test/` holds the sim checks, the shared scripted-town scenarios, and the headless smoke.
-`NOTES.md` records every decision the brief didn't make; `HANDOFF.md` is where things stand.
+draws it and never writes to it. `src/ui` is the DOM. `src/globe` is the World (a second scene on the same
+engine; `src/sim/sectors.ts` holds its twelve saves). `shaders/` is the water and sky study, byte for byte, plus
+a handful of uniforms. `test/` holds the sim checks, the shared scripted-town scenarios, and the headless smoke.
+`NOTES.md` records every decision the brief didn't make; `HANDOFF.md` is where things stand; `docs/globe/` is
+the World's design, decisions, review and audit.

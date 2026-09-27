@@ -144,6 +144,22 @@ export function insidePentagon(f: Face, x: number, z: number, inset = 0): boolea
   return true;
 }
 
+/** The nearest point of the pentagon (inset by `inset`) to a local (x, z): points inside come back unchanged. */
+export function clampToPentagon(f: Face, x: number, z: number, inset = 0): { x: number; z: number } {
+  for (let pass = 0; pass < 4; pass++) {
+    for (let k = 0; k < 5; k++) {
+      const a = toLocal(f, f.corners[k]), b = toLocal(f, f.corners[(k + 1) % 5]);
+      const ex = b.x - a.x, ez = b.z - a.z;
+      const l = Math.hypot(ex, ez);
+      let nx = -ez / l, nz = ex / l;
+      if (nx * a.x + nz * a.z > 0) { nx = -nx; nz = -nz; }
+      const dist = (x - a.x) * nx + (z - a.z) * nz;
+      if (dist < inset) { x += (inset - dist) * nx; z += (inset - dist) * nz; }
+    }
+  }
+  return { x, z };
+}
+
 /**
  * A pentagon "disc": the face's pentagon cut into five triangles from the centre, each subdivided `rings`
  * times, so every triangle has the same area (the water's facet normals come from screen-space derivatives,

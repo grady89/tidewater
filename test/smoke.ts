@@ -60,13 +60,15 @@ try {
   const launch = await page.evaluate(() => {
     const api = (window as unknown as { __tidewater: Api }).__tidewater;
     api.world.setClock(11); // noon, so the World's light is the same in every run
-    return { mode: api.mode, built: api.world.faces().filter(m => m).length, active: api.world.active(), card: api.world.shownCard(), cardText: document.querySelector("#world .world-card")?.textContent?.replace(/\s+/g, " ").trim() ?? "", title: document.querySelector("#world h1")?.textContent, worldShown: !document.getElementById("world")!.hidden, hudHidden: getComputedStyle(document.getElementById("hud")!).display === "none", bootMs: api.bootMs, draws: api.world.drawCalls(), reduced: api.world.reducedMotion() };
+    return { mode: api.mode, built: api.world.faces().filter(m => m).length, active: api.world.active(), card: api.world.shownCard(), entranceDone: api.world.entranceDone(), title: document.querySelector("#world h1")?.textContent, worldShown: !document.getElementById("world")!.hidden, hudHidden: getComputedStyle(document.getElementById("hud")!).display === "none", bootMs: api.bootMs, draws: api.world.drawCalls(), reduced: api.world.reducedMotion() };
   });
   console.log("World launch:", JSON.stringify(launch));
-  assert(launch.mode === "world" && launch.built === 0 && launch.active === null && launch.worldShown && launch.hudHidden, "a fresh context launches into an empty World with the island's HUD hidden");
-  assert(launch.card === 1 && /Uncharted sea · Temperate/.test(launch.cardText) && /Begin/.test(launch.cardText) && launch.title === "Tiny Tides", "the pre-lit face's new-sector card is open");
+  assert(launch.mode === "world" && launch.built === 0 && launch.active === null && launch.worldShown && launch.hudHidden && launch.title === "Tiny Tides", "a fresh context launches into an empty World with the island's HUD hidden");
+  assert(launch.card === null && !launch.entranceDone, "the entrance is playing and the card waits for it");
   await page.waitForFunction(() => (window as unknown as { __tidewater: Api }).__tidewater.world.entranceDone(), null, { timeout: 10_000 });
   await page.waitForTimeout(300);
+  const surfaced = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { card: api.world.shownCard(), cardText: document.querySelector("#world .world-card")?.textContent?.replace(/\s+/g, " ").trim() ?? "" }; });
+  assert(surfaced.card === 1 && /Uncharted sea · Temperate/.test(surfaced.cardText) && /Begin/.test(surfaced.cardText), "after the entrance the pre-lit face's new-sector card is open");
   await page.screenshot({ path: "shots/globe/world-first-launch.png" });
   const dive = await page.evaluate(async () => {
     const api = (window as unknown as { __tidewater: Api }).__tidewater;
@@ -1036,10 +1038,11 @@ try {
     for (let i = -30; i < 30 && !placed; i++) for (let j = -30; j < 30 && !placed; j++) { const c = { i, j }; if (grid.classAt(c) === "flat" && !grid.buildingAt(c) && !grid.onIsle([c]) && grid.neighbors(c).every(n => !grid.buildingAt(n))) placed = api.place("hut", i, j); }
     const t0 = performance.now();
     const ok = await api.returnToWorld();
-    return { placed: !!placed, ok, ms: performance.now() - t0, mode: api.mode, pose: api.world.pose(), card: api.world.shownCard(), minis: api.world.miniatures().filter(m => m.built), meta: api.world.faces()[1], hudHidden: getComputedStyle(document.getElementById("hud")!).display === "none" };
+    return { placed: !!placed, ok, ms: performance.now() - t0, mode: api.mode, pose: api.world.pose(), card: api.world.shownCard(), minis: api.world.miniatures().filter(m => m.built), meta: api.world.faces()[1], hudHidden: getComputedStyle(document.getElementById("hud")!).display === "none", globeY: api.world.globeY(), entranceDone: api.world.entranceDone() };
   });
   console.log("World return:", JSON.stringify(back));
   assert(back.placed && back.ok && back.mode === "world" && back.ms >= 1000 && back.hudHidden, "the return flew back up to the World");
+  assert(back.globeY === 0 && back.entranceDone, "a dive taken during the entrance lands the globe first (it is not left half-risen)");
   assert(back.pose.camera === "orbit" && back.pose.phase === "idle" && back.card === 1, "the orbit camera is back with the sea's card open");
   assert(back.minis.length === 1 && back.minis[0].face === 1 && back.minis[0].roofs === 2 && back.meta?.buildings === 2 && back.meta?.name === "Smoke", "the miniature shows both roofs and the card counts them");
   await page.waitForTimeout(400);
@@ -1170,10 +1173,11 @@ try {
   });
   await page.reload();
   await waitReloaded(page);
-  const migrated = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; const faces = api.world.faces(); return { moved: api.world.migrated(), names: faces.map(m => m?.name ?? null), active: api.world.active(), card: api.world.shownCard(), notice: document.querySelector("#world .world-notice")?.textContent, buildings: Object.keys(api.sim.buildings).length, seed: api.sim.world.seed, flag: localStorage.getItem("tidewater.sectors.migrated"), autosaveKept: !!localStorage.getItem("tidewater.autosave"), lastPlayed: faces[3]?.lastPlayed ?? 0 }; });
+  await page.waitForFunction(() => (window as unknown as { __tidewater: Api }).__tidewater.world.entranceDone(), null, { timeout: 15_000 }); // the card opens after the entrance
+  const migrated = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; const faces = api.world.faces(); return { moved: api.world.migrated(), names: faces.map(m => m?.name ?? null), active: api.world.active(), card: api.world.shownCard(), notice: document.querySelector("#world .world-notice")?.textContent, buildings: Object.keys(api.sim.buildings).length, seed: api.sim.world.seed, flag: localStorage.getItem("tidewater.sectors.migrated"), autosaveKept: !!localStorage.getItem("tidewater.autosave"), lastPlayed: faces[3]?.lastPlayed ?? 0, globeY: api.world.globeY() }; });
   console.log("World migration:", JSON.stringify({ legacy, migrated }));
   assert(migrated.moved.length === 2 && migrated.names[1] === "First Sea" && migrated.names[3] === "Old Harbour" && migrated.names.filter(n => n).length === 2, "the autosave became face 1 and slot 2 face 3, named");
-  assert(migrated.active === 1 && migrated.card === 1 && migrated.buildings === legacy.n && migrated.seed === legacy.seed, "the launch opens on the migrated autosave");
+  assert(migrated.active === 1 && migrated.card === 1 && migrated.buildings === legacy.n && migrated.seed === legacy.seed && migrated.globeY === 0, "the launch opens on the migrated autosave with the globe risen");
   assert(/2 towns moved onto the World: First Sea, Old Harbour/.test(migrated.notice ?? "") && migrated.flag === "1" && migrated.autosaveKept && Date.now() - migrated.lastPlayed > 3_000_000, "the notice says so; the old keys stay; the slot's date is kept");
   await page.reload();
   await waitReloaded(page);

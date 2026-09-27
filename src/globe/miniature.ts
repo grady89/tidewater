@@ -14,12 +14,15 @@ export const MINI_CELLS = 32;
  * Vertex heights of the miniature on an (n+1)² grid over the 64-unit square, row-major with z growing down the
  * rows (row 0 = z = −32). Landfill cells stand at LANDFILL_HEIGHT.
  */
-export function miniatureHeights(height: HeightFn, landfill: number[], n = MINI_CELLS): Float32Array {
+export function miniatureHeights(height: HeightFn, landfill: number[], n = MINI_CELLS, extent = SIZE / 2): Float32Array {
   const out = new Float32Array((n + 1) * (n + 1));
   const filled = new Set(landfill);
   const half = SIZE / 2;
+  const clamp = (v: number) => Math.max(-half, Math.min(half, v));
   for (let row = 0; row <= n; row++) for (let col = 0; col <= n; col++) {
-    const x = -half + (col * SIZE) / n, z = -half + (row * SIZE) / n;
+    // A grid over [−extent, extent]²; beyond the island's own square the heights continue its rim (the World's
+    // heightmap clamps the same way, so the water's depth and the ground agree everywhere on the face).
+    const x = clamp(-extent + (col * 2 * extent) / n), z = clamp(-extent + (row * 2 * extent) / n);
     let h = height(x, z);
     if (filled.size) {
       // A vertex on a landfill cell (or its boundary) stands at the fill height, like the island's own mesh.

@@ -2,7 +2,7 @@
 // each face the game's water shader with its own heightmap, built faces carrying a miniature of their real
 // island (terrain shader, roof instances from the real buildings, water at the real tide). One sun by the
 // player's clock, the island's sky, clouds, fog. Reads sector records; writes nothing into any ledger.
-import { ArcRotateCamera, Color4, DefaultRenderingPipeline, Engine, FreeCamera, Matrix, Mesh, MeshBuilder, Quaternion, RawTexture, Scene, ShaderMaterial, StandardMaterial, Texture, TransformNode, Vector2, Vector3, VertexBuffer, VertexData } from "@babylonjs/core";
+import { ArcRotateCamera, Color3, Color4, DefaultRenderingPipeline, Engine, FreeCamera, Matrix, Mesh, MeshBuilder, Quaternion, RawTexture, Scene, ShaderMaterial, StandardMaterial, Texture, TransformNode, Vector2, Vector3, VertexBuffer, VertexData } from "@babylonjs/core";
 import { SIZE } from "../config";
 import { DUSK_MIN } from "../sim/daylight";
 import { HeightFn } from "../sim/heightfield";
@@ -15,7 +15,7 @@ import { computeLighting, createLights, Lighting, SceneLights } from "../world/l
 import { createSky, Sky } from "../world/sky";
 import { encodeHeightInto, TERRAIN_UNIFORMS } from "../world/terrain";
 import { WATER_UNIFORMS } from "../world/water";
-import { EDGE, EDGES, Face, FACES, faceToward, insidePentagon, pentagonDisc, SOLID_INRADIUS, V3 } from "./geometry";
+import { clampToPentagon, EDGE, EDGES, Face, FACE_CIRCUMRADIUS, FACES, faceToward, insidePentagon, pentagonDisc, SOLID_INRADIUS, V3 } from "./geometry";
 import { MINI_CELLS, miniatureHeights, roofPlacements } from "./miniature";
 
 // ---------- tuning (docs/globe/motion.md) ----------
@@ -25,7 +25,11 @@ const INERTIA = 0.92, ANGULAR = 900, WHEEL_PRECISION = 24, PINCH_PRECISION = 60;
 const IDLE_AFTER = 4, IDLE_RATE = 0.035, IDLE_RAMP = 2;
 const HOVER_LIFT = 2, HOVER_UP = 0.18, HOVER_DOWN = 0.24, HOVER_SUN = 0.2;
 const KEY_STEP_ALPHA = 0.4, KEY_STEP_BETA = 0.3, KEY_EASE = 0.3;
-const FOG_WORLD: [number, number] = [220, 600], FOG_UNCHARTED: [number, number] = [30, 90], FOG_ENTRANCE: [number, number] = [20, 60];
+const LOOK_TILT = 0.14;
+// Fog bands from the camera (which orbits at 230–420): a built sea is nearly clear at the front and hazes toward
+// the far side; an uncharted sea is half fog at the front — a pale wash that still reads as water; the entrance
+// starts inside the fog and pulls it out.
+const FOG_WORLD: [number, number] = [300, 700], FOG_UNCHARTED: [number, number] = [250, 430], FOG_ENTRANCE: [number, number] = [20, 60];
 const RISE_FROM = -60, RISE_SECONDS = 1.6, SWELL_FROM = 3, SWELL_START = 0.4, SWELL_END = 2.4;
 const SURFACE_START = 1.2, SURFACE_EACH = 0.5, SURFACE_GAP = 0.25, SURFACE_FROM = -6;
 /** Rings of the ocean disc: 48 puts the triangles at ~0.8 × 1.2 units, the island's own water grid density. */
@@ -33,6 +37,9 @@ const DISC_RINGS = 48;
 const HEIGHT_TEX = 128;
 const CLOUD_COUNT: Record<string, number> = { high: 40, medium: 24, low: 8 };
 const CLOUD_RATE = 0.02;
+const CLOUD_ALPHA = 0.92, CLOUD_FADE_NEAR = 115, CLOUD_FADE_FAR = 175;
+/** How much of the sun-facing light a face turned fully from the sun keeps (shade, not night). */
+const SHADE_FLOOR = 0.55;
 
 const outCubic = (t: number) => 1 - Math.pow(1 - Math.min(1, Math.max(0, t)), 3);
 const inOutCubic = (t: number) => { t = Math.min(1, Math.max(0, t)); return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
@@ -187,7 +194,7 @@ export class World {
     const parts: Mesh[] = [];
     for (const [a, b] of EDGES) {
       const mid = new Vector3((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
-      const out = mid.normalize().clone();
+      const out = mid.clone().normalize(); // (normalize() works in place: keep the midpoint itself)
       const along = V(b).subtract(V(a)).normalize();
       const across = Vector3.Cross(along, out).normalize();
       const rail = MeshBuilder.CreateBox("rail", { width: EDGE - 1.2, height: 0.35, depth: 0.6 }, this.scene);
@@ -214,8 +221,12 @@ export class World {
       parts.push(tint(s, "#f7f3e8"));
     }
     const mesh = mergeFlat("clouds", parts, this.scene);
-    mesh.material = (flatMaterial(this.scene).clone("cloudMat") as StandardMaterial);
-    (mesh.material as StandardMaterial).alpha = 0.92;
+    const mat = flatMaterial(this.scene).clone("cloudMat") as StandardMaterial;
+    mat.alpha = CLOUD_ALPHA;
+    // Seen from under the globe the bellies would take the hemisphere's ground colour; a little self-light keeps
+    // them cloud-pale from every side.
+    mat.emissiveColor = Color3.FromHexString("#f7f3e8").scale(0.3);
+    mesh.material = mat;
     mesh.parent = this.root;
     mesh.alwaysSelectAsActiveMesh = true;
     return mesh;
@@ -277,21 +288,27 @@ export class World {
     };
     for (let row = 0; row < HEIGHT_TEX; row++) for (let col = 0; col < HEIGHT_TEX; col++) {
       const x = (col / (HEIGHT_TEX - 1) - 0.5) * SIZE, z = (row / (HEIGHT_TEX - 1) - 0.5) * SIZE;
-      encodeHeightInto(fv.hdata, HEIGHT_TEX, row, col, insidePentagon(fv.face, x, z, 1.5) ? height(x, z) : -8);
+      encodeHeightInto(fv.hdata, HEIGHT_TEX, row, col, height(x, z));
     }
     fv.heightTex.update(fv.hdata);
     fv.fog = FOG_WORLD;
-    // The miniature: the island's heights on a coarse grid (the island's own ground layout: row 0 is z = +32),
-    // sunk outside the pentagon, flat-shaded.
-    const n = MINI_CELLS;
-    const heights = miniatureHeights(isl.height, record.state.landfill, n);
-    const terrain = MeshBuilder.CreateGround(`mini${index}`, { width: SIZE, height: SIZE, subdivisions: n }, this.scene);
+    // The miniature: the island's heights on a coarse grid (2-unit cells, like MINI_CELLS over the island's own
+    // square) that covers the whole pentagon and no more — vertices outside it are pulled onto its outline — so
+    // the sea floor continues the island's rim under every part of the face's water (the heightmap clamps the
+    // same way) and nothing pokes out of the solid. Flat-shaded. CreateGround's row 0 is z = +extent.
+    const ext = FACE_CIRCUMRADIUS + 1;
+    const n = Math.round(ext * MINI_CELLS / (SIZE / 2));
+    const heights = miniatureHeights(isl.height, record.state.landfill, n, ext);
+    const terrain = MeshBuilder.CreateGround(`mini${index}`, { width: 2 * ext, height: 2 * ext, subdivisions: n }, this.scene);
     const pos = terrain.getVerticesData(VertexBuffer.PositionKind)!;
+    const half = SIZE / 2, clampHalf = (v: number) => Math.max(-half, Math.min(half, v));
     for (let row = 0; row <= n; row++) for (let col = 0; col <= n; col++) {
       const k = row * (n + 1) + col;
       const x = pos[k * 3], z = pos[k * 3 + 2];
-      const inside = insidePentagon(fv.face, x, z, 1.5);
-      pos[k * 3 + 1] = inside ? heights[(n - row) * (n + 1) + col] : -8;
+      if (insidePentagon(fv.face, x, z)) { pos[k * 3 + 1] = heights[(n - row) * (n + 1) + col]; continue; }
+      const p = clampToPentagon(fv.face, x, z);
+      pos[k * 3] = p.x; pos[k * 3 + 2] = p.z;
+      pos[k * 3 + 1] = height(clampHalf(p.x), clampHalf(p.z));
     }
     terrain.updateVerticesData(VertexBuffer.PositionKind, pos);
     terrain.convertToFlatShadedMesh();
@@ -376,10 +393,14 @@ export class World {
     if (this.opts.reducedMotion()) { this.camera.alpha = goal.alpha; this.camera.beta = goal.beta; this.keyGoal = null; }
   }
 
-  /** Turn the camera to look at a face squarely (the returning launch settles on the last-played face). */
+  /**
+   * Turn the camera to look at a face (the returning launch settles on the last-played face). Ring faces are
+   * looked at from a touch below their normal, so the horizon's glow shows along the top of the frame.
+   */
   lookAt(face: number, instant = false): void {
     const n = FACES[face].normal;
-    const alpha = Math.atan2(n.z, n.x), beta = Math.acos(Math.max(-1, Math.min(1, n.y)));
+    const ring = Math.abs(n.y) < 0.99;
+    const alpha = Math.atan2(n.z, n.x), beta = Math.acos(Math.max(-1, Math.min(1, n.y))) + (ring ? LOOK_TILT : 0);
     const b = Math.min(CAM_BETA_MAX, Math.max(CAM_BETA_MIN, beta));
     if (instant || this.opts.reducedMotion()) { this.camera.alpha = alpha; this.camera.beta = b; this.keyGoal = null; return; }
     this.keyGoal = { alpha, beta: b, t: 0 };
@@ -437,6 +458,7 @@ export class World {
   /** Fly the World camera from its orbit down to the face's framing. Resolves at the end (at once with reduced motion). */
   flyTo(face: number, framing: Framing, seconds: number): Promise<void> {
     this.lastInput = this.time;
+    if (this.phase === "entering") this.finishEntrance(); // a dive during the entrance is "hurry up": the globe lands first
     this.orbitPose = { alpha: this.camera.alpha, beta: this.camera.beta, radius: this.camera.radius };
     const to = this.poseFor(face, framing);
     const from = this.orbitAsPose();
@@ -453,10 +475,13 @@ export class World {
 
   /** Arrive from the island at the face's framing and fly back up to the orbit. */
   flyBack(face: number, framing: Framing, seconds: number): Promise<void> {
+    if (this.phase === "entering") this.finishEntrance();
     const from = this.poseFor(face, framing);
     const orbit = this.orbitPose ?? { alpha: this.camera.alpha, beta: this.camera.beta, radius: this.camera.radius };
     this.camera.alpha = orbit.alpha; this.camera.beta = orbit.beta; this.camera.radius = orbit.radius;
-    this.camera.rebuildAnglesAndRadius();
+    // The orbit camera has not rendered since the dive: bring its position up to date with its angles before
+    // reading it (rebuildAnglesAndRadius would do the reverse and revive the stale position).
+    this.camera.getViewMatrix(true);
     const to = this.orbitAsPose();
     this.scene.activeCamera = this.flight;
     this.applyPose(from);
@@ -480,6 +505,9 @@ export class World {
   }
 
   get drawCalls(): number { return this.scene.getActiveMeshes().length; }
+
+  /** The globe's rise, for probes: −60 at the start of the entrance, 0 once landed. */
+  get globeY(): number { return this.root.position.y; }
 
   // ---------- per frame ----------
 
@@ -567,9 +595,13 @@ export class World {
     this.lights.apply(light);
     this.sky.setLighting(light);
     const camPos = this.scene.activeCamera!.position;
+    // Clouds thin out as a flight drops through their layer (they orbit 18–30 units above the faces).
+    (this.cloudMesh.material as StandardMaterial).alpha = CLOUD_ALPHA * smooth(CLOUD_FADE_NEAR, CLOUD_FADE_FAR, camPos.length());
     for (const fv of this.faces) {
       const facing = fv.face.normal.x * light.sunDir.x + fv.face.normal.y * light.sunDir.y + fv.face.normal.z * light.sunDir.z;
-      const day = 0.28 + 0.72 * smooth(-0.25, 0.35, facing);
+      // Faces turned from the sun sit in shade (the shaders' own lambert term already loses the sun on them);
+      // the floor keeps their land readable by day, and the moonlit floor in clockLighting() does the same by night.
+      const day = SHADE_FLOOR + (1 - SHADE_FLOOR) * smooth(-0.3, 0.3, facing);
       const boost = 1 + HOVER_SUN * (fv.lift / HOVER_LIFT);
       const fogNear = FOG_ENTRANCE[0] + (fv.fog[0] - FOG_ENTRANCE[0]) * fogT, fogFar = FOG_ENTRANCE[1] + (fv.fog[1] - FOG_ENTRANCE[1]) * fogT;
       const wm = fv.waterMat;

@@ -1,7 +1,7 @@
 // The World's pure parts: the dodecahedron, the pentagon discs, and the miniatures.
 import { describe, expect, it } from "vitest";
 import { LANDFILL_HEIGHT } from "../src/sim/balance";
-import { EDGE, EDGES, FACE_INRADIUS, FACES, faceToward, insidePentagon, pentagonDisc, SOLID_CIRCUMRADIUS, toLocal, toWorld } from "../src/globe/geometry";
+import { clampToPentagon, EDGE, EDGES, FACE_INRADIUS, FACES, faceToward, insidePentagon, pentagonDisc, SOLID_CIRCUMRADIUS, toLocal, toWorld } from "../src/globe/geometry";
 import { MINI_CELLS, miniatureHeights, roofPlacements } from "../src/globe/miniature";
 import { cellIndex } from "../src/sim/grid";
 import { island } from "../src/sim/island";
@@ -51,6 +51,13 @@ describe("the World's solid", () => {
     const c = toLocal(f, f.corners[0]);
     expect(insidePentagon(f, c.x * 1.01, c.z * 1.01)).toBe(false);
     expect(insidePentagon(f, c.x * 0.98, c.z * 0.98)).toBe(true);
+    // Clamping: inside points stay; outside points land on the outline (inside, within a hair of the boundary).
+    expect(clampToPentagon(f, 3, -4)).toEqual({ x: 3, z: -4 });
+    for (const [x, z] of [[c.x * 1.4, c.z * 1.4], [60, 0], [0, -70], [-50, 50], [45, 45]]) {
+      const p = clampToPentagon(f, x, z);
+      expect(insidePentagon(f, p.x, p.z, -1e-6)).toBe(true);
+      expect(insidePentagon(f, p.x, p.z, 0.05)).toBe(false);
+    }
   });
   it("builds a pentagon disc of equal triangles whose last ring is the face's own outline", () => {
     const f = FACES[7];

@@ -476,10 +476,13 @@ function syncView(): void {
   audio.sync(state, stormMix, { gulls: wildlife.gullCount });
 }
 
+/** The card the launch opens once the entrance has surfaced every sea (docs/globe/hero.md). */
+let cardAfterEntrance: number | null = null;
 engine.runRenderLoop(() => {
   const realDt = Math.min(engine.getDeltaTime() / 1000, 0.1);
   if (mode === "world") {
     world.render(realDt);
+    if (cardAfterEntrance !== null && world.entranceDone) { worldUi.showCard(cardAfterEntrance, faceMeta(cardAfterEntrance)); cardAfterEntrance = null; }
     if (probe) probeFrame();
     return;
   }
@@ -721,6 +724,8 @@ const api = {
     },
     /** The World's own Babylon scene (frame counting; nothing in the ledger touches it). */
     scene: world.scene,
+    /** The globe's height (0 once the entrance has landed it). */
+    globeY: () => world.globeY,
   },
   /** The ledger as JSON (what a save slot would hold). */
   saveJson: () => serialize(state),
@@ -743,6 +748,6 @@ showWorld();
 world.enter();
 const startFace = activeFace ?? 1;
 world.lookAt(startFace, true);
-worldUi.showCard(startFace, faceMeta(startFace));
+cardAfterEntrance = startFace;
 if (migrated.length) worldUi.setNotice(`${migrated.length === 1 ? "Your town" : `${migrated.length} towns`} moved onto the World: ${migrated.map(m => m.name).join(", ")}.`);
 world.scene.executeWhenReady(() => { api.ready = true; api.bootMs = performance.now() - bootStart; });

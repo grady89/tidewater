@@ -3,8 +3,9 @@
 This file is the truth for the overnight build. After any compaction: re-read CLAUDE.md and this file, then
 continue from the first item that is not DONE. Update after every step. Commit per step; push after each stage.
 
-Last thing that worked: Stage 5 complete — `npm run build`, `npm test` (10 files, 86 checks) and `npm run smoke`
-(every island check plus the World checks) green; committed and pushed on `globe`. Next: Stage 6.
+Last thing that worked: Stage 6 — build, vitest, smoke (fourth run) and check:dist green, shots/globe refreshed;
+committing and pushing. Stage 7 docs drafted; the monkey (5 min from the World) and quality runs are next,
+then audit.md's results, the ledger, and stop.
 
 ## Stages
 
@@ -21,8 +22,8 @@ Last thing that worked: Stage 5 complete — `npm run build`, `npm test` (10 fil
 | 5e | UI: title, sector card, new-sector flow, Town menu "World" button, rename, delete, export, import, reduced motion, in-page dialogs replacing window.confirm/prompt, quality preset applied to the World | DONE | src/globe/ui.ts, src/ui/dialog.ts, saveMenu.ts rewritten, index.html; the smoke drives rename / export / delete (cancel + confirm) / import / a bad file / reduced motion; no window.confirm or prompt left in src |
 | 5f | Entrance, dive and return sequences per stages 3–4 | DONE | world.ts (rise, fog, swell, surfacing; flyTo/flyBack) + main.ts (enterSector/returnToWorld); dive 1416 ms, return 1200 ms, cuts of 78 / 22 ms with reduced motion |
 | 5g | Tests: enterSector / world.* probes / newSector; smoke starts by creating + entering a sector then every existing check; new World checks; screenshots shots/globe wide + narrow; quality.ts measures the World | DONE | smoke: launch with no saves, create, dive, place, return (roof shown), reload, twelve seas round trip + reload, export → delete → import, migration from the old keys (once), reduced motion, keyboard, heap; shots/globe/*.png; quality.ts measures the World per preset |
-| 6 | Detail upgrade + docs/globe/review.md, smoke re-run, screenshots refreshed | TODO | |
-| 7 | Final audit + docs/globe/audit.md, monkey 5 min from the World, ARCHITECTURE.md + HANDOFF.md World sections | TODO | |
+| 6 | Detail upgrade + docs/globe/review.md, smoke re-run, screenshots refreshed | DONE | twelve fixes from a frame-by-frame reel (rails at the centre, fog bands, the sea-floor square, shade floor, clouds on flights, card after the entrance, horizon tilt, return orbit, narrow layout, disc spokes, a dive during the entrance); review.md; hero/motion notes updated to the code; smoke green, shots/globe refreshed |
+| 7 | Final audit + docs/globe/audit.md, monkey 5 min from the World, ARCHITECTURE.md + HANDOFF.md World sections | IN PROGRESS | ARCHITECTURE.md "The World", HANDOFF.md "The World" + run/API/measured/next, README, NOTES pointer written; audit.md drafted; monkey and quality runs pending |
 
 ## Blocked
 (none)
@@ -33,3 +34,5 @@ Last thing that worked: Stage 5 complete — `npm run build`, `npm test` (10 fil
 - 2026-09-27 · 5b sector model + tests (b3be223)
 - 2026-09-27 · 5a/5c/5d/5e/5f coded; scratch run: boot into the World 381 ms, 15 draw calls, dive 1440 ms, return ok, roofs follow placements, no errors. First-run visual fixes: miniature rebuilt on CreateGround (winding), camera 340, clouds sized, moonlit night floor, `clockOverride`. Water disc re-triangulated (five subdivided triangles, equal areas) after the noon shot showed spokes from the sliver fan at the centre.
 - 2026-09-27 · build + vitest green (86 checks); smoke green with the World checks (second run — the first failed only its last check, which read the card before the return flight had landed)
+- 2026-09-27 · stage 5 committed (9c4f3cc) and pushed
+- 2026-09-27 · stage 6: a zoomed shot showed the "spokes" were the edge rails at the globe's centre (Vector3.normalize in place); reel of entrance/dive/return frames → twelve fixes (docs/globe/review.md); build + vitest green; the third smoke run failed on the card-after-entrance timing in the migration check and exposed that a dive during the entrance left the globe half-risen (fixed: the flight lands the globe first); fourth run green

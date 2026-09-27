@@ -870,6 +870,26 @@ What other builders do and what was taken from each:
 - ARCHITECTURE.md: the module map, the tick order, and the path from a palette click to a merged chunk mesh.
 - No TODO / FIXME existed anywhere in `src/`, `test/` or `shaders/`.
 
+## Session C (overnight, branch `globe`): the World
+
+The game now launches into a floating dodecahedron of twelve seas and dives into one. The notes for it live in
+`docs/globe/` rather than here, because the brief asked for them as a staged set:
+
+- `direction.md`, `experience.md`, `hero.md`, `motion.md` — the four design stages (what it is, every state and
+  interaction, the hero's numbers, the motion table with the values the code uses).
+- `decisions.md` — the fifteen calls the brief left open (island scale; a static globe with an orbiting camera;
+  the shaders' `frame` and fog uniforms; the sun by the player's clock; face order and migration targets; roofs
+  as thin instances; sector storage and its LZW packing; uncharted seas as fogged water; the return framing; the
+  active sector as the autosave; the disc triangulation; the heap check in the smoke; Escape returning from the
+  island; the first-launch probe measuring the World).
+- `review.md` — the frame-by-frame pass and its twelve fixes; `audit.md` — the launch checklist and the final
+  runs; `PROGRESS.md` — the stage ledger.
+
+Two things a future session should know that the docs only imply: the island scene is never rebuilt (a dive
+is `adopt(state)` and a camera hand-over — do not turn it into a create/dispose lifecycle), and the shaders in
+`shaders/` gained uniforms only (`frame`, `fogNear`, `fogFar`; identity and the study's 45/140 by default), so
+the island's water and terrain render exactly as before.
+
 ## Findings on the v1 questions
 
 (placement and connectivity exist now; play a few cycles and write answers here)
