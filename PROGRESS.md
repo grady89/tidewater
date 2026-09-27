@@ -49,7 +49,7 @@ Grady was awake and sent two requests mid-session; both were done first and are 
 rotation (a building faces an adjoining street on its own, R turns it, the ghost shows a door tab) and the isle's
 outline (warped rim, off-centre knob, tilted shelf — no more ring of light). Sim tests and the smoke cover both.
 
-Commits: `3951b0c` Task 4 (the deploy files stand alone); the rest of the session is one commit after it, because
+Commits: `3951b0c` Task 4 (the deploy files stand alone); `02a766f` the rest of the session in one commit, because
 the live requests and tasks 1, 3, 5 and 6 all touch the same files (main.ts, grid.ts, state.ts, placement.ts, the
 docs) and no per-task split of them leaves every intermediate tree green — see the commit message for what is in
 it. Every commit was made with `npm run build`, `npm test`, `npm run smoke` and `npm run fuzz` green.
