@@ -412,3 +412,10 @@ export const NURSERY_POLLUTION_MAX = 0.3;
 export const HATCHING_LANTERN_RADIUS = 4;
 export const HATCHING_BONUS = 0.1;
 export const HATCHING_BONUS_MAX = 0.5;
+
+// Sea lanes (BIOMES.md §4; sim/lanes.ts, behind LANES_ENABLED)
+export const CARGO_SHIPS_PER_HARBOR = 1;
+export const CARGO_HOLD = 20;
+/** Non-food goods keep this fraction of their cap before any sails; an island wants a good it cannot make up to this fraction of its cap. */
+export const LANE_RESERVE_FRACTION = 0.3;
+export const LANE_WANT_FRACTION = 0.5;

@@ -2,7 +2,7 @@
 import { ArcRotateCamera, Color4, DefaultRenderingPipeline, Engine, Matrix, Scene, Vector3 } from "@babylonjs/core";
 import { CameraControl } from "./build/cameraControl";
 import { Placement, Tool } from "./build/placement";
-import { SIM_TICK, SIZE, TIDE_PERIOD } from "./config";
+import { LANES_ENABLED, SIM_TICK, SIZE, TIDE_PERIOD } from "./config";
 import { BUILDINGS, STORM_WAVE_AMP, WAVE_WIDTH } from "./sim/balance";
 import { districtOf } from "./sim/districts";
 import { startStorm, startTsunami } from "./sim/events";
@@ -15,6 +15,7 @@ import { GoodId } from "./sim/goods";
 import { Grid } from "./sim/grid";
 import { crossCommuters, ferryTerminals } from "./sim/network";
 import { deserialize, serialize } from "./sim/save";
+import { settleWorld } from "./sim/lanes";
 import { Biome, biomeAllowed, defaultName, deleteSector, exportSector, FACES, importSector, listMetas, migrateLegacy, readActive, readMeta, readSector, renameSector, SectorMeta, Store, writeActive, writeSector } from "./sim/sectors";
 import { newGame } from "./sim/start";
 import { WorldUi } from "./globe/ui";
@@ -550,7 +551,7 @@ engine.runRenderLoop(() => {
   while (acc >= SIM_TICK) {
     tick(state, grid);
     acc -= SIM_TICK;
-    if (state.tide.peaked) save();
+    if (state.tide.peaked) { save(); if (LANES_ENABLED) settleWorld(store, activeFace, state); }
   }
   if (probe) probeFrame();
   syncView();

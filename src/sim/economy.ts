@@ -292,8 +292,8 @@ export function homeHappiness(state: SimState, home: Building, fed: number, jobs
 const DAMAGE_GRIEF_RADIUS = 3;
 const FOODS = goodsOfRole("food");
 
-/** The cycle settlement, run once at every high-tide peak. */
-export function settleCycle(state: SimState, grid: Grid): void {
+/** The cycle settlement, run once at every high-tide peak. quiet (the World ledger, sim/lanes.ts) skips the hazards: no ignitions. */
+export function settleCycle(state: SimState, grid: Grid, opts: { quiet?: boolean } = {}): void {
   const r = state.resources;
   const stats = { cycle: state.tide.cycle, fishCaught: state.last.fishCaught, fishSold: 0, shellfishSold: 0, income: 0, expenses: 0, immigrants: 0, tourism: 0, trade: 0 };
   const buildings = buildingList(state).sort((a, b) => a.id - b.id);
@@ -354,7 +354,7 @@ export function settleCycle(state: SimState, grid: Grid): void {
   routeWaste(state);
   state.sharkEmitters = sharkSources(state);
   state.fireEmitters = fireSources(state);
-  rollIgnitions(state);
+  if (!opts.quiet) rollIgnitions(state);
   repairDamage(state);
   healInjuries(state);
 

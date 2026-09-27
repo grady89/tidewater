@@ -121,3 +121,10 @@ Calls made where BIOMES.md is silent, or where the code's balance and BIOMES.md 
     is a fallback taken only when the old one placed nothing.
 29. **The smoke's caustics check pins the quality preset to High** before measuring: the first-launch probe can pick
     Low on a loaded machine (a vitest run alongside the smoke did exactly that), and Low turns caustics off.
+30. **Sea lanes v0 (Stage 9, off):** the World ledger is a function over the sector store, not a running clock:
+    each peak of the active sea settles every other built sea exactly once (`settleOnly`: no ticks between, no
+    ignitions, the biome's settle hook still runs so seasons and bleaching keep pace). Cargo is a per-cycle hop
+    along each lane: an island offers what it holds above its reserve (food: the town's reserve; else 30% of
+    cap), a neighbour takes what it cannot make up to 50% of its cap, wants largest first, one hold of 20 per
+    harbor split across its lanes, overflow sails back. Adjacency is read from `globe/geometry.ts` (pure
+    math, no Babylon; the hygiene test allows `globe/`) rather than a copy of the table in the sim.

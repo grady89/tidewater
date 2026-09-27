@@ -946,3 +946,7 @@ session should know that those only imply:
   fishing boat, not a whaleboat; the aurora is a sky term only (no light on the ground); sea ice is a colour
   and a swell change, not a mesh; the ice-breaker pier's prow is a plain wedge; nothing announces the
   favourite luxury's bonus in the info panel beyond the happiness figure.
+- **Stage 9, sea lanes v0** (`sim/lanes.ts`, `LANES_ENABLED = false`): the ledger and the cargo hop exist and are
+  tested; nothing is drawn, nothing is announced beyond a notification, the company does not sail the lanes, and
+  the hold/reserve/want numbers are untuned placeholders. docs/biomes/PROGRESS.md Stage 9 lists exactly what is
+  missing. Turning the flag on is safe (the smoke and fuzz never saw it on, so run both first).

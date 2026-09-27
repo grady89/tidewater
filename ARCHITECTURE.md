@@ -56,6 +56,7 @@ src/sim/
   trees.ts               tree sites (from the island) and ages; felling and regrowth
   sea.ts                 sea BFS: grounds for boats, sea paths for the ship and the ferry
   trade.ts               the trade ship as the Trade Company's carrier: what it carries and buys here, sliding prices, the order book, tourists
+  lanes.ts               sea lanes v0 behind LANES_ENABLED (off): the World ledger (settlement-only ticks for inactive seas), cargo between adjacent harbors
   loan.ts                one loan at a time, repaid per settlement
   events.ts              storms and the tsunami (warning, drawdown, wave, strike, shielding)
   districts.ts           named clusters of buildings (view/info only)
@@ -259,5 +260,9 @@ meets them:
   `aurora/auroraTime`. With the defaults every fragment computes what the study computed.
 - **The Fjord** (`sim/biomes/fjord.ts`, `view/biomes/fjord.ts`) and **the Atoll** (`atoll.ts`): BIOMES.md §3.3
   and §3.2 in full — see docs/biomes/decisions.md #16–#23 for every number the design left open.
+
+- **Sea lanes v0** (`sim/lanes.ts`, behind `LANES_ENABLED`, off): `settleWorld(store, activeFace, state)` at each
+  peak autosave settles every other built sea once (`settleOnly`, quiet) and moves cargo one hop along every lane
+  (both faces built with a harbor, sharing an edge); decisions.md #30, PROGRESS.md Stage 9 for where it stopped.
 
 `docs/biomes/PROGRESS.md` is the stage ledger, `decisions.md` the calls made where BIOMES.md was silent.

@@ -43,7 +43,21 @@ never push `main`. Where BIOMES.md is silent, choose the simplest option and log
 - [DONE] side-by-side screenshots; fix rough spots; ARCHITECTURE.md, HANDOFF.md (Biomes section), NOTES.md; mark this file.
 
 ## Stage 9 — sea lanes (only if all DONE and nothing BLOCKED)
-- [TODO] behind `LANES_ENABLED=false`.
+- [DONE, stopped here] `LANES_ENABLED = false` in config.ts; `sim/lanes.ts` (sim-only): `settleOnly` (one quiet
+  settlement: the clock moves a cycle, `settleCycle({quiet})` skips ignitions, the biome's settle hook runs),
+  `surplusOf` / `wantOf` (food keeps the town's reserve; other goods keep LANE_RESERVE_FRACTION of cap; a coast
+  wants only goods it cannot make, up to LANE_WANT_FRACTION of cap), `flowLane` (one hop, one hold, wants first,
+  overflow sails back), `lanesOf` (both faces built with a harbor, sharing an edge — the dodecahedron's own
+  table, `globe/geometry.ts`, which has no Babylon), `settleWorld` (gated) / `settleWorldNow`: every built
+  sea but the active one settles once, then every lane flows, then the settled sectors are written back.
+  main.ts calls `settleWorld` at each peak autosave only when the flag is on. `test/lanes.test.ts` (7 tests).
+- Where it stopped / not done: no view (no cargo ship on the World or a lane drawn between faces); no ledger
+  UI (the sector card does not show what came or went, only a notification in the receiving sea); no company
+  route (§4's "the Trade Company sails the lanes" — the ship still visits every harbor on its own timer);
+  the active sea's own settlement is on its clock, so an idle World (player on the globe) settles nothing
+  until a sea is entered; the price slide stays per visit (HANDOFF known-rough). Balance numbers
+  (CARGO_HOLD 20, one ship per harbor, reserve 0.3 / want 0.5 of cap) are placeholders never played.
 
 ## Last thing that worked
+- Stage 9: sea lanes v0 behind LANES_ENABLED (off): sim/lanes.ts + test/lanes.test.ts, main hook gated. Build+test+smoke green.
 - Stages 6–8: scenario helpers (biomeTown, placeNear, joinByLine, growStreetAny; starterTown/growStreet/placeByWalkway hardened), console API (forceBiome, view.fauna, view.biome, clearSector, grantGood, orderGood), smoke sections per coast with shots to shots/biomes/, fuzzer coast per seed + new invariants, quality.ts per coast; balance probe recorded in NOTES.md; ARCHITECTURE.md, HANDOFF.md, NOTES.md updated. Build+test+smoke green.
