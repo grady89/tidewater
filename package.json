@@ -8,12 +8,18 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "smoke": "node test/smoke.ts"
+    "smoke": "node test/smoke.ts",
+    "fuzz": "node test/fuzz.ts",
+    "monkey": "node test/monkey.ts",
+    "quality": "node test/quality.ts",
+    "check:dist": "node test/deploycheck.ts"
   },
   "dependencies": {
     "@babylonjs/core": "^7.54.3"
   },
   "devDependencies": {
+    "@types/node": "^24.19.0",
+    "esbuild": "^0.28.2",
     "playwright": "^1.63.0",
     "typescript": "^5.9.3",
     "vite": "^7.3.1",
