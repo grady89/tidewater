@@ -27,16 +27,25 @@ Live status. Update after every milestone (and mid-milestone if you compact). On
 | Backlog 6 Second island | DONE | 56a188a · isle dome blended into the heightfield (main island's 750 land cells untouched), locked until a harbor, ferry steamer on the sea route; settleIsle scenario; 2 sim tests, smoke B6 · headless 165 fps |
 | Backlog 7 Achievements | DONE | ee5c2f1 · nine ledger milestones checked once a second, kept in state.achievements (old saves tolerated), ★ log line + 6 s popup; 2 sim tests, smoke B7 + big-town fifty/hundred · headless 165 fps |
 
-## Session A (overnight, branch `rules`)
+## Session A (overnight, branch `rules`) — all four tasks DONE, nothing BLOCKED
+
+Four commits on `rules` (not pushed; nobody asked): db146ad → 841095e → 8a018b4 → e0ff042, each with `npm run build`,
+`npm run test` and `npm run smoke` green first. 69 sim tests (was 60), smoke OK at 165 fps (the headless cap) after
+every task. NOTES.md "Session A" holds every reading the brief left open; CLAUDE.md §6/§7/§9/§11/§13, README and
+HANDOFF are updated to match.
 
 | Task | Status | Notes |
 |---|---|---|
-| 1 Replace the stilt rule | DONE | db146ad · floor = max(terrain + 0.5, tide + 0.1): walkways clear TIDE_HI, buildings SPRING_HI; only walkways under terrain 0.35 flood, at spring; cost 6$/unit of stilt on the ghost; `street` class spans flats + beach, paths dry ground; tsunami warned a tide ahead, walkways rebuild first; 65 tests, smoke 165 fps; starter town 650 → +52 over 4 cycles |
-| 2 Known-broken hour | DONE | 841095e · PERSON_SCALE 0.4 (swimmer waterline follows); shark-net floats + buoys in the effects layer on the water each frame (smoke: 0.95 lower at low water); shift bell gated by `isSunUp` (smoke: rang on exactly the 4 daytime shifts of 8); sea wall on the brief's `shore` class |
-| 3 Ferry carries workers | DONE | 8a018b4 · attempt 1 worked: `distanceField` is a bucket queue with one weighted edge — a bridged harbor ↔ every isle pier/dock at `FERRY_COST` (10 cells); `assignWorkers` unchanged, so isle homes staff mainland jobs and mainland homes crew isle boats (sim test: 4 cross each way, distance = market→harbor + 10 + pier→hut; an unlinked or cut harbor carries nobody); view: cross commuters walk to their terminal, ride 20 s, walk on from the far one; up to 8 riders on the ferry's deck (smoke: 4 commuters, 4 riders). 66 tests, build, smoke 165 fps |
-| 4 Seeded islands | IN PROGRESS | sub-task: `islandHeight(seed)` + `island.ts` (validation, rerolls, tree sites) done; ledger `world.seed`, save fill, `Grid.island`, terrain/ground view rewire, Town menu seed field + Random done; seed 0 fingerprint `19bacd86` pinned; reroll rate seeds 1..200: 57% rerolled, 1.35 rerolls/island, max 11, 0 fallbacks; sim tests + smoke block written, verification run next |
+| 1 Replace the stilt rule | DONE | db146ad · every standard piece sizes its stilts: floor = max(terrain + `STILT_MIN` 0.5, tide + `CLEARANCE` 0.1) — walkways clear `TIDE_HI`, houses/buildings clear `SPRING_HI`; only standard walkways flood, only at spring tides, only under terrain 0.35; raised walkway kept as the spring-proof street; cost = base + `STILT_COST_PER_UNIT` (6$) × stilt length, on the ghost with the length; `[ ]` lifts only above the auto height, `WALKWAY_SNAP` never below it; tsunami threshold `WAVE_HEIGHT` = SPRING_HI + CLEARANCE + 0.45, "the sea is uneasy" one cycle ahead, walkways rebuild themselves for base cost; the stuck hint's flood advice, the lift-the-deck tutorial step and the market's "under water" warning are gone. Starter town from 650: 143 after the build, +52 over 4 cycles (136 / 133 / 160 / 195) — no retune needed |
+| 2 Known-broken hour | DONE | 841095e · `PERSON_SCALE` 0.4 (a quarter of a cell; hats, baskets, porters, swimmers' waterline follow); shark-net floats and buoys moved to the effects layer and placed on the water each frame (smoke: 0.95 lower at low water); shift bell only while `isSunUp` (smoke: rang on exactly the 4 daytime shifts of 8); sea wall on the brief's `shore` class |
+| 3 Ferry carries workers | DONE | 8a018b4 · first attempt worked, ferry and isle stay. `distanceField` is a bucket queue with one weighted edge: a harbor the street reaches (a raised walkway bridges it) ↔ every pier/dock on the isle at `FERRY_COST` (10 cells); `assignWorkers` unchanged, so isle homes staff mainland jobs and mainland homes crew isle boats (sim test: 4 cross each way, isle hut = market→harbor + 10 + pier→hut; an unlinked or cut harbor carries nobody). View: cross commuters walk to their terminal, cross for 20 s, walk on from the far one; up to 8 riders on the ferry's deck (smoke B6: 4 commuters, 4 riders). `bridgeTo` scenario helper |
+| 4 Seeded islands | DONE | e0ff042 · `islandHeight(seed)` + `island.ts`: ≥ 400 flats, contiguous flats ≥ 250, ≥ 3 pier sites, ≥ 1 harbor site, ≥ 60 trees on high cells (read as tree sites, not distinct cells — the original island's 70 sites share 45 cells); reroll via `candidateSeed(seed, k)` until valid, cap 32 then the original island stands in. Seed 0 reproduces the current island exactly (fingerprint `19bacd86` of all 4096 heights pinned in the tests). **Reroll rate, seeds 1..200: 114 of 200 rerolled at least once (57%), 269 rerolls in all (1.35 per island), worst seed 11, fallbacks 0; ~5 ms per candidate.** Ledger `world.seed` (old saves → 0), Town menu seed field + Random + New town; smoke drives the menu to island 7, reloads onto it, returns to 0 |
 
 Not touched tonight (another session owns them): `test/fuzz*`, `.github/`, `src/ui/settings*`.
+
+For the morning: the four Task 2 items are off HANDOFF's known-broken list; the ferry needs the harbor bridged to the
+street before anyone crosses (an unbridged harbor still opens the isle); old saves keep their pre-rule floors and land
+on island 0. The next thing to do is still HANDOFF's #1 — play the walkthrough cold with a mouse — now on a random island.
 
 ## Current focus
 Nothing left on ROADMAP.md: M0–M14 and backlog 1–7 are DONE, nothing BLOCKED. Last thing that worked: achievements green (build/test/smoke, 49 tests, 165 fps). HANDOFF.md rewritten at the end of the run.
