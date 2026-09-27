@@ -7,7 +7,9 @@ shellfish, trade, tourists) and the sea takes (pollution, sharks, storms, and on
 ![A stilt town at high water with boats on their grounds](shots/m4-high.png)
 
 **Play it:** https://grady89.github.io/tidewater/ — built and published from `main` by GitHub Actions
-(`.github/workflows/ci.yml`: build + tests on every push, Pages deploy on `main`).
+(`.github/workflows/ci.yml`: build + tests on every push, Pages deploy on `main`). One-time setup in the
+repository: Settings → Pages → Build and deployment → Source: **GitHub Actions**; until then the deploy job fails
+and the URL is a 404.
 
 ## Run it
 

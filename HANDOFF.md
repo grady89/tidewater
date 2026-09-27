@@ -77,8 +77,11 @@ category, pierMarker, hint).
   leaves the pier on a cell that could not take one now (QA.md proposal).
 - **The purse can go below zero**: upkeep is taken whether or not there is income, and only `canAfford` stops
   the bleeding. The ledger line shows the minus but nothing says why (QA.md proposal).
-- **The Pages workflow has not run yet** (`.github/workflows/ci.yml`): nothing was pushed during the QA session,
-  and Pages must be set to "GitHub Actions" once in the repository settings. `npm run check:dist` is what it runs.
+- **Pages is not switched on yet.** The CI workflow runs on GitHub (build, tests and the headless `check:dist`
+  all green on `main`), but its deploy job fails until someone sets Settings → Pages → Source to "GitHub
+  Actions" once; the workflow's own token cannot create the site (a 403 from `configure-pages` with
+  `enablement: true`). After that flip, re-run the workflow (Actions → CI → Run workflow) or push, and
+  https://grady89.github.io/tidewater/ goes live.
 - Reflections skip walkers, lanterns, fins, flames, smoke, gulls; the mirror plane is the still-water level.
 
 ## Balance observations from the playtests

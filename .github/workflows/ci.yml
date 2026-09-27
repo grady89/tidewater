@@ -42,9 +42,9 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      # Switches the repository's Pages source to "GitHub Actions" the first time (the repo had Pages off).
+      # Pages must be switched on once by hand: Settings → Pages → Build and deployment → Source: "GitHub Actions"
+      # (the workflow's own token may not create the site — enablement: true fails with a 403). After that every
+      # push to main publishes; this step just reads the site's configuration.
       - uses: actions/configure-pages@v5
-        with:
-          enablement: true
       - id: deployment
         uses: actions/deploy-pages@v4
