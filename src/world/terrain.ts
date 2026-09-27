@@ -77,6 +77,8 @@ export interface Terrain {
   reset(height?: HeightFn, material?: MaterialFn | null): void;
   /** The biome's look: band colours, snow, material tints, tide scale. */
   setLook(look: BiomeLook, tideScale?: number): void;
+  /** Coral bleaching per cell (0..1, a 64×64 field) into the height texture's alpha, for the water shader. */
+  setBleach(field: number[] | null): void;
 }
 
 const SUBDIVISIONS = 170;
@@ -164,6 +166,17 @@ export function createTerrain(scene: Scene, height: HeightFn = terrainHeight): T
       heightTex.update(hdata);
     },
     setLook(look, tideScale = 1) { applyTerrainLook(material, look, tideScale); },
+    setBleach(field) {
+      const TW = HEIGHT_TEX_SIZE;
+      for (let row = 0; row < TW; row++) for (let col = 0; col < TW; col++) {
+        const x = (col / (TW - 1) - 0.5) * SIZE, z = (row / (TW - 1) - 0.5) * SIZE;
+        const i = Math.floor(x), j = Math.floor(z);
+        const inside = i >= -SIZE / 2 && i < SIZE / 2 && j >= -SIZE / 2 && j < SIZE / 2;
+        const b = field && inside ? field[(i + SIZE / 2) * SIZE + (j + SIZE / 2)] : 0;
+        hdata[(row * TW + col) * 4 + 3] = Math.round(255 * (1 - Math.min(1, Math.max(0, b))));
+      }
+      heightTex.update(hdata);
+    },
     reset(height, material = undefined) {
       if (height) sample = height;
       if (material !== undefined) materialFn = material;

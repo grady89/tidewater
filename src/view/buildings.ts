@@ -285,10 +285,52 @@ function homeRoof(scene: Scene, parts: Mesh[], b: Building, cx: number, cz: numb
 }
 
 /**
+ * A round thatched hut (the Atoll): a cylinder of pale wall under a cone of thatch; level 2 adds a verandah on
+ * posts round the front, level 3 a second storey with its own smaller cone.
+ */
+function roundHome(scene: Scene, b: Building, bodyW: number, baseH: number): BuildingMeshes {
+  const { cx, cz, w, d } = bounds(b.cells, b.rot);
+  const F = b.floorY;
+  const dia = bodyW * 1.05;
+  const bodyH = baseH * 0.85;
+  const parts: Mesh[] = [];
+  deck(scene, parts, cx, cz, w, d, F);
+  const wall = PALETTE.walls[b.id % PALETTE.walls.length];
+  const bx = cx, bz = cz + 0.04;
+  parts.push(cyl(scene, dia, bodyH, bx, F + bodyH / 2, bz, wall, 8));
+  for (const k of [0.4, 0.75]) parts.push(cyl(scene, dia + 0.02, 0.015, bx, F + bodyH * k, bz, TRIM, 8));
+  door(scene, parts, bx, F, bz - dia / 2 + 0.02, false, 0.18, Math.min(0.32, bodyH * 0.6));
+  const roofHex = roofFor(b);
+  const rise = dia * 0.62;
+  let top = F + bodyH;
+  if (b.level >= 3) {
+    // The second storey: a narrower drum with a window, its cone above.
+    parts.push(cyl(scene, dia * 0.72, bodyH * 0.6, bx, top + bodyH * 0.3, bz, wall, 8));
+    window_(scene, parts, bx, top + bodyH * 0.3, bz - dia * 0.36 - 0.005, false, 0.12, 0.12, false);
+    parts.push(cyl(scene, dia + 0.3, 0.05, bx, top + 0.02, bz, roofHex, 8)); // the lower thatch brim
+    top += bodyH * 0.6;
+    parts.push(cyl(scene, dia * 0.72 + 0.3, rise * 0.8, bx, top + rise * 0.4, bz, roofHex, 8, 0));
+  } else {
+    parts.push(cyl(scene, dia + 0.3, rise, bx, top + rise / 2, bz, roofHex, 8, 0));
+  }
+  parts.push(cyl(scene, 0.06, 0.12, bx, top + (b.level >= 3 ? rise * 0.8 : rise) + 0.05, bz, PALETTE.wood, 4));
+  if (b.level >= 2) {
+    // The verandah: a half-ring of deck on short posts round the door side, under a thatch skirt.
+    parts.push(box(scene, dia + 0.2, 0.04, 0.26, bx, F + 0.02, bz - dia / 2 - 0.12, PALETTE.planks));
+    for (const sx of [-1, 1]) parts.push(box(scene, 0.05, 0.55, 0.05, bx + sx * (dia / 2 + 0.05), F + 0.28, bz - dia / 2 - 0.2, PALETTE.wood));
+    parts.push(box(scene, dia + 0.3, 0.03, 0.34, bx, F + 0.56, bz - dia / 2 - 0.14, roofHex));
+  }
+  railing(scene, parts, cx + w / 2 - 0.08, cz - d / 2 + 0.08, cx + w / 2 - 0.08, cz + d / 2 - 0.08, F, 0.26);
+  const lantern = bracketLantern(scene, parts, bx + dia / 2 - 0.02, F + bodyH * 0.7, bz - dia * 0.3, 1, 0);
+  return { root: mergeFlat(b.kind, parts, scene), lantern };
+}
+
+/**
  * A home. Huts are one small room; houses a wider cottage with shutters; tall houses a narrow tower with a
  * balcony (reference/house). Levels add a window box, then a chimney and a lit porch.
  */
 function home(scene: Scene, b: Building, bodyW: number, baseH: number): BuildingMeshes {
+  if (HOUSE_KIT === "round") return roundHome(scene, b, bodyW, baseH);
   const { cx, cz, w, d } = bounds(b.cells, b.rot);
   const F = b.floorY;
   const bodyH = baseH + 0.14 * (b.level - 1);
@@ -1189,6 +1231,83 @@ function iceBreakerPier(scene: Scene, b: Building): BuildingMeshes {
   return { root: mergeFlat("iceBreakerPier", parts, scene) };
 }
 
+// ---------- the Atoll's kinds (BIOMES.md §3.2) ----------
+
+/** Dive platform: a small raft deck on four poles in the lagoon, a ladder down, a diving rope and a basket of shell. */
+function divePlatform(scene: Scene, b: Building): BuildingMeshes {
+  const { x, z } = cellCenter(b.cells[0]);
+  const F = b.floorY;
+  const parts: Mesh[] = [box(scene, 0.86, 0.08, 0.86, x, F - 0.04, z, PALETTE.planks)];
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) parts.push(stilt(scene, x + sx * 0.36, z + sz * 0.36, F - 0.06, 0.08, 5));
+  railing(scene, parts, x - 0.4, z - 0.4, x + 0.4, z - 0.4, F, 0.24);
+  railing(scene, parts, x - 0.4, z - 0.4, x - 0.4, z + 0.4, F, 0.24);
+  for (let k = 0; k < 3; k++) parts.push(box(scene, 0.04, 0.03, 0.2, x + 0.44, F - 0.12 - k * 0.14, z + 0.15, PALETTE.wood));
+  parts.push(box(scene, 0.06, 0.6, 0.06, x + 0.3, F + 0.3, z + 0.3, PALETTE.wood));
+  parts.push(box(scene, 0.015, 0.5, 0.015, x + 0.3, F + 0.05, z + 0.42, ROPE));
+  crate(scene, parts, x - 0.25, F, z + 0.2, 0.2);
+  parts.push(rock(scene, x - 0.25, F + 0.2, z + 0.2, 0.16, "#f7f1e3", 4));
+  const lantern = postLantern(scene, parts, x - 0.32, z - 0.3, F);
+  return { root: mergeFlat("divePlatform", parts, scene), lantern };
+}
+
+/** Pearl house: a thatched shed with a wide grading table under an awning, shell heaps, and a strongbox. */
+function pearlHouse(scene: Scene, b: Building): BuildingMeshes {
+  const { cx, cz, w, d } = bounds(b.cells, b.rot);
+  const F = b.floorY;
+  const parts: Mesh[] = [];
+  deck(scene, parts, cx, cz, w, d, F);
+  parts.push(box(scene, 0.9, 0.7, 0.7, cx - 0.4, F + 0.35, cz, PALETTE.walls[0]));
+  gable(scene, parts, cx - 0.4, cz, 0.9, 0.7, F + 0.7, 0.45, PALETTE.roofs[0], true, 0.18);
+  door(scene, parts, cx - 0.4, F, cz - 0.355, false, 0.2, 0.36);
+  // The awning and the table: pearls are graded in the shade.
+  for (const sz of [-0.3, 0.3]) parts.push(box(scene, 0.05, 0.62, 0.05, cx + 0.55, F + 0.31, cz + sz, PALETTE.wood));
+  parts.push(box(scene, 0.7, 0.03, 0.8, cx + 0.35, F + 0.64, cz, PALETTE.roofs[0]));
+  parts.push(box(scene, 0.5, 0.04, 0.5, cx + 0.4, F + 0.3, cz, PALETTE.planks));
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) parts.push(box(scene, 0.04, 0.3, 0.04, cx + 0.4 + sx * 0.22, F + 0.15, cz + sz * 0.22, PALETTE.wood));
+  for (let k = 0; k < 5; k++) parts.push(rock(scene, cx + 0.3 + (k % 3) * 0.1, F + 0.34, cz - 0.15 + Math.floor(k / 3) * 0.14, 0.05, "#f7f1e3", k));
+  parts.push(rock(scene, cx + 0.05, F + 0.05, cz + 0.55, 0.28, "#e6dccb", 6));
+  parts.push(box(scene, 0.22, 0.14, 0.16, cx - 0.05, F + 0.07, cz - 0.55, "#4c5a66"));
+  const lantern = bracketLantern(scene, parts, cx - 0.05, F + 0.55, cz - 0.31, 0, -1);
+  return { root: mergeFlat("pearlHouse", parts, scene), lantern };
+}
+
+/** Coconut grove: an open shelter of poles with a thatch, baskets of coconuts, a husking spike. */
+function coconutGrove(scene: Scene, b: Building): BuildingMeshes {
+  const { cx, cz, w, d } = bounds(b.cells); // cell-oriented, like the clam camp
+  const F = b.floorY;
+  const parts: Mesh[] = [];
+  deck(scene, parts, cx, cz, w, d, F);
+  const a = cellCenter(b.cells[0]), s = cellCenter(b.cells[b.cells.length - 1]);
+  for (const sx of [-0.3, 0.3]) for (const sz of [-0.3, 0.3]) parts.push(box(scene, 0.05, 0.8, 0.05, a.x + sx, F + 0.4, a.z + sz, PALETTE.wood));
+  hip(scene, parts, a.x, a.z, 0.85, 0.85, F + 0.8, 0.3, PALETTE.roofs[0], 0.12);
+  for (const [dx, dz] of [[-0.2, 0.1], [0.15, -0.15], [0.2, 0.2]]) {
+    parts.push(cyl(scene, 0.24, 0.16, s.x + dx, F + 0.08, s.z + dz, "#b9a377", 6));
+    for (let k = 0; k < 3; k++) parts.push(rock(scene, s.x + dx + (k - 1) * 0.06, F + 0.2, s.z + dz + (k % 2) * 0.05, 0.07, "#a98a55", k));
+  }
+  const spike = box(scene, 0.04, 0.5, 0.04, s.x - 0.3, F + 0.25, s.z - 0.3, PALETTE.wood);
+  parts.push(spike);
+  parts.push(box(scene, 0.02, 0.12, 0.02, s.x - 0.3, F + 0.55, s.z - 0.3, "#4c5a66"));
+  return { root: mergeFlat("coconutGrove", parts, scene) };
+}
+
+/** Reef nursery: a floating frame of racks with coral fragments in the lagoon, buoys at the corners. */
+function reefNursery(scene: Scene, b: Building): BuildingMeshes {
+  const { x, z } = cellCenter(b.cells[0]);
+  const F = b.floorY;
+  const parts: Mesh[] = [];
+  for (const sx of [-0.35, 0.35]) parts.push(box(scene, 0.06, 0.06, 0.86, x + sx, F - 0.02, z, PALETTE.wood));
+  for (const sz of [-0.35, 0.35]) parts.push(box(scene, 0.86, 0.06, 0.06, x, F - 0.02, z + sz, PALETTE.wood));
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) parts.push(cyl(scene, 0.12, 0.12, x + sx * 0.38, F + 0.03, z + sz * 0.38, "#e0705a", 6));
+  // Racks of fragments: three bars across, with small branching bits standing up.
+  for (const sz of [-0.2, 0, 0.2]) {
+    parts.push(box(scene, 0.7, 0.03, 0.03, x, F + 0.02, z + sz, PALETTE.planks));
+    for (let k = 0; k < 4; k++) parts.push(box(scene, 0.04, 0.12, 0.04, x - 0.27 + k * 0.18, F + 0.09, z + sz, k % 2 ? "#e0705a" : "#f7f1e3"));
+  }
+  parts.push(box(scene, 0.04, 0.5, 0.04, x - 0.4, F + 0.2, z - 0.4, PALETTE.wood));
+  parts.push(box(scene, 0.12, 0.08, 0.02, x - 0.34, F + 0.4, z - 0.4, "#f7f1e3"));
+  return { root: mergeFlat("reefNursery", parts, scene) };
+}
+
 export function createBuildingMeshes(scene: Scene, b: Building, grid: Grid): BuildingMeshes {
   const m = buildMeshes(scene, b, grid);
   if (b.rot && !CELL_ORIENTED.has(b.kind)) turn(m, b);
@@ -1236,6 +1355,10 @@ function buildMeshes(scene: Scene, b: Building, grid: Grid): BuildingMeshes {
     case "ironMine": return ironMine(scene, b);
     case "iceHouse": return iceHouse(scene, b);
     case "iceBreakerPier": return iceBreakerPier(scene, b);
+    case "divePlatform": return divePlatform(scene, b);
+    case "pearlHouse": return pearlHouse(scene, b);
+    case "coconutGrove": return coconutGrove(scene, b);
+    case "reefNursery": return reefNursery(scene, b);
   }
 }
 

@@ -28,7 +28,7 @@ never push `main`. Where BIOMES.md is silent, choose the simplest option and log
 - [DONE] shaper, tide ×1.6, stockfish racks, whaling station + whale season, iron mine, ice house, sea ice + ice-breaker pier, avalanche, fauna, longboats, stave houses, hooded walkers, aurora, ambience, validation.
 
 ## Stage 4 — Atoll (§3.2)
-- [TODO] ring shaper + lagoon + pass, tide ×0.6, dive platform + pearl house, coconut grove, reef nursery, cyclone, bleaching, turtle hatching, fauna, outriggers, round huts, straw hats, ambience, validation.
+- [DONE] ring shaper + lagoon + pass, tide ×0.6, dive platform + pearl house, coconut grove, reef nursery, cyclone, bleaching, turtle hatching, fauna, outriggers, round huts, straw hats, ambience, validation.
 
 ## Stage 5 — World wiring
 - [TODO] new-sector flow lists biomes by band (BAND_GATING respected); faces tint and miniatures use the biome look; sector card shows the biome.
@@ -46,4 +46,4 @@ never push `main`. Where BIOMES.md is silent, choose the simplest option and log
 - [TODO] behind `LANES_ENABLED=false`.
 
 ## Last thing that worked
-- Stage 3 (Fjord) complete: sim/biomes/fjord.ts (shaper, trees, validation, whale season, sea ice, avalanche, aurora), five kinds in the catalog + view factories, stave houses, longboats, hoods, pines, seals/whales/puffins, water ice uniform, horn; test/fjord.test.ts 7 checks; build+test+smoke green. Pushed.
+- Stage 4 (Atoll) complete: sim/biomes/atoll.ts (ring shaper, lagoon material, passes, bleaching field, turtle hatching, cyclone profile), four kinds + factories, round huts (verandah, second storey), outriggers, palms that bend, turtles/shoals/frigatebirds, bleach in the water; test/atoll.test.ts 6 checks; 116 tests, build+smoke green. Pushed.

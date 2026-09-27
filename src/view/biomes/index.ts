@@ -4,6 +4,7 @@
 // modules that always drew them. Tidewater's look is the game as it was, value for value.
 import type { BiomeId } from "../../sim/biomes";
 import type { RoofShape } from "../roofs";
+import { ATOLL_LOOK } from "./atoll";
 import { FJORD_LOOK } from "./fjord";
 
 export type BoatKit = "dory" | "longboat" | "outrigger";
@@ -68,6 +69,7 @@ export const TIDEWATER_LOOK: BiomeLook = registerLook({
 // The other looks are plain data in their own files; registered here (not on their import) so no file reads this
 // module's registry before it exists.
 registerLook(FJORD_LOOK);
+registerLook(ATOLL_LOOK);
 
 /** The look for a biome id; Tidewater's for anything not registered. */
 export function lookOf(id: BiomeId): BiomeLook {

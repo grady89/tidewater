@@ -85,3 +85,21 @@ Calls made where BIOMES.md is silent, or where the code's balance and BIOMES.md 
     loads the biome files; `fields.ts` builds its neighbour table at load and so imports the lattice from
     `cells.ts`, not from `grid.ts`, which sits in the biome import cycle; the view's looks are registered by
     `view/biomes/index.ts` itself, not on their own import.
+21. **Atoll numbers not in BIOMES.md:** dive platform 1.2 pearls per low-water shift at full staff, graded only
+    while an active pearl house stands within 8 (the pearl house itself makes nothing: "graded pearls" stay the
+    one good `pearls`); coconut grove 0.6 coconuts per grown palm within 6 per cycle; reef nursery 1 worker on a
+    lagoon cell, −0.15 bleach a cycle within 5 while its own cell's pollution is under 0.3; bleaching +0.2 a cycle
+    on lagoon cells over 0.25 pollution, −0.05 back in clean water, and a bleached cell holds (1 − bleach) of its
+    fish; cyclone = the storm with ×2 swell (view) and ×1.5 boat-loss chance (`Biome.storm`); turtles hatch the
+    cycle after every spring peak (the spring peak is always a dawn on this clock: a day is two cycles and springs
+    come every fourth, so "a spring night" is the night half that follows), lanterns within 4 of a beach cell go
+    dark through that cycle (night coverage skips them, the view unlights them), +0.1 tourism per hatching up to
+    +0.5. No shellfish bonus at springs: the Atoll makes no shellfish.
+22. **The Atoll shaper** (`atollHeight`): a profile in the distance from the ring's crest (motu crest 0.55–1.4,
+    reef flats either side, lagoon −0.25 → −0.75 toward the middle, open sea to −4), swept round an ellipse with
+    two harmonics; one pass always, a second on odd seeds; the isle blends in at ×0.6. Lagoon material = water
+    inside the ring, passes and the isle excluded. Validation: ≥ 200 lagoon cells, ≥ 40 deep-enough cells (a
+    pass), thresholds flats 300, region 120, treed 30 (palms 0.5–1.5).
+23. **Coral bleaching is a ledger field** (`fields.bleach`, saved; old saves get zeros) rather than biome-state,
+    because it is spatial — CLAUDE.md §3 says fields are the mechanism. It rides to the water shader in the height
+    texture's alpha channel (alpha = 1 − bleach), which nothing read before.

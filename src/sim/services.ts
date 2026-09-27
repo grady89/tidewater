@@ -2,6 +2,7 @@
 // per settlement. Homes read the layers for happiness; the treatment layer feeds waste routing. Lantern posts
 // stand on walkways and light the night layer.
 import { BUILDINGS, LANTERN_COST, LANTERN_RADIUS, SERVICE_KINDS, TAVERN_DRY_FACTOR, TAVERN_SMOKED_PER_CYCLE } from "./balance";
+import { biomeFor } from "./biomes";
 import { at } from "./fields";
 import { cellIndex, Grid, inBounds } from "./grid";
 import { moveMoney } from "./money";
@@ -31,13 +32,14 @@ export function serviceStrength(state: SimState, b: Building): number {
 }
 
 /** Rebuild every coverage layer from the buildings. */
-export function rebuildCoverage(state: SimState): void {
+export function rebuildCoverage(state: SimState, grid: Grid | null = null): void {
+  const dimmed = grid ? biomeFor(state).lanternDimmed : undefined;
   const cov = state.fields.coverage;
   for (const k of SERVICE_KINDS) cov[k].fill(0);
   for (const b of buildingList(state).sort((x, y) => x.id - y.id)) {
     const def = BUILDINGS[b.kind];
     if (def.service) paint(cov[def.service.kind], b.cells, def.service.radius, serviceStrength(state, b));
-    if (b.lantern && b.reached && !b.cut) paint(cov.night, b.cells, LANTERN_RADIUS, 1);
+    if (b.lantern && b.reached && !b.cut && !(dimmed && grid && dimmed(state, grid, b))) paint(cov.night, b.cells, LANTERN_RADIUS, 1);
   }
 }
 

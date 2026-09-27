@@ -79,6 +79,8 @@ export interface Fields {
   shark: number[];
   /** Fire risk per cell. */
   fire: number[];
+  /** Coral bleaching per lagoon cell, 0..1 (the Atoll); zero everywhere else. */
+  bleach: number[];
 }
 
 export interface TideState {
@@ -228,7 +230,7 @@ export function createState(seed = 1, islandSeed = 0, biome: BiomeId = "tidewate
     extraTrees: [],
     landfill: [],
     loan: { owed: 0, perCycle: 0, taken: 0 },
-    fields: { pollution: zeros(), fish: filled(FISH_CAP), coverage: emptyCoverage(), shark: zeros(), fire: zeros() },
+    fields: { pollution: zeros(), fish: filled(FISH_CAP), coverage: emptyCoverage(), shark: zeros(), fire: zeros(), bleach: zeros() },
     emitters: [],
     sharkEmitters: [],
     fireEmitters: [],

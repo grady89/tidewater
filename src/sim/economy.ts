@@ -7,7 +7,7 @@ import {
   LUMBER_TREES_PER_CYCLE, MARKET_SELL_PER_CYCLE, MAX_LEVEL, NET_LOFT_BONUS, NET_LOFT_RADIUS, OYSTER_YIELD,
   POLLUTION_HAPPY_SCALE, FOOD_PRICE, PURCHASABLE_BOATS, SAWMILL_RATE, SHIPYARD_BOAT_COST,
   SHIPYARD_CYCLES, SMOKEHOUSE_RATE, SPRING_LOW_BONUS, TAX_PER_RESIDENT, TIMBER_PER_TREE, TOOLWORKS_BONUS, TOOLWORKS_IRON_PER_CYCLE, TOOLWORKS_RADIUS, WAREHOUSE_CAP,
-  ICE_HOUSE_CAP_FACTOR, IRON_PER_CYCLE, SALT_PER_STOCKFISH, STOCKFISH_RATE, STOCKFISH_UNSALTED, WHALE_MEAT_PER_CYCLE, WHALE_OIL_PER_CYCLE,
+  COCONUT_PER_TREE, COCONUT_RADIUS, PEARL_RADIUS, PEARLS_PER_SHIFT, ICE_HOUSE_CAP_FACTOR, IRON_PER_CYCLE, SALT_PER_STOCKFISH, STOCKFISH_RATE, STOCKFISH_UNSALTED, WHALE_MEAT_PER_CYCLE, WHALE_OIL_PER_CYCLE,
   WASTE_BACKLOG_PENALTY_MAX, WASTE_BACKLOG_PENALTY_PER_UNIT,
 } from "./balance";
 import { at } from "./fields";
@@ -26,7 +26,7 @@ import { announceLevel, rebuildCoverage } from "./services";
 import { healInjuries, sharkSources } from "./sharks";
 import { settleTrade } from "./trade";
 import { Building, buildingList, Cell, notify, Phase, SimState } from "./state";
-import { fellTrees, regrowTrees } from "./trees";
+import { fellTrees, grownTreesNear, regrowTrees } from "./trees";
 import { assignWorkers, employed, staffing } from "./workers";
 
 export function canAfford(state: SimState, cost: Cost): boolean {
@@ -185,6 +185,10 @@ export function shiftEnd(state: SimState, grid: Grid, phase: Phase): void {
     } else if (b.kind === "clamCamp") {
       const cells = grid.exposedFlatsNear(b.cells, CLAM_RADIUS, state.tide.level);
       b.output += addCapped(state, "shellfish", cells * CLAM_PER_CELL * staffing(b) * toolBonus(state, b) * (springLow ? SPRING_LOW_BONUS : 1));
+    } else if (b.kind === "divePlatform") {
+      // Atoll: the divers work the low water; a pearl house within reach grades what they bring up.
+      const graded = buildingList(state).some(p => p.kind === "pearlHouse" && active(p) && p.workers > 0 && p.cells.some(c => b.cells.some(d => Math.abs(c.i - d.i) <= PEARL_RADIUS && Math.abs(c.j - d.j) <= PEARL_RADIUS)));
+      if (graded) b.output += addCapped(state, "pearls", PEARLS_PER_SHIFT * staffing(b) * toolBonus(state, b) * (springLow ? SPRING_LOW_BONUS : 1));
     }
   }
 }
@@ -242,6 +246,12 @@ function produce(state: SimState, grid: Grid, buildings: Building[]): void {
         b.output = addCapped(state, "iron", IRON_PER_CYCLE * s * toolBonus(state, b));
         break;
       }
+      // Atoll (BIOMES.md §3.2)
+      case "coconutGrove": {
+        const palms = grownTreesNear(state, b.cells, COCONUT_RADIUS);
+        b.output = addCapped(state, "coconut", palms * COCONUT_PER_TREE * s * toolBonus(state, b));
+        break;
+      }
       case "shipyard": {
         const berth = buildings.filter(h => isHarbour(h) && freeSlots(h) > 0)
           .sort((x, y) => dist(x, b) - dist(y, b) || x.id - y.id)[0];
@@ -289,7 +299,7 @@ export function settleCycle(state: SimState, grid: Grid): void {
   const buildings = buildingList(state).sort((a, b) => a.id - b.id);
 
   assignWorkers(state, grid);
-  rebuildCoverage(state);
+  rebuildCoverage(state, grid);
 
   // Residents eat first (across every food kind in stock), pay tax, and judge their lot. The variety on the
   // table at the start of the meal is what the house levels read.

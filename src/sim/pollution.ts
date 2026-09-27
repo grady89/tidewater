@@ -58,10 +58,10 @@ export function tickPollution(state: SimState, grid: Grid, dt: number): void {
 
 /** Settlement: fish grounds recover toward a cap that pollution lowers; oyster beds in foul water sicken and die. */
 export function settleFields(state: SimState, grid: Grid): void {
-  const { fish, pollution } = state.fields;
+  const { fish, pollution, bleach } = state.fields;
   for (let k = 0; k < CELLS; k++) {
     if (!grid.deep[k]) continue;
-    const cap = FISH_CAP * Math.max(0, 1 - pollution[k]);
+    const cap = FISH_CAP * Math.max(0, 1 - pollution[k]) * (1 - bleach[k]); // a bleached reef holds fewer fish (Atoll)
     fish[k] += FISH_REGEN * (cap - fish[k]);
     if (fish[k] < FISH_FLOOR) fish[k] = FISH_FLOOR;
   }

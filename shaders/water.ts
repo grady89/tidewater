@@ -61,7 +61,9 @@ export const waterFS = `
       float bd = depth / depthScale;
       vec3 col = mix(shallow, mid, smoothstep(0.0, 0.9, bd));
       col = mix(col, deep, smoothstep(0.8, 3.2, bd));
-      col = mix(col, lagoonTint, lagoonMix * step(abs(t.b*255.0 - 1.0), 0.5));
+      float isLagoon = step(abs(t.b*255.0 - 1.0), 0.5);
+      col = mix(col, lagoonTint, lagoonMix * isLagoon);
+      col = mix(col, vec3(0.93, 0.95, 0.92), (1.0 - t.a) * isLagoon); // bleached coral under the water (alpha = 1 − bleach)
       col = mix(col, vec3(0.88, 0.92, 0.94), ice * 0.85);
       col = mix(col, vec3(0.10,0.24,0.42), dusk*0.55);
       float alpha = mix(0.34, 0.92, smoothstep(0.0, 1.4, depth));

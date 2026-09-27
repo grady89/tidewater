@@ -13,7 +13,8 @@ export type BuildingKind =
   | "harbor" | "inn" | "lighthouse" | "fireWatch"
   | "breakwater" | "seaWall"
   | "toolworks"
-  | "stockfishRacks" | "whalingStation" | "ironMine" | "iceHouse" | "iceBreakerPier";
+  | "stockfishRacks" | "whalingStation" | "ironMine" | "iceHouse" | "iceBreakerPier"
+  | "divePlatform" | "pearlHouse" | "coconutGrove" | "reefNursery";
 
 /** Service coverage layers; each building that provides one writes its staffed fraction within `radius`. */
 export type ServiceKind = "water" | "leisure" | "night" | "treatment" | "lifeguard" | "firewatch";
@@ -96,6 +97,11 @@ export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
   ironMine: { name: "Iron mine", category: "Production", w: 2, d: 2, cls: "high", cost: { money: 260 }, workers: 4, residents: 0, upkeep: 3, floor: "ground", network: "leaf", desc: "Iron from the ridge; fire risk" },
   iceHouse: { name: "Ice house", category: "Production", w: 1, d: 1, cls: "flat", cost: { money: 90 }, workers: 0, residents: 0, upkeep: 0.5, floor: "stilts", network: "leaf", desc: "Keeps fish from spoiling: doubles the fish cap" },
   iceBreakerPier: { name: "Ice-breaker pier", category: "Sea", w: 1, d: 2, cls: "edge", cost: { money: 300, planks: 20 }, workers: 0, residents: 0, upkeep: 4, floor: 1.0, network: "root", slots: 2, desc: "2 boats; keeps sailing through the sea ice" },
+  // Atoll (BIOMES.md §3.2)
+  divePlatform: { name: "Dive platform", category: "Sea", w: 1, d: 1, cls: "edge", material: "lagoon", needsLink: true, cost: { money: 140 }, workers: 2, residents: 0, upkeep: 1, floor: 1.0, network: "leaf", desc: "Pearls from the lagoon at low water; a pearl house within 8 grades them" },
+  pearlHouse: { name: "Pearl house", category: "Production", w: 2, d: 1, cls: "flat", cost: { money: 180 }, workers: 2, residents: 0, upkeep: 1.5, floor: "stilts", network: "leaf", desc: "Grades the divers' pearls for the trade ship" },
+  coconutGrove: { name: "Coconut grove", category: "Production", w: 2, d: 1, cls: "flatOrHigh", cost: { money: 90 }, workers: 3, residents: 0, upkeep: 1, floor: "stilts", network: "leaf", desc: "Gathers coconuts from palms within 6" },
+  reefNursery: { name: "Reef nursery", category: "Sea", w: 1, d: 1, cls: "deep", material: "lagoon", needsLink: true, cost: { money: 160 }, workers: 1, residents: 0, upkeep: 1, floor: 1.0, network: "leaf", desc: "Restores fish and coral within 5 while the water stays clean" },
   outfall: { name: "Sewage outfall", category: "Services", w: 1, d: 1, cls: "edge", cost: { money: 40 }, workers: 0, residents: 0, upkeep: 0.5, floor: 1.0, network: "leaf", desc: "Dumps the town's waste into the sea; the tide carries it" },
   treatmentPlant: { name: "Treatment plant", category: "Services", w: 2, d: 2, cls: "flatOrHigh", cost: { money: 350 }, workers: 4, residents: 0, upkeep: 3, floor: "ground", network: "leaf", service: { kind: "treatment", radius: 12 }, desc: "Neutralises waste from homes within 12" },
   well: { name: "Well", category: "Services", w: 1, d: 1, cls: "flat", cost: { money: 50 }, workers: 0, residents: 0, upkeep: 0.5, floor: "stilts", network: "leaf", service: { kind: "water", radius: 8 }, desc: "Drinking water for homes within 8" },
@@ -386,3 +392,23 @@ export const AVALANCHE_RADIUS = 3;
 export const AVALANCHE_RISE = 1.0;
 /** Happiness on a clear night under the aurora (Fjord). */
 export const HAPPY_AURORA = 0.03;
+
+// Atoll (BIOMES.md §3.2)
+/** Pearls a fully staffed dive platform brings up per low-water shift, when a pearl house within PEARL_RADIUS grades them. */
+export const PEARLS_PER_SHIFT = 1.2;
+export const PEARL_RADIUS = 8;
+/** Coconuts a fully staffed grove gathers per grown palm within COCONUT_RADIUS, per cycle. */
+export const COCONUT_PER_TREE = 0.6;
+export const COCONUT_RADIUS = 6;
+/** Bleaching: lagoon cells whose pollution is above BLEACH_POLLUTION whiten by BLEACH_RATE a cycle and recover by BLEACH_RECOVER. */
+export const BLEACH_POLLUTION = 0.25;
+export const BLEACH_RATE = 0.2;
+export const BLEACH_RECOVER = 0.05;
+/** A staffed nursery in clean water recovers NURSERY_RECOVER a cycle within NURSERY_RADIUS. */
+export const NURSERY_RADIUS = 5;
+export const NURSERY_RECOVER = 0.15;
+export const NURSERY_POLLUTION_MAX = 0.3;
+/** Turtle hatching: lanterns this close to a beach cell go dark; each hatching adds HATCHING_BONUS to tourism, to a cap. */
+export const HATCHING_LANTERN_RADIUS = 4;
+export const HATCHING_BONUS = 0.1;
+export const HATCHING_BONUS_MAX = 0.5;

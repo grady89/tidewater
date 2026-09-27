@@ -3,6 +3,7 @@
 // damage). Lanterns are two thin-instanced spheres (lit, dark) refreshed when the lit set changes. Called every
 // frame; read-only over the sim.
 import { Color3, Matrix, Mesh, MeshBuilder, Scene } from "@babylonjs/core";
+import { biomeFor } from "../sim/biomes";
 import { Grid } from "../sim/grid";
 import { Building, SimState } from "../sim/state";
 import { mergeFlat } from "../world/flatMesh";
@@ -77,7 +78,7 @@ export class BuildingViews {
       for (const [id, p] of c.lanterns) {
         const b = state.buildings[id];
         if (!b) continue;
-        const on = lanternOn(b);
+        const on = lanternOn(b) && !(biomeFor(state).lanternDimmed?.(state, this.grid, b) ?? false);
         parts.push(`${id}${on ? "+" : "-"}`);
         Matrix.Translation(p.x, p.y, p.z).copyToArray(on ? litM : darkM, (on ? litM : darkM).length);
       }

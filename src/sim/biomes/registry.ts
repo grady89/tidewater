@@ -6,7 +6,7 @@ import type { HeightFn } from "../heightfield";
 import type { IslandStats } from "../island";
 import type { Material } from "../materials";
 import type { Grid } from "../grid";
-import type { SimState } from "../state";
+import type { Building, SimState } from "../state";
 import type { TreeSite } from "../trees";
 
 export type BiomeId = "tidewater" | "delta" | "dunes" | "atoll" | "cinder" | "fjord";
@@ -60,6 +60,12 @@ export interface Biome {
   happiness?(state: SimState): number;
   /** A line for the tide clock while something seasonal is on (whale season, sea ice). */
   seasonLabel?(state: SimState): string | null;
+  /** The storm this coast gets: swell multiplier on top of the base storm, boat-loss multiplier, and its name. */
+  storm?: { swell: number; loss: number; name: string };
+  /** A multiplier on what tourists spend (the turtles' lasting draw). */
+  tourism?(state: SimState): number;
+  /** A lantern that must stay dark right now (the hatchlings' beach). */
+  lanternDimmed?(state: SimState, grid: Grid, b: Building): boolean;
 }
 
 const REGISTRY = new Map<BiomeId, Biome>();

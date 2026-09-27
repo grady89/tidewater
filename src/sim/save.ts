@@ -1,4 +1,5 @@
 // Save/load is JSON.stringify of the ledger. The grid index is rebuilt from the pieces on load.
+import { zeros } from "./fields";
 import { GOOD_IDS } from "./goods";
 import { Building, createState, SimState, TradeState } from "./state";
 
@@ -27,6 +28,7 @@ export function deserialize(json: string): SimState {
   }
   if (s.tide && (s.tide as { scale?: number }).scale === undefined) (s.tide as { scale?: number }).scale = 1;
   s.biomeState ??= {};
+  if (s.fields && !(s.fields as Partial<SimState["fields"]>).bleach) (s.fields as SimState["fields"]).bleach = zeros();
   s.version = 3;
   s.achievements ??= []; // saves from before backlog 7
   s.extraTrees ??= []; s.landfill ??= []; // saves from before the land tools

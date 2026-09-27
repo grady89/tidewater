@@ -86,9 +86,10 @@ export class Trees {
     return { trunks, canopies };
   }
 
-  sync(state: SimState): void {
+  sync(state: SimState, storm = 0): void {
     const sites = treeSites(state);
-    const key = state.trees.join(",") + "|" + this.groundKey;
+    const bend = this.kitKey.startsWith("palm") ? Math.round(storm * 20) / 20 : 0; // palms lean in a cyclone; other kits stand
+    const key = state.trees.join(",") + "|" + this.groundKey + "|" + bend;
     if (key === this.lastKey) return;
     this.lastKey = key;
     const n = sites.length;
@@ -100,7 +101,7 @@ export class Trees {
       const s = age < 0 ? 0 : site.s * (0.05 + 0.95 * age); // cleared trees are gone
       const yaw = rnd() * Math.PI;
       const pos = new Vector3(site.x, ground(site.x, site.z) - 0.05, site.z);
-      const q = Quaternion.FromEulerAngles(0, yaw, 0);
+      const q = Quaternion.FromEulerAngles(0, yaw, 0.45 * bend * (0.7 + 0.3 * Math.sin(k * 1.7)));
       Matrix.Compose(new Vector3(s, s, s), q, pos).copyToArray(trunkM, k * 16);
       Matrix.Compose(new Vector3(s, s, s), q, pos).copyToArray(canopyM, k * 16);
       const c = Color4.FromHexString(this.leaves[k % this.leaves.length]);

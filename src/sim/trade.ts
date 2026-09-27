@@ -113,7 +113,7 @@ export function settleTrade(state: SimState, grid: Grid): { trade: number; touri
 
   // Tourists spend every cycle they're here.
   if (state.tourists > 0) {
-    tourism = state.tourists * TOURIST_SPEND * (attractions(state, grid) ? 1 : TOURIST_BORED_FACTOR);
+    tourism = state.tourists * TOURIST_SPEND * (attractions(state, grid) ? 1 : TOURIST_BORED_FACTOR) * (biomeFor(state).tourism?.(state) ?? 1);
     moveMoney(state, tourism, "tourism");
   }
 

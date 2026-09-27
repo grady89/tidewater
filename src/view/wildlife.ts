@@ -1,12 +1,14 @@
 // Gulls and crabs: decoration derived from the ledger every frame, two thin-instanced meshes, no state of their
 // own. Gulls circle every harbour that has boats; crabs scuttle on flat cells near the town while the tide leaves
 // them exposed. View only.
-import { Matrix, Mesh, MeshBuilder, Quaternion, Scene, Vector3 } from "@babylonjs/core";
+import { Matrix, Mesh, MeshBuilder, Quaternion, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
 import { BUILDINGS } from "../sim/balance";
 import { cellIndex, Grid, HALF, inBounds } from "../sim/grid";
 import { ground as groundHeight } from "./ground";
 import { Building, SimState } from "../sim/state";
-import { mergeFlat, tint } from "../world/flatMesh";
+import { flatMaterial, mergeFlat, tint } from "../world/flatMesh";
+import { isDaytime } from "../sim/daylight";
+import { materialCode } from "../sim/materials";
 import { BiomeLook, FaunaKind } from "./biomes";
 
 const GULLS_PER_HARBOUR = 2;
@@ -20,6 +22,9 @@ const CRAB_BOUT = 3.2, CRAB_MOVE = 0.35;
 interface CrabSite { x: number; z: number; h: number; phase: number }
 interface ShoreSite { x: number; z: number; h: number; yaw: number; phase: number }
 const SEAL_SITES = 10, PUFFIN_SITES = 14, SHORE_REACH = 6, WHALES = 3;
+const SHOAL_SITES = 12;
+const SHOAL_COLOURS: [number, number, number][] = [[0.88, 0.44, 0.35], [0.98, 0.82, 0.35], [0.25, 0.77, 0.78], [0.55, 0.77, 0.42], [0.95, 0.95, 0.9]];
+interface LagoonSite { k: number; x: number; z: number; phase: number; hue: number }
 
 const PALETTE_BEAK = "#ffb859";
 
@@ -29,6 +34,18 @@ export class Wildlife {
   private readonly wingR: Mesh;
   private readonly crabs: Mesh;
   private readonly seals: Mesh;
+  private readonly frigates: Mesh;
+  private readonly frigateWingL: Mesh;
+  private readonly frigateWingR: Mesh;
+  private readonly turtles: Mesh;
+  private readonly shoals: Mesh;
+  private turtleMatrices = new Float32Array(SEAL_SITES * 16);
+  private shoalMatrices = new Float32Array(SHOAL_SITES * 16);
+  private shoalColors = new Float32Array(SHOAL_SITES * 4);
+  private shoalSites: LagoonSite[] = [];
+  private lagoonKey = "";
+  turtleCount = 0;
+  shoalCount = 0;
   private readonly puffins: Mesh;
   private readonly whales: Mesh;
   private readonly spouts: Mesh;
@@ -158,9 +175,129 @@ export class Wildlife {
     spout.position.y = 0.5;
     this.spouts = mergeFlat("spouts", [tint(spout, "#e6eef2")], scene);
     for (const m of [this.seals, this.puffins, this.whales, this.spouts]) { m.isPickable = false; m.alwaysSelectAsActiveMesh = true; m.setEnabled(false); }
+    // A frigatebird: a long dark body, a forked tail, the wings hinged like the gull's but longer and darker.
+    const fBody = MeshBuilder.CreateSphere("fb", { diameter: 0.28, segments: 4 }, scene);
+    fBody.scaling.set(1.5, 0.45, 0.5);
+    const fHead = MeshBuilder.CreateSphere("fh", { diameter: 0.1, segments: 4 }, scene);
+    fHead.position.set(0.22, 0.03, 0);
+    const fBeak = MeshBuilder.CreateCylinder("fk", { diameterTop: 0, diameterBottom: 0.04, height: 0.14, tessellation: 4 }, scene);
+    fBeak.rotation.z = -Math.PI / 2;
+    fBeak.position.set(0.33, 0.02, 0);
+    const frigateParts = [tint(fBody, "#2b2b2b"), tint(fHead, "#2b2b2b"), tint(fBeak, "#5d6d7a")];
+    for (const side of [-1, 1]) {
+      const tail = MeshBuilder.CreateBox("ft", { width: 0.22, height: 0.015, depth: 0.05 }, scene);
+      tail.position.set(-0.3, 0, side * 0.05);
+      tail.rotation.y = side * 0.25;
+      frigateParts.push(tint(tail, "#2b2b2b"));
+    }
+    this.frigates = mergeFlat("frigatebirds", frigateParts, scene);
+    const frigateWing = (side: number) => {
+      const inner = MeshBuilder.CreateBox("fw", { width: 0.16, height: 0.012, depth: 0.3 }, scene);
+      inner.position.set(-0.02, 0, side * 0.2);
+      const outer = MeshBuilder.CreateBox("fw", { width: 0.1, height: 0.01, depth: 0.32 }, scene);
+      outer.position.set(-0.1, 0, side * 0.5);
+      outer.rotation.y = -side * 0.45;
+      const m = mergeFlat("frigateWing", [tint(inner, "#2b2b2b"), tint(outer, "#1c1a1a")], scene);
+      m.isPickable = false; m.alwaysSelectAsActiveMesh = true; m.setEnabled(false);
+      return m;
+    };
+    this.frigateWingL = frigateWing(-1); this.frigateWingR = frigateWing(1);
+    // A turtle: a domed shell, a small head, four flippers; it walks the beach at night and floats by day.
+    const tShell = MeshBuilder.CreateSphere("ts", { diameter: 0.34, segments: 4 }, scene);
+    tShell.scaling.set(1.2, 0.45, 1);
+    tShell.position.y = 0.09;
+    const tHead = MeshBuilder.CreateSphere("th", { diameter: 0.1, segments: 3 }, scene);
+    tHead.position.set(0.24, 0.07, 0);
+    const turtleParts = [tint(tShell, "#3f7346"), tint(tHead, "#5faa5a")];
+    for (const [dx, dz] of [[0.12, 0.17], [0.12, -0.17], [-0.12, 0.15], [-0.12, -0.15]]) {
+      const flipper = MeshBuilder.CreateBox("tf", { width: 0.14, height: 0.025, depth: 0.08 }, scene);
+      flipper.position.set(dx, 0.03, dz);
+      flipper.rotation.y = dz > 0 ? -0.6 : 0.6;
+      turtleParts.push(tint(flipper, "#3f7346"));
+    }
+    this.turtles = mergeFlat("turtles", turtleParts, scene);
+    // A reef-fish shoal: a flat rosette of coloured chips just under the surface, tinted per instance.
+    const chips: Mesh[] = [];
+    for (let k = 0; k < 7; k++) {
+      const chip = MeshBuilder.CreateBox("rf", { width: 0.16, height: 0.02, depth: 0.08 }, scene);
+      const a = k * 0.9;
+      chip.position.set(Math.cos(a) * 0.22 * (k % 3 + 1) / 3, 0, Math.sin(a) * 0.22 * (k % 3 + 1) / 3);
+      chip.rotation.y = a;
+      chips.push(tint(chip, "#ffffff"));
+    }
+    this.shoals = mergeFlat("reefFish", chips, scene);
+    this.shoals.material = flatMaterial(scene).clone("shoalMat") as StandardMaterial;
+    for (const m of [this.frigates, this.turtles, this.shoals]) { m.isPickable = false; m.alwaysSelectAsActiveMesh = true; m.setEnabled(false); }
   }
 
   // ---------- the Fjord's fauna (BIOMES.md §3.3): seals on the shingle, whale spouts in season, puffins on the cliffs ----------
+
+
+  // ---------- the Atoll's fauna (BIOMES.md §3.2): turtles, reef-fish shoals, frigatebirds ----------
+
+  /** Seeded lagoon cells near the town for the shoals. */
+  private pickLagoonSites(state: SimState): void {
+    const ids = Object.keys(state.buildings);
+    const key = ids.length + ":" + ids[ids.length - 1] + ":" + this.grid.terrainVersion;
+    if (key === this.lagoonKey) return;
+    this.lagoonKey = key;
+    const lagoon = materialCode("lagoon");
+    const cells: number[] = [];
+    for (let k = 0; k < this.grid.materials.length; k++) if (this.grid.materials[k] === lagoon) cells.push(k);
+    let seed = 31;
+    const rnd = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
+    for (let k = cells.length - 1; k > 0; k--) { const r = Math.floor(rnd() * (k + 1)); [cells[k], cells[r]] = [cells[r], cells[k]]; }
+    this.shoalSites = cells.slice(0, SHOAL_SITES).map(k => ({ k, x: Math.floor(k / 64) - HALF + 0.5, z: (k % 64) - HALF + 0.5, phase: rnd() * 6.28, hue: rnd() }));
+  }
+
+  private syncShoals(state: SimState, viewTime: number): void {
+    if (!this.fauna.has("reefFish")) { this.shoalCount = 0; this.shoals.setEnabled(false); return; }
+    this.pickLagoonSites(state);
+    const level = state.tide.level;
+    const bleach = state.fields.bleach;
+    let n = 0;
+    for (const s of this.shoalSites) {
+      if (bleach[s.k] > 0.6) continue; // a bleached patch is empty
+      const drift = 0.8 * Math.sin(viewTime * 0.25 + s.phase), dz = 0.8 * Math.cos(viewTime * 0.19 + s.phase * 1.3);
+      const yaw = viewTime * 0.3 + s.phase;
+      Matrix.Compose(new Vector3(1, 1, 1), Quaternion.FromEulerAngles(0, yaw, 0), new Vector3(s.x + drift, level - 0.12, s.z + dz)).copyToArray(this.shoalMatrices, n * 16);
+      const c = SHOAL_COLOURS[Math.floor(s.hue * SHOAL_COLOURS.length)];
+      this.shoalColors[n * 4] = c[0]; this.shoalColors[n * 4 + 1] = c[1]; this.shoalColors[n * 4 + 2] = c[2]; this.shoalColors[n * 4 + 3] = 1;
+      n++;
+    }
+    this.shoalCount = n;
+    if (n === 0) { this.shoals.setEnabled(false); return; }
+    this.shoals.setEnabled(true);
+    this.shoals.thinInstanceSetBuffer("matrix", this.shoalMatrices.subarray(0, n * 16), 16, false);
+    this.shoals.thinInstanceSetBuffer("color", this.shoalColors.subarray(0, n * 4), 4, false);
+  }
+
+  /** Turtles: on the beach after dark (and every one of them during a hatching), floating in the lagoon by day. */
+  private syncTurtles(state: SimState, viewTime: number): void {
+    if (!this.fauna.has("turtles")) { this.turtleCount = 0; this.turtles.setEnabled(false); return; }
+    this.pickShoreSites(state);
+    this.pickLagoonSites(state);
+    const night = !isDaytime(state.time);
+    const hatching = (state.biomeState.hatching ?? -1) === state.tide.cycle;
+    const level = state.tide.level;
+    let n = 0;
+    if (night) {
+      const sites = hatching ? this.sealSites : this.sealSites.slice(0, 3);
+      for (const s of sites) {
+        const crawl = 0.15 * Math.sin(viewTime * 0.5 + s.phase);
+        Matrix.Compose(new Vector3(1, 1, 1), Quaternion.FromEulerAngles(0, s.yaw, 0), new Vector3(s.x + crawl * Math.cos(s.yaw), s.h, s.z + crawl * Math.sin(s.yaw))).copyToArray(this.turtleMatrices, n++ * 16);
+      }
+    } else {
+      for (const s of this.shoalSites.slice(0, 4)) {
+        const bob = 0.02 * Math.sin(viewTime * 1.3 + s.phase);
+        Matrix.Compose(new Vector3(1, 1, 1), Quaternion.FromEulerAngles(0, viewTime * 0.15 + s.phase, 0), new Vector3(s.x + Math.sin(viewTime * 0.1 + s.phase), level - 0.05 + bob, s.z)).copyToArray(this.turtleMatrices, n++ * 16);
+      }
+    }
+    this.turtleCount = n;
+    if (n === 0) { this.turtles.setEnabled(false); return; }
+    this.turtles.setEnabled(true);
+    this.turtles.thinInstanceSetBuffer("matrix", this.turtleMatrices.subarray(0, n * 16), 16, false);
+  }
 
   /** Seeded beach cells near the town for the seals, and high cells against the water for the puffins. */
   private pickShoreSites(state: SimState): void {
@@ -284,7 +421,7 @@ export class Wildlife {
     let n = 0;
     const scale = new Vector3(0.7, 0.7, 0.7);
     for (const h of Object.values(state.buildings) as Building[]) {
-      if (!this.showGulls || !this.fauna.has("gulls") || (BUILDINGS[h.kind].slots ?? 0) === 0 || h.boats === 0) continue;
+      if (!this.showGulls || !(this.fauna.has("gulls") || this.fauna.has("frigatebirds")) || (BUILDINGS[h.kind].slots ?? 0) === 0 || h.boats === 0) continue;
       const is = h.cells.map(c => c.i), js = h.cells.map(c => c.j);
       const cx = (Math.min(...is) + Math.max(...is) + 1) / 2, cz = (Math.min(...js) + Math.max(...js) + 1) / 2;
       const flock = Math.min(5, GULLS_PER_HARBOUR + GULLS_PER_BOAT * h.boats);
@@ -308,11 +445,14 @@ export class Wildlife {
       }
     }
     this.gullCount = n;
-    if (n === 0) { for (const m of [this.gulls, this.wingL, this.wingR]) m.setEnabled(false); return; }
-    for (const m of [this.gulls, this.wingL, this.wingR]) m.setEnabled(true);
-    this.gulls.thinInstanceSetBuffer("matrix", this.gullMatrices.subarray(0, n * 16), 16, false);
-    this.wingL.thinInstanceSetBuffer("matrix", this.wingLMatrices.subarray(0, n * 16), 16, false);
-    this.wingR.thinInstanceSetBuffer("matrix", this.wingRMatrices.subarray(0, n * 16), 16, false);
+    const frigate = this.fauna.has("frigatebirds") && !this.fauna.has("gulls");
+    const body = frigate ? this.frigates : this.gulls, wl = frigate ? this.frigateWingL : this.wingL, wr = frigate ? this.frigateWingR : this.wingR;
+    for (const m of [this.gulls, this.wingL, this.wingR, this.frigates, this.frigateWingL, this.frigateWingR]) if (n === 0 || (m !== body && m !== wl && m !== wr)) m.setEnabled(false);
+    if (n === 0) return;
+    for (const m of [body, wl, wr]) m.setEnabled(true);
+    body.thinInstanceSetBuffer("matrix", this.gullMatrices.subarray(0, n * 16), 16, false);
+    wl.thinInstanceSetBuffer("matrix", this.wingLMatrices.subarray(0, n * 16), 16, false);
+    wr.thinInstanceSetBuffer("matrix", this.wingRMatrices.subarray(0, n * 16), 16, false);
   }
 
   private syncCrabs(state: SimState, viewTime: number): void {
@@ -349,5 +489,7 @@ export class Wildlife {
     this.syncSeals(state, viewTime);
     this.syncPuffins(state, viewTime);
     this.syncWhales(state, viewTime);
+    this.syncShoals(state, viewTime);
+    this.syncTurtles(state, viewTime);
   }
 }

@@ -7,6 +7,7 @@ import { BUILDINGS, STORM_WAVE_AMP, WAVE_WIDTH } from "./sim/balance";
 import { districtOf } from "./sim/districts";
 import { startStorm, startTsunami } from "./sim/events";
 import { ignite } from "./sim/fire";
+import { biomeFor } from "./sim/biomes";
 import { GoodId } from "./sim/goods";
 import { Grid } from "./sim/grid";
 import { crossCommuters, ferryTerminals } from "./sim/network";
@@ -472,6 +473,8 @@ let viewTime = 0;
 let lastLight: Lighting = MORNING;
 let stormMix = 0;
 let iceMix = 0;
+let lastBleachCycle = -1;
+let bleachShown = false;
 let lastFrameTime = 0;
 
 /** Everything the view derives from the ledger for one frame. */
@@ -488,14 +491,16 @@ function syncView(): void {
   water.setLighting(light);
   sky.setLighting(light);
   sky.setAurora(look.sky.aurora * (1 - stormMix), viewTime);
+  // The reef's bleaching reaches the water shader once a cycle (it only changes at the settlement).
+  if (state.tide.cycle !== lastBleachCycle) { lastBleachCycle = state.tide.cycle; if (look.lagoon.mix > 0 || bleachShown) { terrain.setBleach(look.lagoon.mix > 0 ? state.fields.bleach : null); bleachShown = look.lagoon.mix > 0; } }
   const iceTarget = (state.biomeState.seaIce ?? 0) > 0 ? 1 : 0;
   iceMix += (iceTarget - iceMix) * Math.min(1, frameDt / 4);
   water.setIce(iceMix);
-  water.setSwell((1 + (STORM_WAVE_AMP - 1) * stormMix) * (1 - 0.9 * iceMix));
+  water.setSwell((1 + (STORM_WAVE_AMP * (biomeFor(state).storm?.swell ?? 1) - 1) * stormMix) * (1 - 0.9 * iceMix));
   const ts = state.tsunami;
   water.setCrest(ts.dir, ts.stage === "wave" ? ts.front : -999, ts.stage === "wave" ? grid.tides.waveHeight : 0, WAVE_WIDTH);
   views.sync(state, light.lamp);
-  trees.sync(state);
+  trees.sync(state, stormMix);
   overlays.sync(state);
   boats.sync(state, viewTime);
   ferry.sync(state, viewTime, crossCommuters(state, grid));
