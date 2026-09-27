@@ -1,8 +1,8 @@
 // The UI: resource bar, build menu by category, tide clock, last-cycle ledger, notifications. Plain DOM over the
 // canvas, read-only over the sim.
-import { Fate, Tool } from "../build/placement";
+import { Fate, isBuildingTool, Tool } from "../build/placement";
 import { BOAT_COST, BUILDING_KINDS, BuildingKind, BUILDINGS, CATEGORIES, Category, CLEAR_TIMBER, LANDFILL_COST, LANTERN_COST, LIFT_STEP, LOAN_AMOUNT, LOAN_INTEREST, LOAN_REPAY_CYCLES, PLANK_ORDER_SIZE, PLANT_COST, TRADE_PLANK_PRICE } from "../sim/balance";
-import { makesOf } from "../sim/biomes";
+import { BiomeId, catalogFor, makesOf } from "../sim/biomes";
 import { canAfford } from "../sim/economy";
 import { GOOD_IDS, GOOD_ROLES, GoodId, GOODS, shownGoods } from "../sim/goods";
 import { Grid } from "../sim/grid";
@@ -190,9 +190,14 @@ export class Hud {
     this.shownGoods = goods;
   }
 
-  /** Tools of the active category, in palette order (number keys map onto these). */
+  /** The island's biome, for the catalog: tools outside base ∪ unique − excluded are hidden. */
+  private biome: BiomeId = "tidewater";
+  private inCatalog(t: ToolDef): boolean {
+    return !isBuildingTool(t.tool) || catalogFor(this.biome).includes(t.tool);
+  }
+  /** Tools of the active category and the island's catalog, in palette order (number keys map onto these). */
   private visibleTools(): ToolDef[] {
-    return TOOLS.filter(t => t.category === this._category);
+    return TOOLS.filter(t => t.category === this._category && this.inCatalog(t));
   }
 
   get category(): Category { return this._category; }
@@ -251,6 +256,7 @@ export class Hud {
   update(s: HudState): void {
     const { state } = s;
     const r = state.resources;
+    if (state.world.biome !== this.biome) { this.biome = state.world.biome; this.showCategory(this._category); }
     // Follow the tool's category only when the tool changes; otherwise a clicked tab would snap straight back.
     if (s.tool !== this.lastTool) {
       this.lastTool = s.tool;

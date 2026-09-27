@@ -249,6 +249,7 @@ export class Placement {
     const stilt = this.grid.stiltLength(kind, cells, y);
     const cost = placeCost(kind, stilt).money;
     const no = (blocker: string) => ({ cells, blocker, warn: null, fate: "safe" as Fate, y, stilt, cost, rot });
+    if (!this.grid.inCatalog(kind)) return no("Not built on this coast");
     if (!this.grid.classOk(def.cls, cells)) return no(classHint(def.cls));
     if (!this.grid.terrainOk(kind, cells)) return no(`Needs ground between ${def.terrain!.min} and ${def.terrain!.max} m`);
     if (!this.grid.materialOk(kind, cells)) return no(def.material && !cells.some(c => UNBUILDABLE.has(this.grid.materialAt(c))) ? `Needs ${MATERIAL_LABEL[def.material]}` : "Nothing stands on the lava field");

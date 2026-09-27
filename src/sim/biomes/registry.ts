@@ -1,6 +1,6 @@
 // The Biome interface and the registry, apart from the biome files so those can register themselves without an
 // import cycle (index.ts imports every biome file and re-exports this). See index.ts for what a biome is.
-import type { BuildingKind } from "../balance";
+import { BUILDING_KINDS, BuildingKind } from "../balance";
 import type { GoodId } from "../goods";
 import type { HeightFn } from "../heightfield";
 import type { IslandStats } from "../island";
@@ -96,5 +96,19 @@ export function tideScaleOf(biome: BiomeId): number {
 export function catalogOf(biome: BiomeId, all: readonly BuildingKind[], baseKinds: ReadonlySet<BuildingKind>): BuildingKind[] {
   const b = biomeOf(biome);
   return all.filter(k => (baseKinds.has(k) && !b.excluded.includes(k)) || b.unique.includes(k));
+}
+/** The kinds no biome owns: everything in the catalog that no registered biome lists as unique. */
+export function baseKinds(): ReadonlySet<BuildingKind> {
+  const owned = new Set<BuildingKind>();
+  for (const b of REGISTRY.values()) for (const k of b.unique) owned.add(k);
+  return new Set(BUILDING_KINDS.filter(k => !owned.has(k)));
+}
+const catalogCache = new Map<string, readonly BuildingKind[]>();
+/** The catalog an island of this biome builds from (cached per biome and registry size, so a late registration refreshes it). */
+export function catalogFor(biome: BiomeId): readonly BuildingKind[] {
+  const key = biome + ":" + REGISTRY.size;
+  let c = catalogCache.get(key);
+  if (!c) { c = catalogOf(biome, BUILDING_KINDS, baseKinds()); catalogCache.set(key, c); }
+  return c;
 }
 

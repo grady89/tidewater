@@ -3,11 +3,14 @@
 import { describe, expect, it } from "vitest";
 import { CLEARANCE, SPRING_HI, STILT_MIN, TIDE_HI, TIDE_LO, TIDE_PERIOD } from "../src/config";
 import { BUILDINGS, LANDFILL_HEIGHT, WAVE_HEIGHT } from "../src/sim/balance";
-import { Biome, biomeOf, catalogOf, chartedBiomes, makesOf, registerBiome, tideScaleOf } from "../src/sim/biomes";
+import { Biome, biomeOf, catalogFor, catalogOf, chartedBiomes, makesOf, registerBiome, tideScaleOf } from "../src/sim/biomes";
+import { tryPlace } from "../src/sim/economy";
+import { newGame as newGame, suggestPier } from "../src/sim/start";
+import { Cell } from "../src/sim/state";
 import { islandHeight } from "../src/sim/heightfield";
 import { candidate, island } from "../src/sim/island";
 import { deserialize, serialize } from "../src/sim/save";
-import { newGame } from "../src/sim/start";
+
 import { advanceCycles } from "../src/sim/tick";
 import { floodFate, tickTide } from "../src/sim/tide";
 import { BASE_TIDES, classFor, tidesFor } from "../src/sim/tides";
@@ -81,5 +84,32 @@ describe("biome framework", () => {
     expect(cat).toContain("hut");
     expect(makesOf("fjord")).toEqual(["fish", "stockfish", "whaleOil", "iron", "timber"]);
     void HIGH_TIDE;
+  });
+});
+
+describe("catalog per biome and the starter town", () => {
+  it("the grid refuses kinds outside the biome's catalog, the HUD list follows, and any biome seeds a starter hut with a pier site", () => {
+    const cat = catalogFor("fjord");
+    expect(cat).toContain("toolworks");
+    expect(cat).not.toContain("oysterBed");
+    expect(catalogFor("tidewater")).toContain("oysterBed");
+    const { state, grid } = newGame(1, 11, "fjord");
+    expect(grid.inCatalog("oysterBed")).toBe(false);
+    expect(grid.inCatalog("hut")).toBe(true);
+    state.resources.money += 500;
+    let bed: Cell | null = null;
+    for (let i = -30; i < 30 && !bed; i++) for (let j = -30; j < 30; j++) { const c = { i, j }; if (grid.classAt(c) === "flat" && !grid.buildingAt(c) && grid.heightAt(c) >= 0 && grid.heightAt(c) <= 0.45 * 1.6) { bed = c; break; } }
+    expect(bed).not.toBeNull();
+    expect(tryPlace(state, grid, "oysterBed", bed!)).toBeNull();
+    // The starter: a hut on the flats and a pier site beside it, on this seed and biome.
+    const hut = Object.values(state.buildings)[0];
+    expect(hut?.kind).toBe("hut");
+    expect(grid.classAt(hut.cells[0])).toBe("flat");
+    expect(suggestPier(grid)).not.toBeNull();
+    for (const seed of [2, 3, 5]) {
+      const g = newGame(1, seed, "fjord");
+      expect(Object.values(g.state.buildings).length).toBe(1);
+      expect(suggestPier(g.grid)).not.toBeNull();
+    }
   });
 });

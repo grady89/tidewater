@@ -2,7 +2,7 @@
 // spatial index over them (rebuilt from state on load) plus the fixed terrain classification.
 import { CLEARANCE, SIZE, STILT_MIN, WALKWAY_SNAP } from "../config";
 import { BuildingKind, BUILDINGS, LIFT_MAX, LIFT_STEP, PlacementClass } from "./balance";
-import { biomeFor } from "./biomes";
+import { biomeFor, catalogFor } from "./biomes";
 import { cellIndex, DIRS, HALF, inBounds } from "./cells";
 import { cellClass } from "./heightfield";
 import { Island, island } from "./island";
@@ -229,9 +229,14 @@ export class Grid {
     return cells.some(c => this.neighbors(c).some(n => this.buildingAt(n)?.kind === kind));
   }
 
+  /** Is this kind in the island's catalog (base ∪ the biome's unique − its excluded)? */
+  inCatalog(kind: BuildingKind): boolean {
+    return catalogFor(this.state.world.biome).includes(kind);
+  }
+
   canPlace(kind: BuildingKind, cells: Cell[]): boolean {
     const def = BUILDINGS[kind];
-    return this.classOk(def.cls, cells) && this.terrainOk(kind, cells) && this.materialOk(kind, cells) && cells.every(c => !this.buildingAt(c))
+    return this.inCatalog(kind) && this.classOk(def.cls, cells) && this.terrainOk(kind, cells) && this.materialOk(kind, cells) && cells.every(c => !this.buildingAt(c))
       && (!def.needsWalkway || this.touchesWalkway(cells)) && (!def.needsLink || this.touchesLink(cells))
       && (!def.requires || this.has(def.requires))
       && (!def.touches || this.touchesKind(cells, def.touches))
