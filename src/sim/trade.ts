@@ -1,11 +1,12 @@
 // The trade ship and the tourists it brings. With a harbor, the ship calls every TRADE_EVERY cycles (2 with a
-// lighthouse) at that cycle's high water: it buys smoked goods and surplus fish above the market price, delivers
-// any plank order, swaps the tourists, and the view sails it in and out through that high water.
+// lighthouse) at that cycle's high water: it buys the island's own goods (sim/goods.ts prices, sliding with volume) and
+// surplus fish, delivers the order book (any good the island cannot make, plus planks), swaps the tourists, and
+// the view sails it in and out through that high water.
 import {
-  FOOD_PER_CYCLE, FOOD_RESERVE_CYCLES, IMMIGRANTS_PER_CYCLE, INN_CAPACITY, PLANK_ORDER_SIZE, TOURIST_BORED_FACTOR,
-  TOURIST_SPEND, TOURISTS_PER_SHIP, TRADE_EVERY, TRADE_EVERY_LIGHTHOUSE, TRADE_PLANK_PRICE, TRADE_PRICE_FISH,
-  TRADE_PRICE_SMOKED,
+  COMPANY_FULL_PRICE_UNITS, COMPANY_PRICE_FLOOR, COMPANY_PRICE_SLOPE_UNITS, FOOD_PER_CYCLE, FOOD_RESERVE_CYCLES, IMMIGRANTS_PER_CYCLE, INN_CAPACITY,
+  ORDER_SIZE, PLANK_ORDER_SIZE, TOURIST_BORED_FACTOR, TOURIST_SPEND, TOURISTS_PER_SHIP, TRADE_EVERY, TRADE_EVERY_LIGHTHOUSE, TRADE_PLANK_PRICE,
 } from "./balance";
+import { makesOf } from "./biomes";
 import { addCapped } from "./economy";
 import { GOOD_IDS, GoodId, GOODS } from "./goods";
 import { Grid } from "./grid";
@@ -32,8 +33,45 @@ export function innCapacity(state: SimState): number {
   return n;
 }
 
-/** Queue `count` units of a good for the next ship. Returns the units of it now pending. */
-export function orderGood(state: SimState, good: GoodId, count: number): number {
+/**
+ * What the company's ship carries to this island: every good it sells that the island cannot make, plus planks
+ * (the ships' stores every harbor could always order). Registry order.
+ */
+export function companyCarries(state: SimState): GoodId[] {
+  const makes = makesOf(state.world.biome);
+  return GOOD_IDS.filter(g => g === "planks" || (GOODS[g].sells > 0 && !makes.includes(g)));
+}
+
+/** What the company buys here: the island's own goods with a buying price (never the cargo it delivered). */
+export function companyBuys(state: SimState): GoodId[] {
+  const makes = makesOf(state.world.biome);
+  return GOOD_IDS.filter(g => GOODS[g].buys > 0 && makes.includes(g));
+}
+
+/** The company's delivered price per unit. */
+export function companySells(good: GoodId): number {
+  return good === "planks" ? TRADE_PLANK_PRICE : GOODS[good].sells;
+}
+
+/**
+ * What the company pays for `units` of a good in one visit: the first COMPANY_FULL_PRICE_UNITS at the registry
+ * price, then a price sliding to COMPANY_PRICE_FLOOR of it over COMPANY_PRICE_SLOPE_UNITS more. Fish is surplus,
+ * not a luxury: flat price.
+ */
+export function companyPays(good: GoodId, units: number): number {
+  const base = GOODS[good].buys;
+  if (good === "fish") return units * base;
+  let total = 0;
+  for (let n = 0; n < Math.floor(units); n++) total += base * Math.max(COMPANY_PRICE_FLOOR, 1 - Math.max(0, n - COMPANY_FULL_PRICE_UNITS) / COMPANY_PRICE_SLOPE_UNITS);
+  // A fractional last unit at the running price.
+  const frac = units - Math.floor(units);
+  if (frac > 0) total += frac * base * Math.max(COMPANY_PRICE_FLOOR, 1 - Math.max(0, Math.floor(units) - COMPANY_FULL_PRICE_UNITS) / COMPANY_PRICE_SLOPE_UNITS);
+  return total;
+}
+
+/** Queue `count` units of a good the company carries here. Returns the units of it now pending (0 if it won't carry it). */
+export function orderGood(state: SimState, good: GoodId, count: number = ORDER_SIZE): number {
+  if (!companyCarries(state).includes(good)) return 0;
   const o = state.trade.orders;
   o[good] = (o[good] ?? 0) + count;
   return o[good]!;
@@ -82,17 +120,21 @@ export function settleTrade(state: SimState, grid: Grid): { trade: number; touri
   if (state.tide.cycle >= t.nextVisit) {
     t.shipCycle = state.tide.cycle;
     t.visits++;
-    // Buy smoked goods and any fish beyond the town's reserve.
-    const smoked = r.smoked;
-    r.smoked = 0; trade += smoked * TRADE_PRICE_SMOKED;
+    // Buy the island's own goods (smoked goods here; a Fjord's stockfish and whale oil) and any fish beyond the
+    // town's reserve. Prices slide with the volume of one visit (companyPays).
+    const bought: string[] = [];
     const reserve = (population(state) + IMMIGRANTS_PER_CYCLE) * FOOD_PER_CYCLE * FOOD_RESERVE_CYCLES;
-    const fish = Math.max(0, r.fish - reserve);
-    r.fish -= fish; trade += fish * TRADE_PRICE_FISH;
+    for (const good of companyBuys(state)) {
+      const units = good === "fish" ? Math.max(0, r[good] - reserve) : r[good];
+      if (units <= 0) continue;
+      r[good] -= units; trade += companyPays(good, units);
+      bought.push(`${Math.round(units)} ${GOODS[good].name}`);
+    }
     // Deliver what was ordered, good by good in registry order, as much as the purse allows.
     for (const good of GOOD_IDS) {
       const pending = t.orders[good] ?? 0;
       if (pending <= 0) continue;
-      const price = good === "planks" ? TRADE_PLANK_PRICE : GOODS[good].sells;
+      const price = companySells(good);
       const affordable = Math.min(pending, Math.floor((r.money + trade) / price));
       const delivered = addCapped(state, good, affordable);
       trade -= delivered * price;
@@ -106,7 +148,7 @@ export function settleTrade(state: SimState, grid: Grid): { trade: number; touri
     const arriving = Math.min(room, TOURISTS_PER_SHIP);
     state.tourists = arriving;
     const parts = [`The trade ship called`];
-    if (smoked > 0 || fish > 0) parts.push(`bought ${Math.round(smoked)} smoked goods and ${Math.round(fish)} fish`);
+    if (bought.length) parts.push(`bought ${bought.join(" and ")}`);
     if (arriving > 0) parts.push(`${arriving} tourists stepped ashore`);
     notify(state, parts.join(" · "));
     t.nextVisit = state.tide.cycle + tradeInterval(state);

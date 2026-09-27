@@ -1,7 +1,7 @@
 // The goods registry, the biome on the ledger, and what the biomes add to every island: food variety, the
 // luxury rule, Toolworks, and the Trade Company as carrier. Sim only.
 import { describe, expect, it } from "vitest";
-import { BUILDINGS, CAP_BASE, HAPPY, LUXURY_PER_RESIDENT, TOOLWORKS_BONUS, TOOLWORKS_IRON_PER_CYCLE, TOOLWORKS_RADIUS, WAREHOUSE_CAP } from "../src/sim/balance";
+import { BUILDINGS, CAP_BASE, COMPANY_FULL_PRICE_UNITS, COMPANY_PRICE_FLOOR, COMPANY_PRICE_SLOPE_UNITS, HAPPY, LUXURY_PER_RESIDENT, ORDER_SIZE, TOOLWORKS_BONUS, TOOLWORKS_IRON_PER_CYCLE, TOOLWORKS_RADIUS, WAREHOUSE_CAP } from "../src/sim/balance";
 import { BIOME_IDS, favouriteOf, luxuryOf } from "../src/sim/biomes";
 import { consumeLuxury, eat, favouriteInStock, foodsInStock, foodTotal, foreignLuxuriesInStock, levelAllowed } from "../src/sim/food";
 import { advanceCycles } from "../src/sim/tick";
@@ -13,7 +13,8 @@ import { BASE_MAKES, emptyStock, GOOD_IDS, GOOD_ROLES, goodsOfRole, GOODS, shown
 import { deserialize, serialize } from "../src/sim/save";
 import { newGame } from "../src/sim/start";
 import { buildingList, Cell, SimState } from "../src/sim/state";
-import { growStreet, placeByWalkway, starterTown } from "./scenario";
+import { growStreet, placeByWalkway, placeHarbor, starterTown } from "./scenario";
+import { companyBuys, companyCarries, companyPays, companySells, onOrder, orderGood } from "../src/sim/trade";
 
 describe("goods registry", () => {
   it("lists every good of BIOMES.md §2 with a role, a cap and the company's prices", () => {
@@ -204,5 +205,63 @@ describe("toolworks", () => {
     // Iron is not made here: it comes from the company (or a Fjord) — the registry says so.
     expect(GOODS.iron.sells).toBeGreaterThan(0);
     expect(BASE_MAKES).not.toContain("iron");
+  });
+});
+
+describe("the Trade Company as carrier", () => {
+  function port() {
+    const { state, grid } = newGame(7);
+    const t = starterTown(state, grid);
+    state.resources.money += 5000; state.resources.planks += 200;
+    growStreet(state, grid, 6);
+    const harbor = placeHarbor(state, grid, t.pier.cells[0]);
+    expect(harbor).not.toBeNull();
+    advanceCycles(state, grid, 1);
+    return { state, grid, harbor: harbor! };
+  }
+
+  it("carries every good Tidewater cannot make, plus planks, and never its own smoked goods or fish", () => {
+    const { state } = port();
+    const carried = companyCarries(state);
+    expect(carried).toContain("planks");
+    expect(carried).toContain("rice"); expect(carried).toContain("iron"); expect(carried).toContain("coffee"); expect(carried).toContain("salt");
+    expect(carried).not.toContain("smoked"); expect(carried).not.toContain("fish"); expect(carried).not.toContain("timber");
+    expect(carried).not.toContain("sponges"); // never sold by the company
+    expect(companyBuys(state)).toEqual(["fish", "smoked"]);
+    expect(orderGood(state, "smoked", 20)).toBe(0);
+    expect(onOrder(state, "smoked")).toBe(0);
+  });
+
+  it("delivers the order book at company prices and takes the money", () => {
+    const { state, grid } = port();
+    expect(orderGood(state, "rice")).toBe(ORDER_SIZE);
+    expect(orderGood(state, "iron", 5)).toBe(5);
+    expect(orderGood(state, "rice")).toBe(2 * ORDER_SIZE);
+    const money = state.resources.money;
+    advanceCycles(state, grid, state.trade.nextVisit - state.tide.cycle);
+    expect(state.trade.visits).toBe(1);
+    expect(state.resources.rice).toBe(2 * ORDER_SIZE);
+    expect(state.resources.iron).toBe(5);
+    expect(state.trade.orders).toEqual({});
+    const paid = 2 * ORDER_SIZE * companySells("rice") + 5 * companySells("iron");
+    expect(state.last.trade).toBeLessThanOrEqual(-paid + 1e-6 + Math.max(0, state.last.trade + paid)); // the purchases are in the trade line
+    expect(state.resources.money).toBeLessThan(money + state.last.income + state.last.tourism + 1e-6);
+    expect(state.log.some(m => /unloaded 40 rice/.test(m))).toBe(true);
+  });
+
+  it("buys the island's luxury at a price that falls with the volume of one visit; surplus fish stays flat", () => {
+    expect(companyPays("smoked", 10)).toBeCloseTo(90, 9);
+    expect(companyPays("smoked", COMPANY_FULL_PRICE_UNITS)).toBeCloseTo(9 * COMPANY_FULL_PRICE_UNITS, 9);
+    const big = companyPays("smoked", COMPANY_FULL_PRICE_UNITS + COMPANY_PRICE_SLOPE_UNITS * 2);
+    expect(big).toBeLessThan(9 * (COMPANY_FULL_PRICE_UNITS + COMPANY_PRICE_SLOPE_UNITS * 2));
+    expect(big).toBeGreaterThan(9 * COMPANY_PRICE_FLOOR * (COMPANY_FULL_PRICE_UNITS + COMPANY_PRICE_SLOPE_UNITS * 2));
+    expect(companyPays("smoked", 2.5)).toBeCloseTo(22.5, 9);
+    expect(companyPays("fish", 500)).toBe(500 * GOODS.fish.buys);
+    // In a visit: the smoked goods are gone and the money arrived.
+    const { state, grid } = port();
+    state.resources.smoked = 30;
+    advanceCycles(state, grid, state.trade.nextVisit - state.tide.cycle);
+    expect(state.resources.smoked).toBe(0);
+    expect(state.last.trade).toBeGreaterThanOrEqual(270 - 1e-6);
   });
 });

@@ -18,7 +18,7 @@ import { addLantern } from "../src/sim/services";
 import { newGame } from "../src/sim/start";
 import { Building, buildingList, Cell, SimState } from "../src/sim/state";
 import { tick } from "../src/sim/tick";
-import { orderPlanks } from "../src/sim/trade";
+import { companyCarries, orderGood } from "../src/sim/trade";
 import { jobsAt } from "../src/sim/workers";
 
 export interface Failure {
@@ -237,7 +237,7 @@ export function runSeed(seed: number, cycles: number, onProgress?: (cycle: numbe
         break;
       }
       case "loan": note(`loan → ${takeLoan(state)}`); break;
-      case "planks": note(`planks → ${orderPlanks(state)}`); break;
+      case "planks": { const g = pick(companyCarries(state)); note(`order ${g} → ${orderGood(state, g)}`); break; }
       case "storm": note("storm"); startStorm(state, grid); break;
       case "tsunami": note("tsunami"); startTsunami(state, grid); break;
       case "fire": {

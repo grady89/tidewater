@@ -21,7 +21,7 @@ import { playtestFileName, PlaytestLog, readPlaytestEnabled, readPlaytestNotes, 
 import { advanceCycles, tick } from "./sim/tick";
 import { cycleFraction } from "./sim/tide";
 import { takeLoan } from "./sim/loan";
-import { orderPlanks } from "./sim/trade";
+import { orderGood, orderPlanks } from "./sim/trade";
 import { Hud } from "./ui/hud";
 import { InfoPanel } from "./ui/infoPanel";
 import { SaveMenu } from "./ui/saveMenu";
@@ -115,7 +115,7 @@ const ferry = new Ferry(scene, grid);
 const pierMarker = new PierMarker(scene, grid);
 const placement = new Placement(scene, camera, grid, canvas);
 const hud = new Hud(document.getElementById("hud")!, document.getElementById("resources")!, document.getElementById("notes")!, grid, tool => placement.setTool(tool), kind => overlays.show(kind), () => orderPlanks(state), () => takeLoan(state));
-const info = new InfoPanel(document.getElementById("info")!, grid);
+const info = new InfoPanel(document.getElementById("info")!, grid, good => orderGood(state, good));
 const tutorial = new Tutorial(document.getElementById("tutorial")!);
 const achievements = new AchievementPopup(document.getElementById("achievement")!);
 const markerLabel = new MarkerLabel(document.getElementById("markerLabel")!, "Pier goes here");
@@ -691,6 +691,10 @@ const api = {
   },
   orderPlanks() {
     return orderPlanks(state);
+  },
+  /** Queue ORDER_SIZE of any good the company carries here (the harbor panel's buttons, without the click). */
+  orderGood(good: GoodId, count?: number) {
+    return orderGood(state, good, count);
   },
   takeLoan() {
     return takeLoan(state);

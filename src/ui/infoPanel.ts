@@ -1,8 +1,9 @@
 // Click a building: what it is, who works there, what it made, and why it might be idle. Read-only over the sim.
-import { BUILDINGS, LEVEL_FOODS, MAX_LEVEL } from "../sim/balance";
+import { BUILDINGS, LEVEL_FOODS, MAX_LEVEL, ORDER_SIZE } from "../sim/balance";
 import { districtOf } from "../sim/districts";
 import { foodsInStock, foreignLuxuriesInStock } from "../sim/food";
-import { GOODS } from "../sim/goods";
+import { GoodId, GOODS, isGood } from "../sim/goods";
+import { companyCarries, companySells, onOrder, tradeInterval } from "../sim/trade";
 import { Grid } from "../sim/grid";
 import { at } from "../sim/fields";
 import { Building, SimState } from "../sim/state";
@@ -13,11 +14,21 @@ export class InfoPanel {
   private readonly title: HTMLElement;
   private readonly body: HTMLElement;
 
-  constructor(private readonly root: HTMLElement, private readonly grid: Grid) {
-    root.innerHTML = `<div class="info-head"><h2></h2><button type="button" class="close" aria-label="Close">×</button></div><div class="info-body"></div>`;
+  private readonly orders: HTMLElement;
+  private bodyHtml = "";
+  private ordersHtml = "";
+
+  /** `onOrder` queues ORDER_SIZE of a good with the company (the harbor's purchase queue). */
+  constructor(private readonly root: HTMLElement, private readonly grid: Grid, onOrder: (good: GoodId) => void = () => {}) {
+    root.innerHTML = `<div class="info-head"><h2></h2><button type="button" class="close" aria-label="Close">×</button></div><div class="info-body"></div><div class="info-orders" hidden></div>`;
     this.title = root.querySelector("h2")!;
     this.body = root.querySelector<HTMLElement>(".info-body")!;
+    this.orders = root.querySelector<HTMLElement>(".info-orders")!;
     root.querySelector("button")!.addEventListener("click", () => this.select(null));
+    this.orders.addEventListener("click", e => {
+      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>("button.order-good");
+      if (btn && !btn.disabled && isGood(btn.dataset.good ?? "")) onOrder(btn.dataset.good as GoodId);
+    });
     root.hidden = true;
   }
 
@@ -76,6 +87,24 @@ export class InfoPanel {
     const district = d
       ? `<div class="district"><h3>${d.name}</h3><span>${d.buildings} buildings · ${d.residents} / ${d.capacity} residents · ${d.workers} / ${d.jobs} jobs${d.boats ? ` · ${d.boats} boats` : ""}${d.residents ? ` · ${Math.round(d.happiness * 100)}% happy` : ""}</span></div>`
       : `<div class="district"><span>Outlying — three touching buildings make a district</span></div>`;
-    this.body.innerHTML = rows.map(([k, v]) => `<div class="row"><label>${k}</label><span>${v}</span></div>`).join("") + `<p class="desc">${def.desc}</p>` + district;
+    const html = rows.map(([k, v]) => `<div class="row"><label>${k}</label><span>${v}</span></div>`).join("") + `<p class="desc">${def.desc}</p>` + district;
+    if (html !== this.bodyHtml) { this.bodyHtml = html; this.body.innerHTML = html; }
+    this.updateOrders(state, b);
+  }
+
+  /**
+   * The harbor's purchase queue: every good the company carries here, what is on order, and a button to order
+   * ORDER_SIZE more (the plank order, generalised). Rebuilt only when its text would change, so clicks land.
+   */
+  private updateOrders(state: SimState, b: Building): void {
+    if (b.kind !== "harbor") { if (this.ordersHtml) { this.ordersHtml = ""; this.orders.innerHTML = ""; } this.orders.hidden = true; return; }
+    const lines = companyCarries(state).map(g => {
+      const price = companySells(g), pending = onOrder(state, g);
+      const can = state.resources.money >= price * ORDER_SIZE;
+      return `<div class="row order-row" data-good="${g}"><label>${GOODS[g].name}${pending ? ` · ${pending} on order` : ""}</label><button type="button" class="order-good"${can ? "" : " disabled"} data-good="${g}">+${ORDER_SIZE} · ${price * ORDER_SIZE}$</button></div>`;
+    });
+    const html = `<h3>Trade Company</h3><p class="desc">The ship sells what this coast cannot make; it calls every ${tradeInterval(state)} tides.</p>${lines.join("")}`;
+    if (html !== this.ordersHtml) { this.ordersHtml = html; this.orders.innerHTML = html; }
+    this.orders.hidden = false;
   }
 }

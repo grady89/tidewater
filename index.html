@@ -140,6 +140,11 @@
       .info-body { display: grid; gap: 4px; }
       .info-body .row { display: flex; justify-content: space-between; font-size: 12px; }
       .info-body .row span { font-variant-numeric: tabular-nums; }
+      .info-orders { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.1); }
+      .info-orders h3 { margin: 0 0 4px; font: 500 12px/1.2 "IBM Plex Sans", system-ui, sans-serif; color: var(--accent); }
+      .info-orders .order-row { align-items: center; margin-top: 3px; }
+      .info-orders .order-good { font: inherit; font-size: 11px; color: var(--ink); background: rgba(255, 255, 255, 0.06); border: 1px solid var(--panel-line); border-radius: 6px; padding: 2px 8px; cursor: pointer; }
+      .info-orders .order-good:disabled { opacity: 0.45; cursor: default; }
       .info-body .desc { margin: 4px 0 0; font-size: 11px; color: var(--ink-dim); }
       .info-body .district { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.1); font-size: 11px; color: var(--ink-dim); }
       .info-body .district h3 { margin: 0 0 2px; font-size: 13px; font-weight: 600; color: var(--ink); }

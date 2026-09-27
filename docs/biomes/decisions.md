@@ -30,3 +30,13 @@ Calls made where BIOMES.md is silent, or where the code's balance and BIOMES.md 
    `TOOLWORKS_RADIUS` (8) makes ×1.2: boats' catch, oyster beds, clam camps, the lumber camp's timber, the
    sawmill's planks, the smokehouse's smoked goods. Shipyards and markets are not "producers" here. No iron → the
    panel says "Idle: no iron" and nothing changes.
+8. **What the company carries and buys** (`trade.ts`): it carries every registry good with a `sells` price that
+   the island's biome does not make, plus planks always (the old plank order, kept at `TRADE_PLANK_PRICE` so the
+   Tidewater ledger is unchanged); it buys the island's own goods that have a `buys` price (Tidewater: smoked
+   goods and surplus fish) and never the cargo it delivered — so a foreign luxury bought for level 3 is not sold
+   back at the next visit. The order book lives in the harbor's info panel (one button per carried good, +20 a
+   click); the HUD's old "Order planks" button stays.
+9. **Prices that fall with volume** are per visit: the first `COMPANY_FULL_PRICE_UNITS` (60) of a good sell at
+   the registry price, the next `COMPANY_PRICE_SLOPE_UNITS` (120) slide linearly to `COMPANY_PRICE_FLOOR` (0.5).
+   Surplus fish is flat. 60 is the base smoked cap, so a Tidewater town without warehouses earns exactly what it
+   did; a cumulative (across visits) decay would have changed every trade cycle and is left for the lanes.

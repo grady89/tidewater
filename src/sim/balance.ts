@@ -191,8 +191,6 @@ export const REPAIR_TIMBER_PER_100 = 5;
 // Trade and tourism
 export const TRADE_EVERY = 3;
 export const TRADE_EVERY_LIGHTHOUSE = 2;
-export const TRADE_PRICE_SMOKED = 9;
-export const TRADE_PRICE_FISH = 5;
 export const TRADE_PLANK_PRICE = 3;
 export const PLANK_ORDER_SIZE = 20;
 export const TOURISTS_PER_SHIP = 4;
@@ -344,3 +342,12 @@ export const TOOLWORKS_RADIUS = 8;
 export const TOOLWORKS_BONUS = 0.20;
 /** Iron a fully staffed toolworks uses per cycle. */
 export const TOOLWORKS_IRON_PER_CYCLE = 0.5;
+
+// The Trade Company as carrier (BIOMES.md §4; sim/trade.ts)
+/** Units of a good the company buys at full price in one visit; beyond that the price slides. */
+export const COMPANY_FULL_PRICE_UNITS = 60;
+/** Units over which the price slides from full down to COMPANY_PRICE_FLOOR. */
+export const COMPANY_PRICE_SLOPE_UNITS = 120;
+export const COMPANY_PRICE_FLOOR = 0.5;
+/** Units per click of an order button. */
+export const ORDER_SIZE = PLANK_ORDER_SIZE;
