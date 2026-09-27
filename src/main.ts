@@ -201,7 +201,7 @@ function syncView(): void {
   terrain.update(camera.position, state.tide.level, state.tide.wetLevel);
   water.update(viewTime, camera.position, state.tide.level);
   cameraControl.leftDrag = !placement.dragsLine;
-  hud.update({ tool: placement.tool, blocker: placement.blocker, warn: placement.warn, line: placement.line, lift: placement.liftable ? placement.lift : null, fate: placement.fate, state });
+  hud.update({ tool: placement.tool, blocker: placement.blocker, warn: placement.warn, line: placement.line, lift: placement.liftable ? placement.lift : null, stilt: placement.stilt, cost: placement.cost, fate: placement.fate, state });
   info.update(state);
   tutorial.update(state);
   hud.highlight(tutorial.current);

@@ -85,9 +85,21 @@ Residential (flat; need walkway link to any market or dock to be "connected"; un
 - Tall house 1×1, 6 residents, 140$ + 10 planks. Requires sawmill built.
 - Houses level up (1→3) when happiness stays above `LEVEL_UP_HAPPINESS` for 3 cycles: +1 resident per level, nicer roof color.
 
+The stilt rule (every standard piece — walkways, homes, markets, all flat-class buildings)
+- A piece sizes its own stilts: floor = max(terrain + `STILT_MIN` (0.5), tide-to-clear + `CLEARANCE` (0.1)). Walkways
+  clear the ordinary high tide (`TIDE_HI`); buildings clear the spring peak (`SPRING_HI`). Nothing standard floods at an
+  ordinary high tide; only a standard walkway on terrain below `SPRING_FLOOD_TERRAIN` (= SPRING_HI − STILT_MIN, 0.35)
+  goes under at a spring peak, and only for that peak.
+- Cost = base + `STILT_COST_PER_UNIT` × (floor − terrain). Low ground is expensive, not a trap. The ghost shows the
+  stilt length and the price.
+- A piece snaps up to a neighbouring deck within `WALKWAY_SNAP` so streets run level; never below its safe height.
+- The `[` `]` lift raises a deck above its safe height (up to `LIFT_MAX` × `LIFT_STEP`), never below; the extra
+  stilts are priced like any other. Lifting above `WAVE_HEIGHT` is how a deck survives the tsunami.
+
 Infrastructure
-- Walkway 1×1, 5$. Standard stilts: floor = terrain + `STILT_LENGTH` (0.5). Floods at spring high if terrain < 0.35.
-- Raised walkway 1×1, 12$. Floor fixed 1.2. Never floods. 
+- Walkway 1×1, 5$ + stilts. Placed on the flats or the beach band below `DRY_TERRAIN` (= SPRING_HI + CLEARANCE).
+- Path 1×1, 2$. A dirt track on dry ground at or above `DRY_TERRAIN`; never floods.
+- Raised walkway 1×1, 12$ fixed. Floor fixed 1.2: the spring-proof street, and the bridge over deep water.
 - Boardwalk 2-wide variant of walkway, 14$/cell pair; walkers move 1.5× faster on it.
 - Lantern post 1×1 on any walkway, 8$. Night coverage field (safety + happiness).
 - Pier (edge, 1×2 extending seaward), 60$. 2 boat slots. Boats can only depart/return in high water; at low water they sit on the mud.
@@ -165,14 +177,18 @@ Leisure & tourism
 - **Storm** (chance `STORM_CHANCE` per cycle after cycle 6, never two in a row): sky/light lerps toward the study's dusk
   palette, wave amplitude uniform ×3, boats don't sail; boats at piers/docks outside breakwater shelter have `STORM_LOSS_CHANCE`
   of being lost (unless lighthouse). Lasts one cycle. Fire risk zero during storm.
-- **Spring high flooding**: standard walkways with terrain < 0.35 are cut for the high-water phase (network breaks; workers can't reach); no damage.
-- **Tsunami** (after cycle 20, chance `TSUNAMI_CHANCE` per cycle, min `TSUNAMI_COOLDOWN` cycles apart): 20 s foreshadow
-  where the tide plunges to −1.2 (flats dry far out, boats heel over on the mud, notification "the sea is pulling back"),
-  then a wave uniform sweeps across the water plane from the deep side; on impact every building on a cell whose floor is
-  below `WAVE_HEIGHT` (1.4) and not shielded by a sea wall or breakwater (ray from the deep side along the wave axis) is damaged.
+- **Spring high flooding**: standard walkways on terrain < `SPRING_FLOOD_TERRAIN` are cut for the spring peak (network
+  breaks; workers can't reach); nothing else floods, ever, at any tide; no damage.
+- **Tsunami** (after cycle 20, chance `TSUNAMI_CHANCE` per cycle, min `TSUNAMI_COOLDOWN` cycles apart): the roll that comes
+  up books the wave for the *next* settlement and says "the sea is uneasy" — one tide of warning. Then 20 s foreshadow
+  where the tide plunges to −1.2 (flats dry far out, boats heel over on the mud, "the sea is pulling back"), then a wave
+  uniform sweeps across the water plane from the deep side; on impact every building on a cell whose floor is below
+  `WAVE_HEIGHT` (= SPRING_HI + CLEARANCE + `WAVE_MARGIN`, 1.4 — i.e. anything not lifted `WAVE_MARGIN` above the safe
+  building height) and not shielded by a sea wall or breakwater (ray from the deep side along the wave axis) is damaged.
   Boats outside shelter are lost.
 - **Damaged** buildings stop producing; repair costs `REPAIR_FRACTION` of build cost in money + timber, paid automatically
-  when affordable, otherwise they sit damaged (darker tint, tilted roof). Burnt = damaged.
+  when affordable, otherwise they sit damaged (darker tint, tilted roof). Burnt = damaged. Damaged walkways and paths are
+  rebuilt first, for their base price and no timber, whenever the purse allows.
 
 ## 10. Trade
 

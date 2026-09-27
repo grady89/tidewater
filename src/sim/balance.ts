@@ -1,5 +1,5 @@
 // Every tunable number in the economy, and the building catalog. No system may hard-code a value that lives here.
-import { RAISED_FLOOR } from "../config";
+import { CLEARANCE, DRY_TERRAIN, RAISED_FLOOR, SPRING_HI } from "../config";
 
 export type BuildingKind =
   | "hut" | "house" | "tallHouse"
@@ -19,9 +19,10 @@ export const CATEGORIES: Category[] = ["Homes", "Streets", "Sea", "Production", 
 /**
  * flat: terrain TIDE_LO..TIDE_HI. deep: below TIDE_LO. high: above TIDE_HI. flatOrDeep: anywhere under the
  * spring tide. shore: flat cell orthogonally adjacent to a high cell. edge: deep cells against the shore (piers
- * and shipyards extend seaward from the anchor).
+ * and shipyards extend seaward from the anchor). street: the flats and the beach band up to DRY_TERRAIN — wherever
+ * a walkway on stilts is the street; paths take over on dry ground above it.
  */
-export type PlacementClass = "flat" | "deep" | "high" | "flatOrHigh" | "flatOrDeep" | "shore" | "edge" | "beach" | "highOrEdge";
+export type PlacementClass = "flat" | "deep" | "high" | "flatOrHigh" | "flatOrDeep" | "shore" | "edge" | "beach" | "highOrEdge" | "street";
 export type ResourceKind = "money" | "fish" | "shellfish" | "smoked" | "timber" | "planks";
 export type GoodKind = Exclude<ResourceKind, "money">;
 
@@ -47,9 +48,11 @@ export interface BuildingDef {
   residents: number;
   /** Money per cycle. */
   upkeep: number;
-  /** Deck height in world Y; "stilts" = terrain + STILT_LENGTH; "ground" = on the terrain, never below 1.0;
-   *  "terrain" = on the terrain exactly (paths); a number never sinks below the terrain either. */
-  floor: number | "stilts" | "ground" | "terrain";
+  /** Deck height in world Y. "stilts" and "street" size their own stilts (config.ts: STILT_MIN, CLEARANCE) —
+   *  stilts clear the spring tide, street the ordinary one — snap up to neighbouring decks and take the lift;
+   *  "ground" = on the terrain, never below 1.0; "terrain" = on the terrain exactly (paths); a number is fixed
+   *  but never sinks below the terrain. */
+  floor: number | "stilts" | "street" | "ground" | "terrain";
   /** The network starts at roots (piers, docks), passes through links (walkways, markets) and ends at leaves. */
   network: "link" | "root" | "leaf";
   /** Boat slots (piers, docks). */
@@ -62,35 +65,35 @@ export interface BuildingDef {
 }
 
 export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
-  hut: { name: "Hut", category: "Homes", w: 1, d: 1, cls: "flatOrHigh", cost: { money: 40 }, workers: 0, residents: 2, upkeep: 0.5, floor: 1.0, network: "leaf", desc: "2 residents; on the flats or the hill" },
-  house: { name: "House", category: "Homes", w: 1, d: 1, cls: "flatOrHigh", cost: { money: 80 }, workers: 0, residents: 4, upkeep: 1, floor: 1.0, network: "leaf", desc: "4 residents; on the flats or the hill" },
-  tallHouse: { name: "Tall house", category: "Homes", w: 1, d: 1, cls: "flatOrHigh", requires: "sawmill", cost: { money: 140, planks: 10 }, workers: 0, residents: 6, upkeep: 1.5, floor: 1.0, network: "leaf", desc: "6 residents; needs a sawmill" },
-  walkway: { name: "Walkway", category: "Streets", w: 1, d: 1, cls: "flat", cost: { money: 5 }, workers: 0, residents: 0, upkeep: 0, floor: "stilts", network: "link", desc: "Stilts; floods on low ground" },
-  path: { name: "Path", category: "Streets", w: 1, d: 1, cls: "high", cost: { money: 2 }, workers: 0, residents: 0, upkeep: 0, floor: "terrain", network: "link", desc: "Dirt track over dry land; joins the street to the hill" },
-  raisedWalkway: { name: "Raised walkway", category: "Streets", w: 1, d: 1, cls: "flatOrDeep", cost: { money: 12 }, workers: 0, residents: 0, upkeep: 0, floor: RAISED_FLOOR, network: "link", desc: "Never floods; bridges deep water out to a dock" },
+  hut: { name: "Hut", category: "Homes", w: 1, d: 1, cls: "flatOrHigh", cost: { money: 40 }, workers: 0, residents: 2, upkeep: 0.5, floor: "stilts", network: "leaf", desc: "2 residents; on the flats or the hill" },
+  house: { name: "House", category: "Homes", w: 1, d: 1, cls: "flatOrHigh", cost: { money: 80 }, workers: 0, residents: 4, upkeep: 1, floor: "stilts", network: "leaf", desc: "4 residents; on the flats or the hill" },
+  tallHouse: { name: "Tall house", category: "Homes", w: 1, d: 1, cls: "flatOrHigh", requires: "sawmill", cost: { money: 140, planks: 10 }, workers: 0, residents: 6, upkeep: 1.5, floor: "stilts", network: "leaf", desc: "6 residents; needs a sawmill" },
+  walkway: { name: "Walkway", category: "Streets", w: 1, d: 1, cls: "street", cost: { money: 5 }, workers: 0, residents: 0, upkeep: 0, floor: "street", network: "link", desc: "Stilts sized to clear the tide; low ground floods at spring tides" },
+  path: { name: "Path", category: "Streets", w: 1, d: 1, cls: "high", terrain: { min: DRY_TERRAIN, max: 99 }, cost: { money: 2 }, workers: 0, residents: 0, upkeep: 0, floor: "terrain", network: "link", desc: "Dirt track over dry land; joins the street to the hill" },
+  raisedWalkway: { name: "Raised walkway", category: "Streets", w: 1, d: 1, cls: "flatOrDeep", cost: { money: 12 }, workers: 0, residents: 0, upkeep: 0, floor: RAISED_FLOOR, network: "link", desc: "Spring-proof street at a fixed price; bridges deep water out to a dock" },
   pier: { name: "Pier", category: "Sea", w: 1, d: 2, cls: "edge", cost: { money: 60 }, workers: 0, residents: 0, upkeep: 2, floor: 1.0, network: "root", slots: 2, desc: "2 boats; sail at high water only" },
   dock: { name: "Deep dock", category: "Sea", w: 2, d: 2, cls: "deep", needsLink: true, cost: { money: 150, planks: 20 }, workers: 0, residents: 0, upkeep: 4, floor: 1.0, network: "root", slots: 4, desc: "4 boats; sail on every tide; reach it by pier or raised walkway" },
   shipyard: { name: "Shipyard", category: "Sea", w: 3, d: 2, cls: "edge", cost: { money: 300, planks: 40 }, workers: 5, residents: 0, upkeep: 4, floor: 1.0, network: "leaf", desc: "Builds a boat from planks" },
-  market: { name: "Fish market", category: "Production", w: 2, d: 2, cls: "flat", cost: { money: 120 }, workers: 3, residents: 0, upkeep: 3, floor: 1.0, network: "link", desc: "Sells fish each cycle" },
+  market: { name: "Fish market", category: "Production", w: 2, d: 2, cls: "flat", cost: { money: 120 }, workers: 3, residents: 0, upkeep: 3, floor: "stilts", network: "link", desc: "Sells fish each cycle" },
   oysterBed: { name: "Oyster bed", category: "Production", w: 1, d: 1, cls: "flat", terrain: { min: 0.0, max: 0.45 }, cost: { money: 30 }, workers: 2, residents: 0, upkeep: 0.5, floor: "stilts", network: "leaf", desc: "Shellfish at low water" },
-  clamCamp: { name: "Clam camp", category: "Production", w: 2, d: 1, cls: "flat", cost: { money: 70 }, workers: 4, residents: 0, upkeep: 1, floor: 1.0, network: "leaf", desc: "Rakes exposed flats within 6 at low water" },
+  clamCamp: { name: "Clam camp", category: "Production", w: 2, d: 1, cls: "flat", cost: { money: 70 }, workers: 4, residents: 0, upkeep: 1, floor: "stilts", network: "leaf", desc: "Rakes exposed flats within 6 at low water" },
   lumberCamp: { name: "Lumber camp", category: "Production", w: 2, d: 1, cls: "high", needsWalkway: true, cost: { money: 100 }, workers: 3, residents: 0, upkeep: 1, floor: "ground", network: "leaf", desc: "Fells trees within 7; they regrow" },
   sawmill: { name: "Sawmill", category: "Production", w: 2, d: 2, cls: "flatOrHigh", cost: { money: 180 }, workers: 3, residents: 0, upkeep: 2, floor: "ground", network: "leaf", desc: "Timber → planks" },
-  smokehouse: { name: "Smokehouse", category: "Production", w: 2, d: 1, cls: "flat", cost: { money: 160 }, workers: 3, residents: 0, upkeep: 2, floor: 1.0, network: "leaf", desc: "Fish → smoked goods; fire risk" },
-  netLoft: { name: "Net loft", category: "Production", w: 1, d: 1, cls: "flat", cost: { money: 90 }, workers: 0, residents: 0, upkeep: 0.5, floor: 1.0, network: "leaf", desc: "+15% catch for boats within 8" },
-  warehouse: { name: "Warehouse", category: "Production", w: 2, d: 2, cls: "flat", cost: { money: 120 }, workers: 0, residents: 0, upkeep: 1, floor: 1.0, network: "leaf", desc: "+100 storage for every good" },
+  smokehouse: { name: "Smokehouse", category: "Production", w: 2, d: 1, cls: "flat", cost: { money: 160 }, workers: 3, residents: 0, upkeep: 2, floor: "stilts", network: "leaf", desc: "Fish → smoked goods; fire risk" },
+  netLoft: { name: "Net loft", category: "Production", w: 1, d: 1, cls: "flat", cost: { money: 90 }, workers: 0, residents: 0, upkeep: 0.5, floor: "stilts", network: "leaf", desc: "+15% catch for boats within 8" },
+  warehouse: { name: "Warehouse", category: "Production", w: 2, d: 2, cls: "flat", cost: { money: 120 }, workers: 0, residents: 0, upkeep: 1, floor: "stilts", network: "leaf", desc: "+100 storage for every good" },
   outfall: { name: "Sewage outfall", category: "Services", w: 1, d: 1, cls: "edge", cost: { money: 40 }, workers: 0, residents: 0, upkeep: 0.5, floor: 1.0, network: "leaf", desc: "Dumps the town's waste into the sea; the tide carries it" },
   treatmentPlant: { name: "Treatment plant", category: "Services", w: 2, d: 2, cls: "flatOrHigh", cost: { money: 350 }, workers: 4, residents: 0, upkeep: 3, floor: "ground", network: "leaf", service: { kind: "treatment", radius: 12 }, desc: "Neutralises waste from homes within 12" },
-  well: { name: "Well", category: "Services", w: 1, d: 1, cls: "flat", cost: { money: 50 }, workers: 0, residents: 0, upkeep: 0.5, floor: 1.0, network: "leaf", service: { kind: "water", radius: 8 }, desc: "Drinking water for homes within 8" },
-  bathhouse: { name: "Bathhouse", category: "Leisure", w: 2, d: 1, cls: "shore", cost: { money: 130 }, workers: 0, residents: 0, upkeep: 1.5, floor: 1.0, network: "leaf", service: { kind: "leisure", radius: 8 }, desc: "Leisure for homes within 8; on the shore" },
-  tavern: { name: "Tavern", category: "Leisure", w: 2, d: 1, cls: "flat", cost: { money: 150 }, workers: 2, residents: 0, upkeep: 2, floor: 1.0, network: "leaf", service: { kind: "leisure", radius: 10 }, desc: "Leisure within 10; pours smoked goods" },
-  shrine: { name: "Shrine", category: "Leisure", w: 1, d: 1, cls: "flat", cost: { money: 60 }, workers: 0, residents: 0, upkeep: 0.25, floor: 1.0, network: "leaf", service: { kind: "leisure", radius: 4 }, desc: "A little calm within 4" },
-  marketSquare: { name: "Market square", category: "Leisure", w: 2, d: 2, cls: "flat", touches: "market", cost: { money: 100 }, workers: 0, residents: 0, upkeep: 0.5, floor: 1.0, network: "link", service: { kind: "leisure", radius: 6 }, desc: "Leisure within 6; must touch the fish market" },
-  clinic: { name: "Clinic", category: "Services", w: 2, d: 1, cls: "flat", cost: { money: 200 }, workers: 3, residents: 0, upkeep: 2, floor: 1.0, network: "leaf", desc: "Heals the injured so they can work again" },
+  well: { name: "Well", category: "Services", w: 1, d: 1, cls: "flat", cost: { money: 50 }, workers: 0, residents: 0, upkeep: 0.5, floor: "stilts", network: "leaf", service: { kind: "water", radius: 8 }, desc: "Drinking water for homes within 8" },
+  bathhouse: { name: "Bathhouse", category: "Leisure", w: 2, d: 1, cls: "shore", cost: { money: 130 }, workers: 0, residents: 0, upkeep: 1.5, floor: "stilts", network: "leaf", service: { kind: "leisure", radius: 8 }, desc: "Leisure for homes within 8; on the shore" },
+  tavern: { name: "Tavern", category: "Leisure", w: 2, d: 1, cls: "flat", cost: { money: 150 }, workers: 2, residents: 0, upkeep: 2, floor: "stilts", network: "leaf", service: { kind: "leisure", radius: 10 }, desc: "Leisure within 10; pours smoked goods" },
+  shrine: { name: "Shrine", category: "Leisure", w: 1, d: 1, cls: "flat", cost: { money: 60 }, workers: 0, residents: 0, upkeep: 0.25, floor: "stilts", network: "leaf", service: { kind: "leisure", radius: 4 }, desc: "A little calm within 4" },
+  marketSquare: { name: "Market square", category: "Leisure", w: 2, d: 2, cls: "flat", touches: "market", cost: { money: 100 }, workers: 0, residents: 0, upkeep: 0.5, floor: "stilts", network: "link", service: { kind: "leisure", radius: 6 }, desc: "Leisure within 6; must touch the fish market" },
+  clinic: { name: "Clinic", category: "Services", w: 2, d: 1, cls: "flat", cost: { money: 200 }, workers: 3, residents: 0, upkeep: 2, floor: "stilts", network: "leaf", desc: "Heals the injured so they can work again" },
   lifeguard: { name: "Lifeguard tower", category: "Services", w: 1, d: 1, cls: "beach", cost: { money: 90 }, workers: 1, residents: 0, upkeep: 1, floor: "ground", network: "leaf", service: { kind: "lifeguard", radius: 5 }, desc: "On a beach; shark incidents within 5 drop 80%" },
   sharkNet: { name: "Shark net", category: "Sea", w: 1, d: 1, cls: "flatOrDeep", cost: { money: 20 }, workers: 0, residents: 0, upkeep: 0.1, floor: 1.0, network: "leaf", desc: "Per water cell; shark risk can't cross" },
   harbor: { name: "Harbor", category: "Sea", w: 3, d: 3, cls: "deep", terrain: { min: -99, max: -1.5 }, cost: { money: 600, planks: 60 }, workers: 0, residents: 0, upkeep: 6, floor: 1.0, network: "root", slots: 6, desc: "Trade ship berth; 6 boats; needs water deeper than 1.5" },
-  inn: { name: "Inn", category: "Leisure", w: 2, d: 2, cls: "flat", cost: { money: 250, planks: 20 }, workers: 2, residents: 0, upkeep: 2, floor: 1.0, network: "leaf", desc: "Tourists off the trade ship stay and spend" },
+  inn: { name: "Inn", category: "Leisure", w: 2, d: 2, cls: "flat", cost: { money: 250, planks: 20 }, workers: 2, residents: 0, upkeep: 2, floor: "stilts", network: "leaf", desc: "Tourists off the trade ship stay and spend" },
   lighthouse: { name: "Lighthouse", category: "Sea", w: 1, d: 1, cls: "highOrEdge", cost: { money: 400 }, workers: 0, residents: 0, upkeep: 2, floor: "ground", network: "leaf", desc: "Boats ride out storms; the trade ship calls every 2 tides" },
   fireWatch: { name: "Fire watch", category: "Services", w: 1, d: 1, cls: "flatOrHigh", cost: { money: 120 }, workers: 2, residents: 0, upkeep: 1.5, floor: "ground", network: "leaf", service: { kind: "firewatch", radius: 8 }, desc: "Damps fire risk and puts out fires within 8" },
   breakwater: { name: "Breakwater", category: "Sea", w: 1, d: 1, cls: "deep", cost: { money: 60, planks: 4 }, workers: 0, residents: 0, upkeep: 0.2, floor: 1.0, network: "leaf", desc: "Per cell; shelters harbours within 6 from storms and blocks the wave" },
@@ -112,10 +115,12 @@ export const CLEAR_TIMBER = 1;
 
 /** Share of a building's money cost returned when the player removes it (planks and timber are not returned). */
 export const REMOVE_REFUND = 0.5;
-/** Stilt decks can be built higher than their stilts: LIFT_STEP metres per step, up to LIFT_MAX steps, LIFT_COST $ each. */
+/** Stilts cost money per unit of length (floor − terrain) on top of a piece's base price: low ground is dear. */
+export const STILT_COST_PER_UNIT = 6;
+/** Auto-sized decks can be lifted above their safe height (never below): LIFT_STEP metres a step, up to LIFT_MAX
+ *  steps; the extra stilt length is priced like any other. */
 export const LIFT_STEP = 0.2;
 export const LIFT_MAX = 4;
-export const LIFT_COST = 2;
 
 // Storms
 export const STORM_FIRST_CYCLE = 6;
@@ -131,7 +136,9 @@ export const TSUNAMI_CHANCE = 0.05;
 export const TSUNAMI_COOLDOWN = 12;
 export const DRAWDOWN_SECONDS = 20;
 export const DRAWDOWN_LEVEL = -1.2;
-export const WAVE_HEIGHT = 1.4;
+/** The wave takes every unshielded deck that isn't at least WAVE_MARGIN above the safe building height. */
+export const WAVE_MARGIN = 0.45;
+export const WAVE_HEIGHT = SPRING_HI + CLEARANCE + WAVE_MARGIN;
 export const WAVE_SPEED = 10;
 export const WAVE_WIDTH = 3;
 export const WAVE_SETTLE_SECONDS = 6;

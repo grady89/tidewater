@@ -682,16 +682,17 @@ function market(scene: Scene, b: Building): BuildingMeshes {
 
 function oysterBed(scene: Scene, b: Building): BuildingMeshes {
   const { x, z } = cellCenter(b.cells[0]);
-  const F = b.floorY;
   const parts: Mesh[] = [];
-  // Three racks on thin poles, each heaped with mesh bags — white and orange lumps, as in the reference.
+  // Three racks on thin poles standing in the shallows — covered at high water, exposed at low, whatever the
+  // ledger's deck height says — each heaped with mesh bags, white and orange lumps, as in the reference.
+  const R = ground(x, z) + 0.28;
   for (const dz of [-0.3, 0, 0.3]) {
-    parts.push(box(scene, 0.86, 0.04, 0.16, x, F - 0.2, z + dz, PALETTE.wood));
-    for (const sx of [-1, 0, 1]) parts.push(stilt(scene, x + sx * 0.38, z + dz, F - 0.2, 0.04, 4));
+    parts.push(box(scene, 0.86, 0.04, 0.16, x, R, z + dz, PALETTE.wood));
+    for (const sx of [-1, 0, 1]) parts.push(stilt(scene, x + sx * 0.38, z + dz, R, 0.04, 4));
     for (let k = 0; k < 4; k++) {
       const bag = MeshBuilder.CreateSphere("bag", { diameter: 0.17, segments: 3 }, scene);
       bag.scaling.set(1.1, 0.6, 1);
-      bag.position.set(x - 0.3 + k * 0.2, F - 0.13, z + dz);
+      bag.position.set(x - 0.3 + k * 0.2, R + 0.07, z + dz);
       parts.push(tint(bag, (k + dz * 10) % 3 === 0 ? PALETTE.roofs[0] : PALETTE.sail));
     }
   }

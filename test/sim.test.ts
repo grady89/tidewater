@@ -1,7 +1,7 @@
 // Sim-only unit checks. Nothing here may pull in Babylon; the hygiene test enforces that for src/sim/**.
 import { describe, expect, it } from "vitest";
-import { HIGH_WATER_MARK, LOW_WATER_MARK, SPRING_HI, SPRING_LO, STILT_LENGTH, TIDE_HI, TIDE_LO, TIDE_PERIOD, WALKWAY_SNAP } from "../src/config";
-import { BEACH_MAX_HEIGHT, BOAT_COST, BOAT_MIN_RANGE, BOAT_RANGE, BUILDINGS, CAP_BASE, DRAWDOWN_LEVEL, DRAWDOWN_SECONDS, FIRE_BURN_SECONDS, FIRE_IGNITE_THRESHOLD, FISH_CAP, HAPPY, INJURY_NATURAL_CYCLES, LEVEL_UP_HAPPINESS, MAX_LEVEL, OYSTER_POLLUTION_KILL, CLEAR_TIMBER, LANDFILL_COST, LANDFILL_HEIGHT, LIFT_COST, LIFT_MAX, LIFT_STEP, LOAN_AMOUNT, LOAN_INTEREST, LOAN_REPAY_CYCLES, PLANK_ORDER_SIZE, REMOVE_REFUND, STARTING_MONEY, TRADE_EVERY, TRADE_EVERY_LIGHTHOUSE, TREATMENT_RADIUS, TREE_REGROW_CYCLES, WAREHOUSE_CAP } from "../src/sim/balance";
+import { CLEARANCE, DRY_TERRAIN, HIGH_WATER_MARK, LOW_WATER_MARK, SPRING_FLOOD_TERRAIN, SPRING_HI, SPRING_LO, STILT_MIN, TIDE_HI, TIDE_LO, TIDE_PERIOD, WALKWAY_SNAP } from "../src/config";
+import { BEACH_MAX_HEIGHT, BOAT_COST, BOAT_MIN_RANGE, BOAT_RANGE, BUILDINGS, CAP_BASE, DRAWDOWN_LEVEL, DRAWDOWN_SECONDS, FIRE_BURN_SECONDS, FIRE_IGNITE_THRESHOLD, FISH_CAP, HAPPY, INJURY_NATURAL_CYCLES, LEVEL_UP_HAPPINESS, MAX_LEVEL, OYSTER_POLLUTION_KILL, CLEAR_TIMBER, LANDFILL_COST, LANDFILL_HEIGHT, LIFT_MAX, LIFT_STEP, LOAN_AMOUNT, LOAN_INTEREST, LOAN_REPAY_CYCLES, PLANK_ORDER_SIZE, REMOVE_REFUND, STARTING_MONEY, STILT_COST_PER_UNIT, WAVE_HEIGHT, TRADE_EVERY, TRADE_EVERY_LIGHTHOUSE, TREATMENT_RADIUS, TREE_REGROW_CYCLES, WAREHOUSE_CAP } from "../src/sim/balance";
 import { ACHIEVEMENTS, checkAchievements } from "../src/sim/achievements";
 import { deserialize, serialize } from "../src/sim/save";
 import { DISTRICT_MIN, districtName, districtOf, districts } from "../src/sim/districts";
@@ -12,8 +12,8 @@ import { DAY_CYCLES } from "../src/config";
 import { ISLE } from "../src/sim/isle";
 import { startCell, suggestPier } from "../src/sim/start";
 import { TREE_SITES } from "../src/sim/trees";
-import { sheltered, shielded, startStorm, startTsunami, waveDirection } from "../src/sim/events";
-import { ignite } from "../src/sim/fire";
+import { rollTsunami, sheltered, shielded, startStorm, startTsunami, tsunamiDue, warnTsunami, waveDirection } from "../src/sim/events";
+import { ignite, repairDamage } from "../src/sim/fire";
 import { addLantern, coverageAt, lanternBlocker } from "../src/sim/services";
 import { injuredCount } from "../src/sim/sharks";
 import { orderPlanks } from "../src/sim/trade";
@@ -684,6 +684,43 @@ describe("storms and the tsunami (M11)", () => {
     for (const h of exposed) expect(h.damaged).toBe(true);
     expect(t.pier.boats).toBe(0); // unsheltered boats are gone
   });
+
+  it("a rolled tsunami announces itself one tide ahead and starts at the next settlement", () => {
+    const { state, grid } = town();
+    advanceCycles(state, grid, 2);
+    const cycle = state.tide.cycle;
+    warnTsunami(state);
+    expect(tsunamiDue(state)).toBe(true);
+    expect(state.tsunami.due).toBe(cycle + 1);
+    expect(state.tsunami.stage).toBeNull();
+    expect(state.log[state.log.length - 1]).toMatch(/uneasy/);
+    rollTsunami(state, grid); // not yet: the wave is booked for the next settlement, not this one
+    expect(state.tsunami.stage).toBeNull();
+    advanceCycles(state, grid, 1);
+    expect(state.tsunami.stage).toBe("drawdown");
+    expect(state.tsunami.due).toBe(-1);
+    expect(tsunamiDue(state)).toBe(false);
+    const old = JSON.parse(serialize(state)) as SimState;
+    delete (old.tsunami as Partial<SimState["tsunami"]>).due;
+    expect(deserialize(JSON.stringify(old)).tsunami.due).toBe(-1);
+  });
+
+  it("damaged walkways rebuild themselves for their base price when the purse allows", () => {
+    const { state, grid, town: t } = town();
+    const w = grid.buildingAt(t.walkways[0])!;
+    const hut = t.huts[0];
+    w.damaged = true; hut.damaged = true;
+    state.resources.money = BUILDINGS[w.kind].cost.money + 1; state.resources.timber = 0;
+    repairDamage(state);
+    expect(w.damaged).toBe(false);
+    expect(hut.damaged).toBe(true); // a house needs the repair fund and timber
+    expect(state.resources.money).toBe(1);
+    expect(state.log[state.log.length - 1]).toMatch(/Rebuilt 1 walkway for/);
+    w.damaged = true;
+    state.resources.money = 0;
+    repairDamage(state);
+    expect(w.damaged).toBe(true);
+  });
 });
 
 describe("tutorial and big town (M12)", () => {
@@ -846,7 +883,7 @@ describe("achievements (backlog 7)", () => {
 });
 
 describe("placement (streets, docks, refunds)", () => {
-  it("a stilt walkway rises to meet a neighbouring deck within WALKWAY_SNAP, not beyond, never below its stilts", () => {
+  it("an auto-sized walkway rises to meet a neighbouring deck within WALKWAY_SNAP, not beyond, never below its safe height", () => {
     const { grid } = newGame(1);
     // Two free flat cells side by side, away from the start hut.
     let a: Cell | null = null;
@@ -856,14 +893,14 @@ describe("placement (streets, docks, refunds)", () => {
     }
     expect(a).not.toBeNull();
     const n = { i: a!.i + 1, j: a!.j };
-    const base = grid.heightAt(n) + STILT_LENGTH;
+    const safe = Math.max(grid.heightAt(n) + STILT_MIN, TIDE_HI + CLEARANCE);
     const high = grid.place("walkway", [a!]);
-    high.floorY = base + WALKWAY_SNAP - 0.05;
+    high.floorY = safe + WALKWAY_SNAP - 0.05;
     expect(grid.floorFor("walkway", [n])).toBeCloseTo(high.floorY, 6);
-    high.floorY = base + WALKWAY_SNAP + 0.05;
-    expect(grid.floorFor("walkway", [n])).toBeCloseTo(base, 6);
-    high.floorY = base - 0.2;
-    expect(grid.floorFor("walkway", [n])).toBeCloseTo(base, 6);
+    high.floorY = safe + WALKWAY_SNAP + 0.05;
+    expect(grid.floorFor("walkway", [n])).toBeCloseTo(safe, 6);
+    high.floorY = safe - 0.2;
+    expect(grid.floorFor("walkway", [n])).toBeCloseTo(safe, 6);
   });
   it("a deep dock must touch a pier or raised walkway; a raised walkway bridges deep water to it", () => {
     const { state, grid, town: t } = town();
@@ -887,7 +924,7 @@ describe("placement (streets, docks, refunds)", () => {
     }
     expect(dock).not.toBeNull();
   });
-  it("a lift raises a stilt deck by LIFT_STEP a step and costs LIFT_COST a step; fixed-floor kinds ignore it", () => {
+  it("a lift raises an auto-sized deck by LIFT_STEP a step, never below its safe height, and the extra stilts are priced", () => {
     const { state, grid } = newGame(1);
     state.resources.money += 1000;
     let a: Cell | null = null;
@@ -895,28 +932,88 @@ describe("placement (streets, docks, refunds)", () => {
       const c = { i, j };
       if (grid.classAt(c) === "flat" && !grid.buildingAt(c) && !grid.neighbors(c).some(n => grid.buildingAt(n))) { a = c; break; }
     }
-    const base = grid.heightAt(a!) + STILT_LENGTH;
+    const safe = Math.max(grid.heightAt(a!) + STILT_MIN, TIDE_HI + CLEARANCE);
     const before = state.resources.money;
     const w = tryPlace(state, grid, "walkway", a!, 2);
-    expect(w!.floorY).toBeCloseTo(base + 2 * LIFT_STEP, 6);
-    expect(before - state.resources.money).toBe(BUILDINGS.walkway.cost.money + 2 * LIFT_COST);
-    expect(placeCost("walkway", 99).money).toBe(BUILDINGS.walkway.cost.money + LIFT_MAX * LIFT_COST);
-    expect(placeCost("hut", 3)).toEqual(BUILDINGS.hut.cost);
+    expect(w!.floorY).toBeCloseTo(safe + 2 * LIFT_STEP, 6);
+    const stilt = w!.floorY - grid.heightAt(a!);
+    expect(before - state.resources.money).toBe(Math.round(BUILDINGS.walkway.cost.money + STILT_COST_PER_UNIT * stilt));
+    expect(grid.floorFor("walkway", [a!], -5)).toBeGreaterThanOrEqual(safe - 1e-9); // a negative lift is no lift
+    expect(grid.floorFor("walkway", [a!], 99)).toBeCloseTo(safe + LIFT_MAX * LIFT_STEP, 6);
+    expect(placeCost("pier", 3)).toEqual(BUILDINGS.pier.cost); // fixed floors price no stilts
+    expect(placeCost("hut", 1).money).toBe(BUILDINGS.hut.cost.money + STILT_COST_PER_UNIT);
   });
-  it("paths run over dry land and join the street; homes may stand on the hill, on the ground", () => {
-    const { state, grid, town: t } = town();
-    state.resources.money += 1000;
-    // Walk uphill from a street piece: the first high cell beside a walkway takes a path, the next one too.
-    let start: Cell | null = null, high: Cell | null = null;
-    for (const w of t.walkways) for (const n of grid.neighbors(w)) if (grid.classAt(n) === "high" && !grid.buildingAt(n)) { start = w; high = n; break; }
-    if (!high) {
-      // No hill beside the starter street: lay walkways toward the nearest high cell first.
-      for (let i = -30; i < 30 && !high; i++) for (let j = -30; j < 30; j++) {
-        const c = { i, j };
-        if (grid.classAt(c) !== "high" || grid.buildingAt(c)) continue;
-        const flat = grid.neighbors(c).find(n => grid.classAt(n) === "flat" && !grid.buildingAt(n));
-        if (flat && tryPlace(state, grid, "raisedWalkway", flat)) { start = flat; high = c; break; }
+  it("every standard piece clears the tides it must: walkways the ordinary high, buildings the spring peak; only a low walkway floods, at spring", () => {
+    const { grid } = newGame(1);
+    const flats: Cell[] = [];
+    for (let i = -30; i < 30; i++) for (let j = -30; j < 30; j++) { const c = { i, j }; if (grid.classAt(c) === "flat" && !grid.buildingAt(c) && !grid.neighbors(c).some(n => grid.buildingAt(n))) flats.push(c); }
+    const low = flats.filter(c => grid.heightAt(c) < SPRING_FLOOD_TERRAIN - 0.05);
+    const mid = flats.filter(c => grid.heightAt(c) > SPRING_FLOOD_TERRAIN + 0.02);
+    expect(low.length).toBeGreaterThan(10);
+    expect(mid.length).toBeGreaterThan(10);
+    for (const c of [...low.slice(0, 20), ...mid.slice(0, 20)]) {
+      const w = grid.floorFor("walkway", [c]);
+      expect(w).toBeGreaterThanOrEqual(grid.heightAt(c) + STILT_MIN - 1e-9);
+      expect(w).toBeGreaterThan(TIDE_HI);               // never under an ordinary high tide
+      expect(floodFate(w)).not.toBe("always");
+      for (const kind of ["hut", "house", "market", "smokehouse", "well", "oysterBed"] as const) {
+        const fp = grid.footprint(kind, c);
+        if (!fp) continue;
+        const f = grid.floorFor(kind, fp);
+        expect(f).toBeGreaterThanOrEqual(SPRING_HI + CLEARANCE - 1e-9); // buildings clear the spring peak
+        expect(floodFate(f)).toBe("safe");
       }
+    }
+    for (const c of low.slice(0, 20)) expect(floodFate(grid.floorFor("walkway", [c]))).toBe("spring");
+    for (const c of mid.slice(0, 20)) expect(floodFate(grid.floorFor("walkway", [c]))).toBe("safe");
+    expect(SPRING_FLOOD_TERRAIN).toBeCloseTo(SPRING_HI - STILT_MIN, 9);
+    expect(WAVE_HEIGHT).toBeGreaterThan(SPRING_HI + CLEARANCE);
+  });
+  it("stilts are priced by length: the same hut costs more on low ground than on high flats", () => {
+    const { grid } = newGame(1);
+    let lo: Cell | null = null, hi: Cell | null = null;
+    for (let i = -30; i < 30; i++) for (let j = -30; j < 30; j++) {
+      const c = { i, j };
+      if (grid.classAt(c) !== "flat" || grid.buildingAt(c)) continue;
+      if (!lo && grid.heightAt(c) < 0) lo = c;
+      if (!hi && grid.heightAt(c) > 0.45) hi = c;
+    }
+    expect(lo && hi).toBeTruthy();
+    const cost = (c: Cell) => placeCost("hut", grid.stiltLength("hut", [c], grid.floorFor("hut", [c]))).money;
+    expect(cost(lo!)).toBeGreaterThan(cost(hi!));
+    expect(cost(hi!)).toBeGreaterThanOrEqual(BUILDINGS.hut.cost.money + STILT_COST_PER_UNIT * STILT_MIN - 1);
+    // A standard walkway on the lowest flats still undercuts the fixed-price raised walkway.
+    const lowest = Math.min(...Array.from({ length: 60 * 60 }, (_, k) => grid.heightAt({ i: (k % 60) - 30, j: Math.floor(k / 60) - 30 })).filter(h => h >= TIDE_LO));
+    const worst = placeCost("walkway", TIDE_HI + CLEARANCE - lowest).money;
+    expect(worst).toBeLessThan(BUILDINGS.raisedWalkway.cost.money);
+  });
+  it("streets: walkways may cross the beach band below DRY_TERRAIN, paths only dry ground above it", () => {
+    const { grid } = newGame(1);
+    let beach: Cell | null = null, dry: Cell | null = null;
+    for (let i = -30; i < 30; i++) for (let j = -30; j < 30; j++) {
+      const c = { i, j };
+      if (grid.classAt(c) !== "high" || grid.buildingAt(c)) continue;
+      const h = grid.heightAt(c);
+      if (!beach && h < DRY_TERRAIN - 0.05) beach = c;
+      if (!dry && h > DRY_TERRAIN + 0.05) dry = c;
+    }
+    expect(beach && dry).toBeTruthy();
+    expect(grid.classOk("street", [beach!])).toBe(true);
+    expect(grid.classOk("street", [dry!])).toBe(false);
+    expect(grid.canPlace("path", [beach!])).toBe(false);
+    expect(grid.canPlace("path", [dry!])).toBe(true);
+    expect(grid.floorFor("walkway", [beach!])).toBeGreaterThan(SPRING_HI); // a beach walkway never floods
+  });
+  it("paths run over dry land and join the street; homes may stand on the hill, on short stilts", () => {
+    const { state, grid } = town();
+    state.resources.money += 1000;
+    // A dry hill cell next to a lower cell that a walkway can stand on: the walkway joins the street to the path.
+    let start: Cell | null = null, high: Cell | null = null;
+    for (let i = -30; i < 30 && !high; i++) for (let j = -30; j < 30; j++) {
+      const c = { i, j };
+      if (grid.classAt(c) !== "high" || grid.heightAt(c) < DRY_TERRAIN || grid.buildingAt(c)) continue;
+      const below = grid.neighbors(c).find(n => grid.classOk("street", [n]) && !grid.buildingAt(n));
+      if (below && tryPlace(state, grid, "walkway", below)) { start = below; high = c; break; }
     }
     expect(high).not.toBeNull();
     expect(grid.canPlace("path", [start!])).toBe(false); // paths need dry land
@@ -928,7 +1025,7 @@ describe("placement (streets, docks, refunds)", () => {
     if (further) {
       const hut = tryPlace(state, grid, "hut", further);
       expect(hut).not.toBeNull();
-      expect(hut!.floorY).toBeCloseTo(Math.max(1.0, grid.heightAt(further) + 0.05), 6);
+      expect(hut!.floorY).toBeGreaterThanOrEqual(grid.heightAt(further) + STILT_MIN - 1e-9);
       state.tide.override = TIDE_HI; tick(state, grid);
       expect(p!.reached).toBe(grid.buildingAt(start!)!.reached); // the path is on the network iff its street is
     }
@@ -1022,7 +1119,7 @@ describe("land tools", () => {
     state.resources.money += 100;
     const hut = tryPlace(state, grid, "hut", c!);
     expect(hut).not.toBeNull();
-    expect(hut!.floorY).toBeCloseTo(1.0, 6);
+    expect(hut!.floorY).toBeCloseTo(LANDFILL_HEIGHT + STILT_MIN, 5); // on its own short stilts, like any home
     const round = new Grid(deserialize(serialize(state)));
     expect(round.classAt(c!)).toBe("high");
     expect(round.heightAt(c!)).toBeCloseTo(LANDFILL_HEIGHT, 5);
@@ -1053,20 +1150,22 @@ describe("land tools", () => {
 });
 
 describe("tide splits the economy (M3)", () => {
-  it("standard walkways stand STILT_LENGTH above their cell; low ones flood at spring high, not at ordinary high", () => {
+  it("a standard walkway on low ground stands clear of the ordinary high tide and goes under only at a spring peak", () => {
     const { state, grid, town: t } = town();
-    const cell = flatCellWithHeight(grid, 0.12, 0.33, t.pier.cells[0]);
+    const cell = flatCellWithHeight(grid, 0.12, SPRING_FLOOD_TERRAIN - 0.02, t.pier.cells[0]);
     expect(cell).not.toBeNull();
     const w = grid.place("walkway", [cell!]);
-    const base = grid.heightAt(cell!) + STILT_LENGTH;
-    expect(w.floorY).toBeGreaterThanOrEqual(base - 1e-6); // may rise to meet a neighbouring deck
-    if (!grid.neighbors(cell!).some(n => grid.buildingAt(n))) expect(w.floorY).toBeCloseTo(base, 6);
-    w.floorY = base;
+    const safe = Math.max(grid.heightAt(cell!) + STILT_MIN, TIDE_HI + CLEARANCE);
+    expect(w.floorY).toBeGreaterThanOrEqual(safe - 1e-6); // may rise to meet a neighbouring deck
+    if (!grid.neighbors(cell!).some(n => grid.buildingAt(n))) expect(w.floorY).toBeCloseTo(safe, 6);
+    w.floorY = safe;
     expect(floodFate(w.floorY)).toBe("spring");
     state.tide.override = TIDE_HI; tick(state, grid);
     expect(w.cut).toBe(false);
     state.tide.override = SPRING_HI; tick(state, grid);
     expect(w.cut).toBe(true);
+    // The huts beside the street stand clear of the spring peak whatever their ground.
+    for (const h of t.huts) expect(h.cut).toBe(false);
   });
 
   it("workers beyond a flooded walkway don't count for that shift", () => {

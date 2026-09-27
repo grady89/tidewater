@@ -129,6 +129,8 @@ export interface TsunamiState {
   front: number;
   /** Cycle of the last tsunami. */
   lastCycle: number;
+  /** Cycle at whose settlement the next tsunami starts (the sea is uneasy until then); -1 = none pending. */
+  due: number;
   /** Buildings already struck by this wave. */
   struck: number[];
   count: number;
@@ -228,7 +230,7 @@ export function createState(seed = 1): SimState {
     trade: { nextVisit: -1, shipCycle: -1, plankOrder: 0, visits: 0 },
     tourists: 0,
     storm: { active: false, lastCycle: -99, count: 0 },
-    tsunami: { stage: null, t: 0, dir: { x: 0, z: 1 }, front: 0, lastCycle: -99, struck: [], count: 0 },
+    tsunami: { stage: null, t: 0, dir: { x: 0, z: 1 }, front: 0, lastCycle: -99, due: -1, struck: [], count: 0 },
     happiness: 1,
     last: { cycle: 0, fishCaught: 0, fishSold: 0, shellfishSold: 0, income: 0, expenses: 0, immigrants: 0, tourism: 0, trade: 0 },
     log: [],

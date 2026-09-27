@@ -58,6 +58,7 @@ export class InfoPanel {
     if ((def.slots ?? 0) > 0) rows.push(["Boats", `${b.boats} / ${def.slots}${b.atSea ? (b.ground ? ` · fishing ${Math.round(Math.hypot(b.ground.i - b.cells[0].i, b.ground.j - b.cells[0].j))} cells out` : " · at sea") : b.boats ? " · moored" : ""}`]);
     if (def.workers > 0 || (def.slots ?? 0) > 0 || b.kind === "oysterBed") rows.push(["Last cycle", b.output.toFixed(1)]);
     if (b.lantern) rows.push(["Lantern", "lit at dusk"]);
+    if (def.floor === "stilts" || def.floor === "street") rows.push(["Stilts", `${Math.max(0, b.floorY - this.grid.groundUnder(b.cells)).toFixed(1)} m`]);
     rows.push(["Upkeep", `${def.upkeep}$ / cycle`]);
     const d = districtOf(this.grid, b);
     const district = d

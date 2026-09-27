@@ -84,13 +84,32 @@ export function startStorm(state: SimState, grid: Grid): void {
 
 // ---------- tsunami ----------
 
-/** Settlement: rare, only after TSUNAMI_FIRST_CYCLE and TSUNAMI_COOLDOWN since the last. */
+/**
+ * Settlement: rare, only after TSUNAMI_FIRST_CYCLE and TSUNAMI_COOLDOWN since the last — and never unannounced.
+ * The roll that comes up sets the wave for the *next* settlement and says "the sea is uneasy", so the player has
+ * one tide to lift decks, raise walls or move boats behind the breakwater.
+ */
 export function rollTsunami(state: SimState, grid: Grid): void {
   const t = state.tsunami;
   if (t.stage) return;
   const cycle = state.tide.cycle;
+  if (t.due >= 0) {
+    if (cycle >= t.due) { t.due = -1; startTsunami(state, grid); }
+    return;
+  }
   if (cycle < TSUNAMI_FIRST_CYCLE || cycle - t.lastCycle < TSUNAMI_COOLDOWN) return;
-  if (rand(state) < TSUNAMI_CHANCE) startTsunami(state, grid);
+  if (rand(state) < TSUNAMI_CHANCE) warnTsunami(state);
+}
+
+/** Book the wave for the next settlement. */
+export function warnTsunami(state: SimState): void {
+  state.tsunami.due = state.tide.cycle + 1;
+  notify(state, "The sea is uneasy");
+}
+
+/** Is a wave booked but not yet started? */
+export function tsunamiDue(state: SimState): boolean {
+  return state.tsunami.due >= 0 && !state.tsunami.stage;
 }
 
 export function startTsunami(state: SimState, grid: Grid): void {

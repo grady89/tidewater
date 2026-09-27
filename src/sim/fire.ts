@@ -96,6 +96,18 @@ export function repairCost(b: Building): { money: number; timber: number } {
 /** Settlement: repair what the purse and the woodpile allow, oldest damage first. */
 export function repairDamage(state: SimState): number {
   let repaired = 0;
+  // Streets first, and cheaply: a damaged walkway or path is rebuilt for its base price (no timber, no stilt
+  // surcharge) whenever the purse allows, so a wave doesn't leave the town cut into pieces for cycles.
+  let streets = 0, spent = 0;
+  for (const b of buildingList(state).sort((x, y) => x.id - y.id)) {
+    if (!b.damaged || !isStreet(b)) continue;
+    const money = BUILDINGS[b.kind].cost.money;
+    if (state.resources.money < money) continue;
+    state.resources.money -= money;
+    b.damaged = false;
+    streets++; spent += money; repaired++;
+  }
+  if (streets) notify(state, `Rebuilt ${streets} walkway${streets > 1 ? "s" : ""} for ${spent}$`);
   for (const b of buildingList(state).sort((x, y) => x.id - y.id)) {
     if (!b.damaged) continue;
     const c = repairCost(b);
@@ -107,6 +119,11 @@ export function repairDamage(state: SimState): number {
     notify(state, `Repaired the ${BUILDINGS[b.kind].name.toLowerCase()} for ${c.money}$ and ${c.timber} timber`);
   }
   return repaired;
+}
+
+/** Street pieces: rebuilt automatically after damage. */
+export function isStreet(b: Building): boolean {
+  return b.kind === "walkway" || b.kind === "raisedWalkway" || b.kind === "path";
 }
 
 /** A building that can do its job: connected, dry, and intact. */

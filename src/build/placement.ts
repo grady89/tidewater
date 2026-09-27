@@ -3,8 +3,9 @@
 // right-click removes. Placement writes to the sim through the Grid; meshes appear when the view syncs.
 import { ArcRotateCamera, Color3, Matrix, Mesh, MeshBuilder, Quaternion, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
 import { BuildingKind, BUILDINGS, PlacementClass } from "../sim/balance";
-import { boatPurchaseBlocker, buyBoat, canAfford, placeCost, removeBuilding, tryPlace } from "../sim/economy";
-import { LANDFILL_HEIGHT, LIFT_MAX } from "../sim/balance";
+import { autoStilts, boatPurchaseBlocker, buyBoat, canAfford, placeCost, removeBuilding, tryPlace } from "../sim/economy";
+import { BOAT_COST, LANDFILL_COST, LANDFILL_HEIGHT, LANTERN_COST, LIFT_MAX, PLANT_COST } from "../sim/balance";
+import { CLEARANCE, SPRING_HI, TIDE_HI } from "../config";
 import { Grid, HALF, worldToCell } from "../sim/grid";
 import { terrainHeight } from "../sim/heightfield";
 import { addLandfill, clearBlocker, clearTree, landfillBlocker, plantBlocker, plantTree } from "../sim/land";
@@ -58,9 +59,13 @@ export class Placement {
   /** Line tools draw with the left button, so the camera must not grab the ground with it. */
   get dragsLine(): boolean { return LINE_TOOLS.has(this.tool); }
 
-  /** Extra deck height for stilt pieces, in LIFT_STEP steps ([ and ] keys). */
+  /** Extra deck height for auto-sized pieces, in LIFT_STEP steps ([ and ] keys); never below the safe height. */
   lift = 0;
-  get liftable(): boolean { return isBuildingTool(this.tool) && BUILDINGS[this.tool].floor === "stilts"; }
+  get liftable(): boolean { return isBuildingTool(this.tool) && autoStilts(this.tool); }
+  /** Stilt length (floor − ground) and full price of the hovered footprint, for the ghost's label. */
+  stilt = 0;
+  cost = 0;
+  private readonly ghostStilts: Mesh;
   /** Called with the cell when landfill goes down, so the view can raise the ground. */
   onLandfill: (c: Cell) => void = () => {};
   /** Set when a land tool succeeded (the smoke reads it); the view polls the ledger anyway. */
@@ -89,6 +94,11 @@ export class Placement {
       return m;
     };
     this.lineGhosts = { ok: lineGhost("ghostLineOk", this.mats.ok), bad: lineGhost("ghostLineBad", this.mats.bad) };
+    // The ghost's stilts: four thin posts from the deck down to the ground, so the stilt length is seen.
+    this.ghostStilts = MeshBuilder.CreateBox("ghostStilts", { size: 1 }, scene);
+    this.ghostStilts.isPickable = false;
+    this.ghostStilts.material = this.mats.ok;
+    this.ghostStilts.setEnabled(false);
 
     canvas.addEventListener("pointermove", () => this.refresh());
     canvas.addEventListener("pointerleave", () => { this.hover = null; this.ghost.setEnabled(false); });
@@ -132,7 +142,10 @@ export class Placement {
     if (this.tool === "landfill") return 0.6;
     if (!isBuildingTool(this.tool)) return 1.0;
     const f = BUILDINGS[this.tool].floor;
-    return typeof f === "number" ? f : 0.6;
+    if (typeof f === "number") return f;
+    if (f === "street") return TIDE_HI + CLEARANCE;
+    if (f === "stilts") return SPRING_HI + CLEARANCE;
+    return 0.6;
   }
 
   /** Tools that can go on the hill are picked against the terrain itself. */
@@ -140,7 +153,7 @@ export class Placement {
     if (this.tool === "plantTree" || this.tool === "clearTree") return true;
     if (!isBuildingTool(this.tool)) return false;
     const cls = BUILDINGS[this.tool].cls;
-    return cls === "high" || cls === "flatOrHigh";
+    return cls === "high" || cls === "flatOrHigh" || cls === "street";
   }
 
   /**
@@ -176,26 +189,28 @@ export class Placement {
     return this.evaluate(anchor).blocker;
   }
 
-  /** Footprint, blocker, caution and flood fate for placing the current tool at `anchor`. */
-  private evaluate(anchor: Cell): { cells: Cell[]; blocker: string | null; warn: string | null; fate: Fate; y: number } {
+  /** Footprint, blocker, caution, flood fate, stilt length and price for placing the current tool at `anchor`. */
+  private evaluate(anchor: Cell): { cells: Cell[]; blocker: string | null; warn: string | null; fate: Fate; y: number; stilt: number; cost: number } {
     const state = this.grid.state;
     if (this.tool === "boat") {
       const b = this.grid.buildingAt(anchor);
-      return { cells: b && (BUILDINGS[b.kind].slots ?? 0) > 0 ? b.cells : [anchor], blocker: boatPurchaseBlocker(state, b), warn: null, fate: "safe", y: b?.floorY ?? 1 };
+      return { cells: b && (BUILDINGS[b.kind].slots ?? 0) > 0 ? b.cells : [anchor], blocker: boatPurchaseBlocker(state, b), warn: null, fate: "safe", y: b?.floorY ?? 1, stilt: 0, cost: BOAT_COST };
     }
     if (this.tool === "lanternPost") {
       const b = this.grid.buildingAt(anchor);
-      return { cells: [anchor], blocker: lanternBlocker(state, this.grid, anchor), warn: null, fate: "safe", y: b?.floorY ?? 1 };
+      return { cells: [anchor], blocker: lanternBlocker(state, this.grid, anchor), warn: null, fate: "safe", y: b?.floorY ?? 1, stilt: 0, cost: LANTERN_COST };
     }
-    if (this.tool === "landfill") return { cells: [anchor], blocker: landfillBlocker(state, this.grid, anchor), warn: null, fate: "safe", y: LANDFILL_HEIGHT + 0.03 };
-    if (this.tool === "plantTree") return { cells: [anchor], blocker: plantBlocker(state, this.grid, anchor), warn: null, fate: "safe", y: this.grid.heightAt(anchor) + 0.05 };
-    if (this.tool === "clearTree") return { cells: [anchor], blocker: clearBlocker(state, this.grid, anchor), warn: null, fate: "safe", y: this.grid.heightAt(anchor) + 0.05 };
+    if (this.tool === "landfill") return { cells: [anchor], blocker: landfillBlocker(state, this.grid, anchor), warn: null, fate: "safe", y: LANDFILL_HEIGHT + 0.03, stilt: 0, cost: LANDFILL_COST.money };
+    if (this.tool === "plantTree") return { cells: [anchor], blocker: plantBlocker(state, this.grid, anchor), warn: null, fate: "safe", y: this.grid.heightAt(anchor) + 0.05, stilt: 0, cost: PLANT_COST };
+    if (this.tool === "clearTree") return { cells: [anchor], blocker: clearBlocker(state, this.grid, anchor), warn: null, fate: "safe", y: this.grid.heightAt(anchor) + 0.05, stilt: 0, cost: 0 };
     const kind = this.tool;
     const def = BUILDINGS[kind];
     const cells = this.grid.footprint(kind, anchor);
-    if (!cells) return { cells: [anchor], blocker: def.cls === "edge" ? "Needs deep water against the shore" : "Off the map", warn: null, fate: "safe", y: this.pickY() };
+    if (!cells) return { cells: [anchor], blocker: def.cls === "edge" ? "Needs deep water against the shore" : "Off the map", warn: null, fate: "safe", y: this.pickY(), stilt: 0, cost: def.cost.money };
     const y = this.grid.floorFor(kind, cells, this.toolLift);
-    const no = (blocker: string) => ({ cells, blocker, warn: null, fate: "safe" as Fate, y });
+    const stilt = this.grid.stiltLength(kind, cells, y);
+    const cost = placeCost(kind, stilt).money;
+    const no = (blocker: string) => ({ cells, blocker, warn: null, fate: "safe" as Fate, y, stilt, cost });
     if (!this.grid.classOk(def.cls, cells)) return no(classHint(def.cls));
     if (!this.grid.terrainOk(kind, cells)) return no(`Needs ground between ${def.terrain!.min} and ${def.terrain!.max} m`);
     if (cells.some(c => this.grid.buildingAt(c))) return no("Occupied");
@@ -204,24 +219,28 @@ export class Placement {
     if (def.needsLink && !this.grid.touchesLink(cells)) return no("Must touch a pier or a raised walkway (they bridge deep water)");
     if (def.requires && !this.grid.has(def.requires)) return no(`Requires a ${BUILDINGS[def.requires].name.toLowerCase()}`);
     if (def.touches && !this.grid.touchesKind(cells, def.touches)) return no(`Must touch the ${BUILDINGS[def.touches].name.toLowerCase()}`);
-    if (!canAfford(state, placeCost(kind, this.toolLift))) return no(`Costs ${costLabel(kind, this.toolLift)}`);
+    if (!canAfford(state, placeCost(kind, stilt))) return no(`Costs ${costLabel(kind, stilt)}`);
     // Placeable. Caution when nothing it touches is on the network: it would stand idle until a street reaches it.
     let warn: string | null = null;
     if (def.network !== "root" && !cells.some(c => this.grid.neighbors(c).some(n => { const b = this.grid.buildingAt(n); return !!b && (b.reached || BUILDINGS[b.kind].network === "root"); }))) {
       warn = def.network === "link" ? "Not joined to the town yet: streets need a pier at one end" : "No street touches it: nobody can reach it";
     }
-    return { cells, blocker: null, warn, fate: floodFate(y), y };
+    return { cells, blocker: null, warn, fate: floodFate(y), y, stilt, cost };
   }
 
   /** The cells of the run being dragged, with what each would cost; blocked cells are skipped, not fatal. */
   private evaluateLine(): { cells: Cell[]; ok: boolean[]; cost: number } {
     const kind = this.tool as BuildingKind;
-    const cost = placeCost(kind, this.toolLift).money;
+    let cost = 0;
     const ok = this.linePath.map(c => {
       const cells = this.grid.footprint(kind, c);
-      return !!cells && this.grid.classOk(BUILDINGS[kind].cls, cells) && !this.grid.buildingAt(c) && (!this.grid.onIsle(cells) || this.grid.isleOpen());
+      const fits = !!cells && this.grid.classOk(BUILDINGS[kind].cls, cells) && !this.grid.buildingAt(c) && (!this.grid.onIsle(cells) || this.grid.isleOpen());
+      // Each cell prices its own stilts (the run is laid in order, so later cells may snap to earlier ones; the
+      // preview prices each against the ground alone, which is the floor of what it will cost).
+      if (fits) cost += placeCost(kind, this.grid.stiltLength(kind, cells!, this.grid.floorFor(kind, cells!, this.toolLift))).money;
+      return fits;
     });
-    return { cells: this.linePath, ok, cost: ok.filter(Boolean).length * cost };
+    return { cells: this.linePath, ok, cost };
   }
 
   /** Lay the dragged run in order, so each deck meets the one before; stop when the money runs out. */
@@ -250,9 +269,26 @@ export class Placement {
     this.ghost.setEnabled(false);
   }
 
+  /** Four ghost posts from the deck at `y` down to the ground under the footprint's corners. */
+  private showStilts(cells: Cell[], y: number, on: boolean): void {
+    if (!on) { this.ghostStilts.setEnabled(false); return; }
+    const is = cells.map(c => c.i), js = cells.map(c => c.j);
+    const minI = Math.min(...is), maxI = Math.max(...is) + 1, minJ = Math.min(...js), maxJ = Math.max(...js) + 1;
+    const m: number[] = [];
+    for (const x of [minI + 0.15, maxI - 0.15]) for (const z of [minJ + 0.15, maxJ - 0.15]) {
+      const g = this.grid.heightAt(worldToCell(x, z));
+      const h = Math.max(0.02, y - g);
+      Matrix.Compose(new Vector3(0.06, h, 0.06), Quaternion.Identity(), new Vector3(x, g + h / 2, z)).copyToArray(m, m.length);
+    }
+    this.ghostStilts.material = this.ghost.material;
+    this.ghostStilts.thinInstanceSetBuffer("matrix", new Float32Array(m), 16, false);
+    this.ghostStilts.setEnabled(true);
+  }
+
   refresh(): void {
     this.hover = this.pickCell();
     if (this.lineStart && this.hover) {
+      this.ghostStilts.setEnabled(false);
       // Paint: the run follows the pointer's own track, cell by cell, so a street can bend where the player
       // bends it. Each pointer step adds the L from the last painted cell; revisited cells are skipped.
       if (this.linePath.length === 0) this.linePath = [this.lineStart];
@@ -272,8 +308,11 @@ export class Placement {
     }
     this.lineGhosts.ok.setEnabled(false); this.lineGhosts.bad.setEnabled(false);
     this.line = null;
-    if (!this.hover) { this.ghost.setEnabled(false); this.blocker = null; this.warn = null; return; }
-    const { cells, blocker, warn, fate, y } = this.evaluate(this.hover);
+    if (!this.hover) { this.ghost.setEnabled(false); this.ghostStilts.setEnabled(false); this.blocker = null; this.warn = null; return; }
+    const { cells, blocker, warn, fate, y, stilt, cost } = this.evaluate(this.hover);
+    this.stilt = stilt;
+    this.cost = cost;
+    this.showStilts(cells, y, !blocker && this.liftable);
     this.blocker = blocker;
     this.warn = warn;
     this.fate = fate;
@@ -328,8 +367,8 @@ export class Placement {
   }
 }
 
-export function costLabel(kind: BuildingKind, lift = 0): string {
-  const c = placeCost(kind, lift);
+export function costLabel(kind: BuildingKind, stilt = 0): string {
+  const c = placeCost(kind, stilt);
   const parts = [`${c.money}$`];
   if (c.planks) parts.push(`${c.planks} planks`);
   if (c.timber) parts.push(`${c.timber} timber`);
@@ -347,5 +386,6 @@ function classHint(cls: PlacementClass): string {
     case "edge": return "Needs deep water against the shore";
     case "beach": return "Needs a beach: sand above the tide line";
     case "highOrEdge": return "Needs high ground or deep water against the shore";
+    case "street": return "Needs the flats or the beach (paths take the dry hill)";
   }
 }

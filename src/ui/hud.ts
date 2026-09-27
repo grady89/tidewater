@@ -1,7 +1,7 @@
 // The UI: resource bar, build menu by category, tide clock, last-cycle ledger, notifications. Plain DOM over the
 // canvas, read-only over the sim.
 import { Fate, Tool } from "../build/placement";
-import { BOAT_COST, BUILDING_KINDS, BuildingKind, BUILDINGS, CATEGORIES, Category, CLEAR_TIMBER, LANDFILL_COST, LANTERN_COST, LIFT_COST, LIFT_STEP, LOAN_AMOUNT, LOAN_INTEREST, LOAN_REPAY_CYCLES, PLANK_ORDER_SIZE, PLANT_COST, TRADE_PLANK_PRICE } from "../sim/balance";
+import { BOAT_COST, BUILDING_KINDS, BuildingKind, BUILDINGS, CATEGORIES, Category, CLEAR_TIMBER, LANDFILL_COST, LANTERN_COST, LIFT_STEP, LOAN_AMOUNT, LOAN_INTEREST, LOAN_REPAY_CYCLES, PLANK_ORDER_SIZE, PLANT_COST, TRADE_PLANK_PRICE } from "../sim/balance";
 import { canAfford } from "../sim/economy";
 import { Grid } from "../sim/grid";
 import { population, SimState } from "../sim/state";
@@ -17,6 +17,9 @@ export interface HudState {
   line: { count: number; cost: number } | null;
   /** Deck lift steps for the current tool, or null when the tool has no lift. */
   lift: number | null;
+  /** Stilt length under the hovered footprint (0 for kinds that don't price stilts) and its full price. */
+  stilt: number;
+  cost: number;
   fate: Fate;
   state: SimState;
 }
@@ -43,7 +46,7 @@ function costOf(kind: BuildingKind): string {
 const FATE_TEXT: Record<Fate | "line", string> = {
   safe: "Click to place · right-click to remove (half the cost comes back)",
   line: "Click to place, or drag to lay a run · right-click to remove",
-  spring: "Floods at spring tides",
+  spring: "Low ground: floods at spring tides — a raised walkway or landfill stays dry",
   always: "Floods every high tide",
 };
 const LINE_TOOL_HINT: ReadonlySet<Tool> = new Set<Tool>(["walkway", "raisedWalkway", "path", "breakwater", "sharkNet", "seaWall"]);
@@ -275,14 +278,16 @@ export class Hud {
     if (this.loanStatus.textContent !== loanText) this.loanStatus.textContent = loanText;
     this.loanButton.hidden = loan.owed > 0;
     const ts = state.tsunami.stage;
-    this.tideEvent.textContent = ts === "drawdown" ? "The sea is pulling back" : ts === "wave" ? "A wave is coming in" : ts === "settle" ? "The water returns" : state.storm.active ? "Storm: the boats stay in" : "";
-    this.tideEvent.classList.toggle("now", ts !== null || state.storm.active);
+    const uneasy = ts === null && state.tsunami.due >= 0;
+    this.tideEvent.textContent = ts === "drawdown" ? "The sea is pulling back" : ts === "wave" ? "A wave is coming in" : ts === "settle" ? "The water returns" : uneasy ? "The sea is uneasy: a wave at the next peak" : state.storm.active ? "Storm: the boats stay in" : "";
+    this.tideEvent.classList.toggle("now", ts !== null || state.storm.active || uneasy);
 
     const lineText = s.line ? `${s.line.count} × ${TOOLS.find(t => t.tool === s.tool)?.label.toLowerCase() ?? s.tool} · ${s.line.cost}$ — release to lay them` : null;
     const fateText = s.fate !== "safe" ? FATE_TEXT[s.fate] : null;
-    const liftText = s.lift !== null ? (s.lift > 0 ? `Deck +${(s.lift * LIFT_STEP).toFixed(1)} m (+${s.lift * LIFT_COST}$) · [ ] to change` : "[ ] raises the deck (+0.2 m, +2$ a step)") : null;
+    // Auto-sized pieces show their stilts and the price they make: long stilts on low ground cost more.
+    const stiltText = s.lift !== null ? `Stilts ${s.stilt.toFixed(1)} m · ${s.cost}$${s.lift > 0 ? ` · deck +${(s.lift * LIFT_STEP).toFixed(1)} m` : ""} · [ ] lifts the deck` : null;
     const base = LINE_TOOL_HINT.has(s.tool) ? FATE_TEXT.line : FATE_TEXT.safe;
-    const cautions = [s.warn, fateText, liftText].filter((t): t is string => t !== null);
+    const cautions = [s.warn, fateText, stiltText].filter((t): t is string => t !== null);
     this.hint.textContent = s.blocker ?? lineText ?? (cautions.length ? cautions.join(" · ") : base);
     this.hint.classList.toggle("blocked", s.blocker !== null);
     this.hint.classList.toggle("warn", s.blocker === null && !s.line && (s.warn !== null || s.fate !== "safe"));

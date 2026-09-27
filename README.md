@@ -30,7 +30,7 @@ milestone and drops screenshots in `shots/`.
 | Lay a run | with a walkway, path, raised walkway, breakwater, net or sea wall selected, drag and the run follows your pointer; the hint prices it |
 | Land | the Land tab: landfill raises a flat cell to dry ground (45$ + 4 timber), plant and clear trees on the hill |
 | Borrow | **Borrow 300$** under the ledger: 360$ back at 24$ a tide over 15 tides, one loan at a time |
-| Deck height | with a walkway selected, `]` raises the deck 0.2 m (+2$ a step), `[` lowers it; the ghost's colour tells you what the tide will do |
+| Deck height | every walkway and building sizes its own stilts to clear the tide; the ghost shows the stilt length and price (low ground costs more). `]` lifts a deck higher (never lower), `[` brings it back down — lift above the wave line to ride out a tsunami |
 | Inspect | click any building; Esc closes the panel |
 | Remove | right-click — half the money comes back |
 | First pier | the gold ring on the water shows where it fits; docks need a pier or raised walkway alongside |
@@ -45,10 +45,10 @@ milestone and drops screenshots in `shots/`.
 
 ## How the town works
 
-- **Walkways** connect everything to a pier. Standard walkways stand half a metre above their cell, so on low
-  flats they flood at high tide and cut whatever lies beyond them; raised walkways never flood and bridge deep
-  water. A new walkway rises to meet the deck beside it, so streets run level. **Paths** carry the street onto
-  the dry hill, where homes can stand on the ground.
+- **Walkways** connect everything to a pier. Every piece stands on stilts sized to clear the tide, so nothing
+  floods at an ordinary high water; only a walkway on the lowest flats goes under at a spring tide, and the
+  amber ghost tells you so — a raised walkway there stays dry. Long stilts cost more. A new walkway rises to
+  meet the deck beside it, so streets run level. **Paths** carry the street onto the dry hill.
 - **Boats** sail from piers at high water and from deep docks on every tide, to the richest ground in range, and
   thin it. Oyster beds and clam camps work the exposed flats at low water. Every fourth tide is a spring tide.
 - **People** move in while there is food, work and room; they walk to work at shift change, level their homes when

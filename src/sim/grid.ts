@@ -1,6 +1,6 @@
 // Cell model over the terrain, occupancy index, and placement rules. Buildings live in SimState; the Grid is the
 // spatial index over them (rebuilt from state on load) plus the fixed terrain classification.
-import { SIZE, STILT_LENGTH, TIDE_HI, TIDE_LO, WALKWAY_SNAP } from "../config";
+import { CLEARANCE, DRY_TERRAIN, SIZE, SPRING_HI, STILT_MIN, TIDE_HI, TIDE_LO, WALKWAY_SNAP } from "../config";
 import { BEACH_MAX_HEIGHT, BuildingKind, BUILDINGS, LANDFILL_HEIGHT, LIFT_MAX, LIFT_STEP, PlacementClass } from "./balance";
 import { terrainHeight } from "./heightfield";
 import { isleCell } from "./isle";
@@ -124,6 +124,7 @@ export class Grid {
       case "edge": return cells.every(c => base(c) === "deep") && cells.some(c => this.touches(c, "flat"));
       case "beach": return cells.every(c => this.isBeach(c));
       case "highOrEdge": return cells.every(c => base(c) === "high") || this.classOk("edge", cells);
+      case "street": return cells.every(c => base(c) === "flat" || (base(c) === "high" && this.heightAt(c) < DRY_TERRAIN));
     }
   }
 
@@ -209,21 +210,35 @@ export class Grid {
   /** Deck height for a footprint; `lift` is the player's extra height in LIFT_STEP steps (stilt decks only). */
   floorFor(kind: BuildingKind, cells: Cell[], lift = 0): number {
     const f = BUILDINGS[kind].floor;
-    let h = -Infinity;
-    for (const c of cells) h = Math.max(h, this.heightAt(c));
+    const h = this.groundUnder(cells);
     if (typeof f === "number") return Math.max(f, h + 0.05); // a fixed floor never sinks into a hill
     if (f === "terrain") return h + 0.05;
-    if (f !== "stilts") return Math.max(1.0, h + 0.05);
-    // Stilt decks meet their neighbours: rise to the highest adjacent deck within WALKWAY_SNAP so streets run
-    // level over uneven flats, never sink below the cell's own stilt height. A lift raises the deck further.
-    const base = h + STILT_LENGTH;
-    let floor = base + Math.max(0, Math.min(LIFT_MAX, lift)) * LIFT_STEP;
+    if (f === "ground") return Math.max(1.0, h + 0.05);
+    // Auto-sized stilts: at least STILT_MIN over the cell and CLEARANCE over the tide the piece must clear — the
+    // ordinary high tide for a street, the spring tide for a building. Then a lift (never below), then the snap:
+    // rise to the highest neighbouring deck within WALKWAY_SNAP of the safe height so streets run level.
+    const safe = Math.max(h + STILT_MIN, (f === "street" ? TIDE_HI : SPRING_HI) + CLEARANCE);
+    let floor = safe + Math.max(0, Math.min(LIFT_MAX, lift)) * LIFT_STEP;
     for (const c of cells) for (const n of this.neighbors(c)) {
       const b = this.buildingAt(n);
       if (!b || cells.some(x => x.i === n.i && x.j === n.j)) continue;
-      if (b.floorY > floor && b.floorY <= base + WALKWAY_SNAP) floor = b.floorY;
+      if (b.floorY > floor && b.floorY <= safe + WALKWAY_SNAP) floor = b.floorY;
     }
     return floor;
+  }
+
+  /** The highest terrain under a footprint. */
+  groundUnder(cells: Cell[]): number {
+    let h = -Infinity;
+    for (const c of cells) h = Math.max(h, this.heightAt(c));
+    return h;
+  }
+
+  /** Stilt length a deck at `floor` needs over these cells; 0 for kinds that don't price their stilts. */
+  stiltLength(kind: BuildingKind, cells: Cell[], floor: number): number {
+    const f = BUILDINGS[kind].floor;
+    if (f !== "stilts" && f !== "street") return 0;
+    return Math.max(0, floor - this.groundUnder(cells));
   }
 
   place(kind: BuildingKind, cells: Cell[], lift = 0): Building {

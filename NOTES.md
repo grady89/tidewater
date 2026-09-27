@@ -614,6 +614,51 @@ What other builders do and what was taken from each:
 - Seed money 500 → 650$: the scripted starter town ended with ~4$ from 500, which is exact for a script and
   cruel for a first player. 650 leaves ~150$ of slack for a wrong walkway or two; the tests use the constant.
 
+## Session A (overnight, branch `rules`)
+
+### Task 1: the stilt rule replaced
+- **The rule.** `grid.floorFor`: an auto-sized piece stands at max(terrain + `STILT_MIN` 0.5, tide-to-clear +
+  `CLEARANCE` 0.1). Walkways (`floor: "street"`) clear `TIDE_HI` → never under 0.7; buildings (`floor: "stilts"`:
+  hut, house, tall house, market, clam camp, smokehouse, net loft, warehouse, well, bathhouse, tavern, shrine,
+  market square, clinic, inn, oyster bed) clear `SPRING_HI` → never under 0.95. Both snap up to a neighbouring
+  deck within `WALKWAY_SNAP` and take the lift; neither ever goes below its safe height. The cut rule itself is
+  untouched (`floorY < level`): with these floors the only thing a tide can cut is a standard walkway on terrain
+  below `SPRING_FLOOD_TERRAIN` = SPRING_HI − STILT_MIN = 0.35, at a spring peak. The constant is derived, not
+  typed, so the floor formula and the flood line can't disagree; a test pins it.
+- **What "standard" means** was read as: everything whose old floor was the flat-class 1.0 or the old terrain+0.5
+  stilts. Sea structures (pier, dock, harbor, shipyard, breakwater, net, outfall) keep their fixed 1.0 — they
+  already clear the spring peak and aren't on the flats. Hill/ground kinds (lumber camp, sawmill, treatment
+  plant, fire watch, lifeguard, lighthouse, sea wall) keep `"ground"` = max(1.0, terrain + 0.05), which also
+  clears the spring peak on the flats. Homes on the hill now stand on 0.5 stilts like everywhere else (they used
+  to sit on the ground) — one rule, one look; `deck()` draws the stilts whenever there is 0.2 to draw.
+- **Paths vs walkways on the beach band.** Paths hug the ground (floor = terrain + 0.05), so a path on the beach
+  between 0.6 and 0.85 used to be cut at a spring peak — a hole in "only walkways can flood". Now paths need dry
+  ground at or above `DRY_TERRAIN` = SPRING_HI + CLEARANCE (0.95, a `terrain` window on the kind) and walkways
+  take a new placement class `street` = flat cells plus high cells below DRY_TERRAIN. The two tile exactly, so a
+  trail from the flats up the hill is walkway-on-stilts across the beach, then dirt. Walkways are picked against
+  the terrain like hill tools, since the street class climbs.
+- **Cost.** `placeCost(kind, stilt)` = base + `STILT_COST_PER_UNIT` (6) × stilt length, rounded to the dollar;
+  `tryPlace` computes the floor first (snap and lift included) and prices from it. 6 was chosen so a standard
+  walkway on the lowest flat cell (terrain −0.35 → stilts 1.05 → 11$) still undercuts the fixed-price raised
+  walkway (12$), which stays the spring-proof option at a known price. The old `LIFT_COST` is gone: a lift is
+  just more stilt, priced the same way. The ghost grew four thin posts from deck to ground and the hint says
+  "Stilts 0.9 m · 10$"; the info panel shows a building's stilts.
+- **Starter town from 650$ (seed 7):** 143$ after the build (pier 60, two boats 160, three standard walkways on
+  0.72–0.98 m stilts — no raised needed now — huts 0.58–0.98 m, market 0.82 m, outfall), then 136 → 133 → 160 →
+  195 over four cycles: +52 net. Positive; nothing retuned.
+- **Tsunami.** `WAVE_HEIGHT` = SPRING_HI + CLEARANCE + `WAVE_MARGIN` (0.45) = 1.4, unchanged in value but now
+  stated as "anything not lifted WAVE_MARGIN above the safe building height" — two `]` presses (0.4) don't quite
+  make it, three do, which gives the lift key a purpose. The roll now books the wave for the next settlement
+  (`tsunami.due`) and says "The sea is uneasy" (log and tide clock) — one tide of warning; `forceTsunami` stays
+  immediate for the smoke. `repairDamage` rebuilds damaged walkways, raised walkways and paths first, for their
+  base price and no timber, before the repair fund touches anything else. Old saves get `due = -1`.
+- **Removed:** the market warning branch "under water at the peak" (a market's stilts now clear every tide; the
+  street to it can still flood at a spring peak, which the "no walkway to a pier" branch already reports), the
+  walkthrough step's "press ] to raise the deck", the "+2$ a step" hint. The "stuck" hint never had flood advice.
+- **Old saves** keep their stored floors: a walkway placed at terrain + 0.5 under the old rule may still sit
+  below 0.7. Not migrated — the shape check passes and a wrong-height street is visible and cheap to replace; a
+  migration would have to guess the lift.
+
 ### Chunk merge (the M12 perf pass, done for the mirror)
 - `view/buildingViews.ts` now merges every building in an 8×8-cell chunk into one mesh (`chunk:i,j`), rebuilt
   when any building in the chunk appears, leaves or changes its mesh signature. 300 buildings → 15 chunk meshes;

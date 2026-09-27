@@ -27,6 +27,17 @@ Live status. Update after every milestone (and mid-milestone if you compact). On
 | Backlog 6 Second island | DONE | 56a188a · isle dome blended into the heightfield (main island's 750 land cells untouched), locked until a harbor, ferry steamer on the sea route; settleIsle scenario; 2 sim tests, smoke B6 · headless 165 fps |
 | Backlog 7 Achievements | DONE | ee5c2f1 · nine ledger milestones checked once a second, kept in state.achievements (old saves tolerated), ★ log line + 6 s popup; 2 sim tests, smoke B7 + big-town fifty/hundred · headless 165 fps |
 
+## Session A (overnight, branch `rules`)
+
+| Task | Status | Notes |
+|---|---|---|
+| 1 Replace the stilt rule | IN PROGRESS | code, tests (65) and smoke green; sub-task: NOTES + commit |
+| 2 Known-broken hour | TODO | PERSON_SCALE ≈ 0.4 cell, net floats follow the water, no night bell, sea wall on shore |
+| 3 Ferry carries workers | TODO | harbor ↔ isle pier edge in the distance field, crossing cost, passengers on deck; else remove ferry + isle unlock |
+| 4 Seeded islands | TODO | only if 1–3 DONE |
+
+Not touched tonight (another session owns them): `test/fuzz*`, `.github/`, `src/ui/settings*`.
+
 ## Current focus
 Nothing left on ROADMAP.md: M0–M14 and backlog 1–7 are DONE, nothing BLOCKED. Last thing that worked: achievements green (build/test/smoke, 49 tests, 165 fps). HANDOFF.md rewritten at the end of the run.
 

@@ -12,7 +12,7 @@ import {
 } from "./balance";
 import { at } from "./fields";
 import { active, damageNear, fireSources, repairDamage, rollIgnitions } from "./fire";
-import { LIFT_COST, LIFT_MAX, REMOVE_REFUND } from "./balance";
+import { REMOVE_REFUND, STILT_COST_PER_UNIT } from "./balance";
 import { repayLoan } from "./loan";
 import { Grid } from "./grid";
 import { depleteGround, fishAt, pollutionAt, routeWaste, settleFields } from "./pollution";
@@ -40,20 +40,29 @@ export function buildingCost(kind: BuildingKind): Cost {
   return BUILDINGS[kind].cost;
 }
 
-/** Validate, pay, and place a building anchored at `anchor`. Null (and nothing paid) when it can't go there. */
-/** What a placement costs, lift included. */
-export function placeCost(kind: BuildingKind, lift = 0): Cost {
-  const c = BUILDINGS[kind].cost;
-  return lift > 0 && BUILDINGS[kind].floor === "stilts" ? { ...c, money: c.money + Math.min(LIFT_MAX, lift) * LIFT_COST } : c;
+/** Does this kind size (and price) its own stilts? */
+export function autoStilts(kind: BuildingKind): boolean {
+  const f = BUILDINGS[kind].floor;
+  return f === "stilts" || f === "street";
 }
 
+/** What a placement costs: the base price plus STILT_COST_PER_UNIT per unit of stilt length (auto-sized kinds). */
+export function placeCost(kind: BuildingKind, stilt = 0): Cost {
+  const c = BUILDINGS[kind].cost;
+  if (!autoStilts(kind) || stilt <= 0) return c;
+  return { ...c, money: Math.round(c.money + STILT_COST_PER_UNIT * stilt) };
+}
+
+/** Validate, pay, and place a building anchored at `anchor`. Null (and nothing paid) when it can't go there. */
 export function tryPlace(state: SimState, grid: Grid, kind: BuildingKind, anchor: Cell, lift = 0): Building | null {
   const cells = grid.footprint(kind, anchor);
-  const cost = placeCost(kind, lift);
-  if (!cells || !grid.canPlace(kind, cells) || !canAfford(state, cost)) return null;
+  if (!cells || !grid.canPlace(kind, cells)) return null;
+  const floor = grid.floorFor(kind, cells, autoStilts(kind) ? lift : 0);
+  const cost = placeCost(kind, grid.stiltLength(kind, cells, floor));
+  if (!canAfford(state, cost)) return null;
   pay(state, cost);
   const firstHarbor = kind === "harbor" && !grid.isleOpen();
-  const b = grid.place(kind, cells, BUILDINGS[kind].floor === "stilts" ? lift : 0);
+  const b = grid.place(kind, cells, autoStilts(kind) ? lift : 0);
   if (firstHarbor) notify(state, "The ferry runs: the isle across the water is open to build on");
   return b;
 }
@@ -266,10 +275,11 @@ export function settleCycle(state: SimState, grid: Grid): void {
     r.shellfish -= shellfish; stats.income += shellfish * PRICE_SHELLFISH; stats.shellfishSold += shellfish;
     b.output = fish + shellfish;
   }
-  // The commonest "why is nothing selling": every market is cut off or unstaffed at the peak.
+  // The commonest "why is nothing selling": every market is off the network or unstaffed at the peak. (A market
+  // itself can't be under water — its stilts clear every tide — but the street to it can, at a spring peak.)
   const markets = buildings.filter(b => b.kind === "market");
   if (markets.length && !markets.some(b => active(b) && b.workers > 0) && r.fish > reserve) {
-    notify(state, markets.some(b => b.cut) ? "The market was under water at the peak: nothing sold" : markets.some(b => !b.reached) ? "The market has no walkway to a pier: nothing sold" : "The market has no workers: nothing sold");
+    notify(state, markets.some(b => !b.reached) ? "The market has no walkway to a pier: nothing sold" : "The market has no workers: nothing sold");
   }
 
   produce(state, grid, buildings);
