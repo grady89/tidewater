@@ -7,7 +7,7 @@ import {
   FOOD_RESERVE_CYCLES, GoodKind, HAPPY, IMMIGRANTS_PER_CYCLE, IMMIGRATION_HAPPINESS, LEVEL_UP_CYCLES, LEVEL_UP_HAPPINESS,
   LUMBER_TREES_PER_CYCLE, MARKET_SELL_PER_CYCLE, MAX_LEVEL, NET_LOFT_BONUS, NET_LOFT_RADIUS, OYSTER_YIELD,
   POLLUTION_HAPPY_SCALE, FOOD_PRICE, PURCHASABLE_BOATS, SAWMILL_RATE, SHIPYARD_BOAT_COST,
-  SHIPYARD_CYCLES, SMOKEHOUSE_RATE, SPRING_LOW_BONUS, TAX_PER_RESIDENT, TIMBER_PER_TREE, WAREHOUSE_CAP,
+  SHIPYARD_CYCLES, SMOKEHOUSE_RATE, SPRING_LOW_BONUS, TAX_PER_RESIDENT, TIMBER_PER_TREE, TOOLWORKS_BONUS, TOOLWORKS_IRON_PER_CYCLE, TOOLWORKS_RADIUS, WAREHOUSE_CAP,
   WASTE_BACKLOG_PENALTY_MAX, WASTE_BACKLOG_PENALTY_PER_UNIT,
 } from "./balance";
 import { at } from "./fields";
@@ -139,6 +139,16 @@ export function netLoftBonus(state: SimState, harbour: Building): number {
   return 1;
 }
 
+/** Output multiplier from a running toolworks (staffed, with iron this cycle) within TOOLWORKS_RADIUS of the building. */
+export function toolBonus(state: SimState, at: Building): number {
+  for (const b of buildingList(state)) {
+    if (b.kind !== "toolworks" || b.output <= 0 || !active(b)) continue;
+    const c = b.cells[0];
+    if (at.cells.some(h => Math.abs(h.i - c.i) <= TOOLWORKS_RADIUS && Math.abs(h.j - c.j) <= TOOLWORKS_RADIUS)) return 1 + TOOLWORKS_BONUS;
+  }
+  return 1;
+}
+
 /** Shift start: boats leave for the richest ground in range, low-water crews walk out. */
 export function shiftStart(state: SimState, grid: Grid, phase: Phase): void {
   for (const b of buildingList(state)) {
@@ -157,7 +167,7 @@ export function shiftEnd(state: SimState, grid: Grid, phase: Phase): void {
     if (isHarbour(b) && b.atSea) {
       b.atSea = false;
       const density = b.ground ? fishAt(state, b.ground) : 0;
-      const fish = b.boats * BOAT_BASE_FISH * staffing(b) * netLoftBonus(state, b) * density;
+      const fish = b.boats * BOAT_BASE_FISH * staffing(b) * netLoftBonus(state, b) * toolBonus(state, b) * density;
       depleteGround(state, b);
       b.output += addCapped(state, "fish", fish);
       state.last.fishCaught += fish;
@@ -165,10 +175,10 @@ export function shiftEnd(state: SimState, grid: Grid, phase: Phase): void {
     }
     if (phase !== "low" || !active(b)) continue;
     if (b.kind === "oysterBed") {
-      b.output += addCapped(state, "shellfish", OYSTER_YIELD * staffing(b) * (springLow ? SPRING_LOW_BONUS : 1));
+      b.output += addCapped(state, "shellfish", OYSTER_YIELD * staffing(b) * toolBonus(state, b) * (springLow ? SPRING_LOW_BONUS : 1));
     } else if (b.kind === "clamCamp") {
       const cells = grid.exposedFlatsNear(b.cells, CLAM_RADIUS, state.tide.level);
-      b.output += addCapped(state, "shellfish", cells * CLAM_PER_CELL * staffing(b) * (springLow ? SPRING_LOW_BONUS : 1));
+      b.output += addCapped(state, "shellfish", cells * CLAM_PER_CELL * staffing(b) * toolBonus(state, b) * (springLow ? SPRING_LOW_BONUS : 1));
     }
   }
 }
@@ -176,25 +186,34 @@ export function shiftEnd(state: SimState, grid: Grid, phase: Phase): void {
 /** Land production, once a cycle: wood, planks, smoked goods, and boats from the yard. */
 function produce(state: SimState, grid: Grid, buildings: Building[]): void {
   const r = state.resources;
+  // Toolworks first: they burn their iron now and every producer below reads the bonus off them (toolBonus).
+  for (const b of buildings) {
+    if (b.kind !== "toolworks") continue;
+    b.output = 0;
+    if (!active(b) || staffing(b) === 0) continue;
+    const iron = Math.min(r.iron, TOOLWORKS_IRON_PER_CYCLE * staffing(b));
+    r.iron -= iron;
+    b.output = iron;
+  }
   for (const b of buildings) {
     if (!active(b) || staffing(b) === 0) continue;
     const s = staffing(b);
     switch (b.kind) {
       case "lumberCamp": {
         const felled = fellTrees(state, b, LUMBER_TREES_PER_CYCLE * s);
-        b.output = addCapped(state, "timber", felled * TIMBER_PER_TREE);
+        b.output = addCapped(state, "timber", felled * TIMBER_PER_TREE * toolBonus(state, b));
         break;
       }
       case "sawmill": {
         const timber = Math.min(r.timber, SAWMILL_RATE * s);
         r.timber -= timber;
-        b.output = addCapped(state, "planks", timber);
+        b.output = addCapped(state, "planks", timber * toolBonus(state, b));
         break;
       }
       case "smokehouse": {
         const fish = Math.min(r.fish, SMOKEHOUSE_RATE * s);
         r.fish -= fish;
-        b.output = addCapped(state, "smoked", fish);
+        b.output = addCapped(state, "smoked", fish * toolBonus(state, b));
         break;
       }
       case "shipyard": {

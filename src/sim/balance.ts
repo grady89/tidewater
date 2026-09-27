@@ -11,7 +11,8 @@ export type BuildingKind =
   | "outfall" | "treatmentPlant" | "well" | "bathhouse" | "tavern" | "shrine" | "marketSquare"
   | "clinic" | "lifeguard" | "sharkNet"
   | "harbor" | "inn" | "lighthouse" | "fireWatch"
-  | "breakwater" | "seaWall";
+  | "breakwater" | "seaWall"
+  | "toolworks";
 
 /** Service coverage layers; each building that provides one writes its staffed fraction within `radius`. */
 export type ServiceKind = "water" | "leisure" | "night" | "treatment" | "lifeguard" | "firewatch";
@@ -87,6 +88,7 @@ export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
   smokehouse: { name: "Smokehouse", category: "Production", w: 2, d: 1, cls: "flat", cost: { money: 160 }, workers: 3, residents: 0, upkeep: 2, floor: "stilts", network: "leaf", desc: "Fish → smoked goods; fire risk" },
   netLoft: { name: "Net loft", category: "Production", w: 1, d: 1, cls: "flat", cost: { money: 90 }, workers: 0, residents: 0, upkeep: 0.5, floor: "stilts", network: "leaf", desc: "+15% catch for boats within 8" },
   warehouse: { name: "Warehouse", category: "Production", w: 2, d: 2, cls: "flat", cost: { money: 120 }, workers: 0, residents: 0, upkeep: 1, floor: "stilts", network: "leaf", desc: "+100 storage for every good" },
+  toolworks: { name: "Toolworks", category: "Production", w: 2, d: 2, cls: "flatOrHigh", cost: { money: 220, planks: 10 }, workers: 3, residents: 0, upkeep: 2, floor: "ground", network: "leaf", desc: "Burns a little iron: +20% output for producers within 8" },
   outfall: { name: "Sewage outfall", category: "Services", w: 1, d: 1, cls: "edge", cost: { money: 40 }, workers: 0, residents: 0, upkeep: 0.5, floor: 1.0, network: "leaf", desc: "Dumps the town's waste into the sea; the tide carries it" },
   treatmentPlant: { name: "Treatment plant", category: "Services", w: 2, d: 2, cls: "flatOrHigh", cost: { money: 350 }, workers: 4, residents: 0, upkeep: 3, floor: "ground", network: "leaf", service: { kind: "treatment", radius: 12 }, desc: "Neutralises waste from homes within 12" },
   well: { name: "Well", category: "Services", w: 1, d: 1, cls: "flat", cost: { money: 50 }, workers: 0, residents: 0, upkeep: 0.5, floor: "stilts", network: "leaf", service: { kind: "water", radius: 8 }, desc: "Drinking water for homes within 8" },
@@ -336,3 +338,9 @@ export const LEVEL_FOODS: readonly number[] = [0, 1, 2, 3];
 export const LUXURY_PER_RESIDENT = 0.02;
 /** Market price of each food (fish and shellfish keep PRICE_FISH / PRICE_SHELLFISH). */
 export const FOOD_PRICE: Record<string, number> = { fish: PRICE_FISH, shellfish: PRICE_SHELLFISH, rice: 3, coconut: 3, dates: 3, crab: 4, stockfish: 5, taro: 3 };
+
+// Toolworks (BIOMES.md §2: iron)
+export const TOOLWORKS_RADIUS = 8;
+export const TOOLWORKS_BONUS = 0.20;
+/** Iron a fully staffed toolworks uses per cycle. */
+export const TOOLWORKS_IRON_PER_CYCLE = 0.5;

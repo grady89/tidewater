@@ -25,3 +25,8 @@ Calls made where BIOMES.md is silent, or where the code's balance and BIOMES.md 
    foreign luxury in stock per cycle. A 20-unit order lasts a small town a long while.
 6. **Favourites:** Tidewater→coffee, Atoll→smoked, Delta→pearls, Cinder→indigo, Fjord→cocoa, Dunes→whale oil, the
    §2 ring read as "X's favourite is what the arrow into X carries". `HAPPY.favourite` = 0.05 while in stock.
+7. **Toolworks:** 2×2 on flats or hill (`ground` floor), 220$ + 10 planks, 3 workers, upkeep 2. It burns
+   `TOOLWORKS_IRON_PER_CYCLE` (0.5) × staffing at the settlement and, while it burnt any, every producer within
+   `TOOLWORKS_RADIUS` (8) makes ×1.2: boats' catch, oyster beds, clam camps, the lumber camp's timber, the
+   sawmill's planks, the smokehouse's smoked goods. Shipyards and markets are not "producers" here. No iron → the
+   panel says "Idle: no iron" and nothing changes.

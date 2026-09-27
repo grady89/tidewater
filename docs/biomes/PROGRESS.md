@@ -14,7 +14,7 @@ never push `main`. Where BIOMES.md is silent, choose the simplest option and log
 - [DONE] 1b `SimState.world.biome` (default "tidewater"); save version bump with backfill; sector metadata carries it.
 - [DONE] 1c cell materials beside classes (plain, lagoon, mangrove, lava, dune, oasis, vent, spring, fertile) set by the island generator, read by placement rules and colour.
 - [DONE] 1d food variety: any food feeds; level 2 needs 2 food kinds in stock, level 3 needs 3 + one foreign luxury; favourite luxury adds happiness; residents eat across food kinds proportionally.
-- [TODO] 1e Toolworks (base catalog, 2×2, 3 workers): consumes iron slowly, +20% output to production buildings in radius 8.
+- [DONE] 1e Toolworks (base catalog, 2×2, 3 workers): consumes iron slowly, +20% output to production buildings in radius 8.
 - [TODO] 1f Trade Company as carrier: with a harbor the ship sells any good this biome cannot make at company prices, buys luxuries at prices that fall with volume; purchase queue in the harbor's info panel.
 - [TODO] 1g tests: registry, variety, luxury, favourite, leveling, Toolworks, company purchases; existing scenarios + smoke pass for Tidewater (level 3 needs a company purchase).
 
@@ -46,4 +46,4 @@ never push `main`. Where BIOMES.md is silent, choose the simplest option and log
 - [TODO] behind `LANES_ENABLED=false`.
 
 ## Last thing that worked
-- 1d: sim/food.ts (eat, variety, luxury gate, favourite), market sells all foods, info panel rows, api.grantGood; town test + smoke M7 updated; build+test+smoke green.
+- 1e: Toolworks in the catalog, toolBonus in economy.ts, view factory, panel status, test; build+test+smoke green.

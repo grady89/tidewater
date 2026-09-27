@@ -1,17 +1,18 @@
 // The goods registry, the biome on the ledger, and what the biomes add to every island: food variety, the
 // luxury rule, Toolworks, and the Trade Company as carrier. Sim only.
 import { describe, expect, it } from "vitest";
-import { BUILDINGS, CAP_BASE, HAPPY, LUXURY_PER_RESIDENT, WAREHOUSE_CAP } from "../src/sim/balance";
+import { BUILDINGS, CAP_BASE, HAPPY, LUXURY_PER_RESIDENT, TOOLWORKS_BONUS, TOOLWORKS_IRON_PER_CYCLE, TOOLWORKS_RADIUS, WAREHOUSE_CAP } from "../src/sim/balance";
 import { BIOME_IDS, favouriteOf, luxuryOf } from "../src/sim/biomes";
 import { consumeLuxury, eat, favouriteInStock, foodsInStock, foodTotal, foreignLuxuriesInStock, levelAllowed } from "../src/sim/food";
 import { advanceCycles } from "../src/sim/tick";
 import { cellIndex } from "../src/sim/grid";
 import { Material, materialCode, materialOf, MATERIALS } from "../src/sim/materials";
-import { addCapped, capFor } from "../src/sim/economy";
+import { addCapped, capFor, toolBonus } from "../src/sim/economy";
+import { staffing } from "../src/sim/workers";
 import { BASE_MAKES, emptyStock, GOOD_IDS, GOOD_ROLES, goodsOfRole, GOODS, shownGoods } from "../src/sim/goods";
 import { deserialize, serialize } from "../src/sim/save";
 import { newGame } from "../src/sim/start";
-import { Cell, SimState } from "../src/sim/state";
+import { buildingList, Cell, SimState } from "../src/sim/state";
 import { growStreet, placeByWalkway, starterTown } from "./scenario";
 
 describe("goods registry", () => {
@@ -169,5 +170,39 @@ describe("food variety and the luxury rule", () => {
     expect(state.last.shellfishSold).toBeGreaterThan(0); // rice sales count with the other foods
     expect(state.last.income).toBeGreaterThan(0);
     void money;
+  });
+});
+
+describe("toolworks", () => {
+  it("burns a little iron each cycle and lifts a producer within 8 cells by 20%; without iron it idles", () => {
+    const { state, grid } = newGame(7);
+    starterTown(state, grid);
+    state.resources.money += 3000; state.resources.planks += 100;
+    growStreet(state, grid, 6);
+    const mill = placeByWalkway(state, grid, "sawmill", 1)[0];
+    expect(mill).toBeDefined();
+    const works = placeByWalkway(state, grid, "toolworks", 1)[0];
+    expect(works).toBeDefined();
+    expect(Math.abs(works.cells[0].i - mill.cells[0].i) <= TOOLWORKS_RADIUS && Math.abs(works.cells[0].j - mill.cells[0].j) <= TOOLWORKS_RADIUS).toBe(true);
+    // Free the crews and fill a few houses so both are staffed, then feed the mill.
+    for (const b of buildingList(state)) if (b.kind === "pier") b.boats = 0;
+    expect(placeByWalkway(state, grid, "house", 3).length).toBe(3);
+    for (const b of buildingList(state)) if (BUILDINGS[b.kind].residents > 0) b.residents = grid.capacityOf(b);
+    state.resources.timber = 80; state.resources.planks = 0;
+    advanceCycles(state, grid, 1);
+    expect(works.workers).toBeGreaterThan(0);
+    expect(toolBonus(state, mill)).toBe(1); // no iron: no bonus
+    expect(works.output).toBe(0);
+    const plain = mill.output;
+    expect(plain).toBeGreaterThan(0);
+    state.resources.iron = 10; state.resources.timber = 80; state.resources.planks = 0;
+    advanceCycles(state, grid, 1);
+    expect(works.output).toBeCloseTo(TOOLWORKS_IRON_PER_CYCLE * staffing(works), 6);
+    expect(state.resources.iron).toBeCloseTo(10 - works.output, 6);
+    expect(toolBonus(state, mill)).toBeCloseTo(1 + TOOLWORKS_BONUS, 9);
+    expect(mill.output).toBeCloseTo(plain * (1 + TOOLWORKS_BONUS), 3);
+    // Iron is not made here: it comes from the company (or a Fjord) — the registry says so.
+    expect(GOODS.iron.sells).toBeGreaterThan(0);
+    expect(BASE_MAKES).not.toContain("iron");
   });
 });

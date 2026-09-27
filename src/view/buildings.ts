@@ -775,6 +775,27 @@ function netLoft(scene: Scene, b: Building): BuildingMeshes {
 }
 
 /** A plank barn with a red gable roof, big double doors and crates stacked at the side. */
+/** Toolworks: a stone-footed workshop with a tall chimney, an anvil block by the door and a crate of iron. */
+function toolworks(scene: Scene, b: Building): BuildingMeshes {
+  const { cx, cz, w, d } = bounds(b.cells, b.rot);
+  const F = b.floorY;
+  const parts: Mesh[] = [];
+  deck(scene, parts, cx, cz, w, d, F);
+  parts.push(box(scene, 1.5, 0.35, 1.3, cx - 0.1, F + 0.175, cz, STONE));
+  parts.push(box(scene, 1.5, 0.7, 1.3, cx - 0.1, F + 0.7, cz, PALETTE.walls[2]));
+  gable(scene, parts, cx - 0.1, cz, 1.5, 1.3, F + 1.05, 0.55, PALETTE.roofs[1], true, 0.16);
+  chimney(scene, parts, cx + 0.35, F + 1.2, cz + 0.3, 0.6, STONE);
+  door(scene, parts, cx - 0.1, F, cz - 0.655, false, 0.36, 0.6);
+  window_(scene, parts, cx - 0.55, F + 0.75, cz - 0.655, false, 0.2, 0.16, false);
+  window_(scene, parts, cx + 0.35, F + 0.75, cz - 0.655, false, 0.2, 0.16, false);
+  // Anvil on a stump, a crate of iron and a barrel by the door.
+  parts.push(cyl(scene, 0.22, 0.22, cx + 0.78, F + 0.11, cz - 0.45, PALETTE.wood, 6));
+  parts.push(box(scene, 0.26, 0.1, 0.12, cx + 0.78, F + 0.27, cz - 0.45, "#4c5a66"));
+  crate(scene, parts, cx + 0.78, F, cz + 0.15, 0.24);
+  parts.push(box(scene, 0.2, 0.05, 0.14, cx + 0.78, F + 0.265, cz + 0.15, "#4c5a66"));
+  barrel(scene, parts, cx + 0.78, F, cz + 0.5, 0.22);
+  return { root: mergeFlat("toolworks", parts, scene) };
+}
 function warehouse(scene: Scene, b: Building): BuildingMeshes {
   const { cx, cz, w, d } = bounds(b.cells, b.rot);
   const F = b.floorY;
@@ -1077,6 +1098,7 @@ function buildMeshes(scene: Scene, b: Building, grid: Grid): BuildingMeshes {
     case "smokehouse": return smokehouse(scene, b);
     case "netLoft": return netLoft(scene, b);
     case "warehouse": return warehouse(scene, b);
+    case "toolworks": return toolworks(scene, b);
   }
 }
 

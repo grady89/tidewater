@@ -37,6 +37,7 @@ export class InfoPanel {
     if (jobsAt(b) > 0 && b.workers === 0) return "Idle: no workers";
     if (def.residents > 0) return b.residents === 0 ? "Empty" : "Lived in";
     if (b.kind === "shipyard") return b.progress > 0 ? "Building a boat" : "Waiting for planks and a berth";
+    if (b.kind === "toolworks" && b.output <= 0) return "Idle: no iron";
     return "Working";
   }
 
