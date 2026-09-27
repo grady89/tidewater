@@ -1,7 +1,7 @@
 // Cell model over the terrain, occupancy index, and placement rules. Buildings live in SimState; the Grid is the
 // spatial index over them (rebuilt from state on load) plus the fixed terrain classification.
 import { SIZE, STILT_LENGTH, TIDE_HI, TIDE_LO, WALKWAY_SNAP } from "../config";
-import { BEACH_MAX_HEIGHT, BuildingKind, BUILDINGS, LIFT_MAX, LIFT_STEP, PlacementClass } from "./balance";
+import { BEACH_MAX_HEIGHT, BuildingKind, BUILDINGS, LANDFILL_HEIGHT, LIFT_MAX, LIFT_STEP, PlacementClass } from "./balance";
 import { terrainHeight } from "./heightfield";
 import { isleCell } from "./isle";
 import { Building, Cell, SimState } from "./state";
@@ -41,21 +41,7 @@ export class Grid {
   readonly isle = new Uint8Array(SIZE * SIZE);
 
   constructor(public state: SimState) {
-    for (let i = -HALF; i < HALF; i++) for (let j = -HALF; j < HALF; j++) {
-      const h = terrainHeight(i + 0.5, j + 0.5);
-      const k = cellIndex(i, j);
-      this.heights[k] = h;
-      this.isle[k] = isleCell({ i, j }) ? 1 : 0;
-      this.classes[k] = h < TIDE_LO ? "deep" : h <= TIDE_HI ? "flat" : "high";
-      this.deep[k] = h < TIDE_LO ? 1 : 0;
-      this.water[k] = h <= TIDE_HI ? 1 : 0;
-    }
-    for (let i = -HALF; i < HALF; i++) for (let j = -HALF; j < HALF; j++) {
-      const k = cellIndex(i, j);
-      if (this.classes[k] !== "high" || this.heights[k] > BEACH_MAX_HEIGHT) continue;
-      if (this.neighbors({ i, j }).some(n => this.water[cellIndex(n.i, n.j)])) this.beach[k] = 1;
-    }
-    this.rebuild();
+    this.attach(state);
   }
 
   isBeach(c: Cell): boolean {
@@ -76,7 +62,38 @@ export class Grid {
   /** Point the index at a (loaded) state and rebuild occupancy from its buildings. */
   attach(state: SimState): void {
     this.state = state;
+    this.resetTerrain();
+    for (const k of state.landfill) this.applyLandfill({ i: Math.floor(k / SIZE) - HALF, j: (k % SIZE) - HALF });
     this.rebuild();
+  }
+
+  /** Classify every cell from the heightfield (landfill is applied on top afterwards). */
+  private resetTerrain(): void {
+    for (let i = -HALF; i < HALF; i++) for (let j = -HALF; j < HALF; j++) {
+      const h = terrainHeight(i + 0.5, j + 0.5);
+      const k = cellIndex(i, j);
+      this.heights[k] = h;
+      this.isle[k] = isleCell({ i, j }) ? 1 : 0;
+      this.classes[k] = h < TIDE_LO ? "deep" : h <= TIDE_HI ? "flat" : "high";
+      this.deep[k] = h < TIDE_LO ? 1 : 0;
+      this.water[k] = h <= TIDE_HI ? 1 : 0;
+    }
+    this.beach.fill(0);
+    for (let i = -HALF; i < HALF; i++) for (let j = -HALF; j < HALF; j++) {
+      const k = cellIndex(i, j);
+      if (this.classes[k] !== "high" || this.heights[k] > BEACH_MAX_HEIGHT) continue;
+      if (this.neighbors({ i, j }).some(n => this.water[cellIndex(n.i, n.j)])) this.beach[k] = 1;
+    }
+  }
+
+  /** Raise one cell to dry ground. */
+  applyLandfill(c: Cell): void {
+    const k = cellIndex(c.i, c.j);
+    this.heights[k] = LANDFILL_HEIGHT;
+    this.classes[k] = "high";
+    this.deep[k] = 0;
+    this.water[k] = 0;
+    this.beach[k] = 0;
   }
 
   private rebuild(): void {

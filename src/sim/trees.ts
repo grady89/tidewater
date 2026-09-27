@@ -34,6 +34,11 @@ export function initialTrees(): number[] {
   return TREE_SITES.map(() => 1);
 }
 
+/** Every tree site: the island's fixed ones, then any the player planted. Ages in state.trees line up. */
+export function treeSites(state: SimState): readonly TreeSite[] {
+  return state.extraTrees.length ? [...TREE_SITES, ...state.extraTrees] : TREE_SITES;
+}
+
 function near(site: TreeSite, cells: Cell[], radius: number): boolean {
   return cells.some(c => Math.abs(site.cell.i - c.i) <= radius && Math.abs(site.cell.j - c.j) <= radius);
 }
@@ -41,7 +46,7 @@ function near(site: TreeSite, cells: Cell[], radius: number): boolean {
 /** Grown trees within LUMBER_RADIUS of `cells`. */
 export function grownTreesNear(state: SimState, cells: Cell[], radius = LUMBER_RADIUS): number {
   let n = 0;
-  TREE_SITES.forEach((s, k) => { if (state.trees[k] >= 1 && near(s, cells, radius)) n++; });
+  treeSites(state).forEach((s, k) => { if (state.trees[k] >= 1 && near(s, cells, radius)) n++; });
   return n;
 }
 
@@ -49,7 +54,7 @@ export function grownTreesNear(state: SimState, cells: Cell[], radius = LUMBER_R
 export function fellTrees(state: SimState, camp: Building, count: number): number {
   const c0 = camp.cells[0];
   const candidates: { k: number; d: number }[] = [];
-  TREE_SITES.forEach((s, k) => {
+  treeSites(state).forEach((s, k) => {
     if (state.trees[k] < 1 || !near(s, camp.cells, LUMBER_RADIUS)) return;
     candidates.push({ k, d: Math.hypot(s.cell.i - c0.i, s.cell.j - c0.j) });
   });
@@ -61,5 +66,5 @@ export function fellTrees(state: SimState, camp: Building, count: number): numbe
 
 /** Once per cycle: felled trees grow back. */
 export function regrowTrees(state: SimState): void {
-  for (let k = 0; k < state.trees.length; k++) if (state.trees[k] < 1) state.trees[k] = Math.min(1, state.trees[k] + 1 / TREE_REGROW_CYCLES);
+  for (let k = 0; k < state.trees.length; k++) if (state.trees[k] >= 0 && state.trees[k] < 1) state.trees[k] = Math.min(1, state.trees[k] + 1 / TREE_REGROW_CYCLES);
 }

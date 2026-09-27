@@ -7,7 +7,7 @@ import { Axis, Color3, Mesh, MeshBuilder, Scene, Space, StandardMaterial, Vector
 import { STILT_SINK } from "../config";
 import { BUILDINGS } from "../sim/balance";
 import { cellCenter, DIRS, Grid } from "../sim/grid";
-import { terrainHeight } from "../sim/heightfield";
+import { ground } from "./ground";
 import { Building, Cell } from "../sim/state";
 import { mergeFlat, tint } from "../world/flatMesh";
 
@@ -53,7 +53,7 @@ export function lanternMaterials(scene: Scene): { lit: StandardMaterial; dark: S
 // ---------- primitives ----------
 
 function stilt(scene: Scene, x: number, z: number, topY: number, diameter: number, tessellation: number, hex = PALETTE.wood): Mesh {
-  const gh = terrainHeight(x, z) - STILT_SINK;
+  const gh = ground(x, z) - STILT_SINK;
   const h = Math.max(0.05, topY - gh);
   const m = MeshBuilder.CreateCylinder("stilt", { diameter, height: h, tessellation }, scene);
   m.position.set(x, gh + h / 2, z);
@@ -204,14 +204,14 @@ function deck(scene: Scene, parts: Mesh[], cx: number, cz: number, w: number, d:
   parts.push(box(scene, w - 0.02, 0.08, d - 0.02, cx, F - 0.04, cz, PALETTE.planks));
   parts.push(box(scene, w - 0.02, 0.05, 0.05, cx, F - 0.1, cz - d / 2 + 0.05, PALETTE.wood));
   parts.push(box(scene, w - 0.02, 0.05, 0.05, cx, F - 0.1, cz + d / 2 - 0.05, PALETTE.wood));
-  if (F - terrainHeight(cx, cz) < 0.2) return;
+  if (F - ground(cx, cz) < 0.2) return;
   const hx = w / 2 - inset, hz = d / 2 - inset;
   const nx = Math.max(2, Math.round(w / 0.5) + 1), nz = Math.max(2, Math.round(d / 0.5) + 1);
   for (let a = 0; a < nx; a++) for (const sz of [-1, 1]) parts.push(stilt(scene, cx - hx + (2 * hx * a) / (nx - 1), cz + sz * hz, F - 0.08, 0.09, 5));
   for (let b = 1; b < nz - 1; b++) for (const sx of [-1, 1]) parts.push(stilt(scene, cx + sx * hx, cz - hz + (2 * hz * b) / (nz - 1), F - 0.08, 0.09, 5));
   // Cross rail under the deck on the long sides.
   const railY = F - 0.45;
-  if (railY > terrainHeight(cx, cz) + 0.1) for (const sz of [-1, 1]) parts.push(box(scene, w - 0.2, 0.04, 0.04, cx, railY, cz + sz * hz, PALETTE.wood));
+  if (railY > ground(cx, cz) + 0.1) for (const sz of [-1, 1]) parts.push(box(scene, w - 0.2, 0.04, 0.04, cx, railY, cz + sz * hz, PALETTE.wood));
 }
 
 /** A closed shed with a gable roof: walls, a door and a window on the long side, chimney optional. */
@@ -391,7 +391,7 @@ function raisedWalkway(scene: Scene, b: Building, grid: Grid): BuildingMeshes {
     leg.rotation.x = -sz * 0.06; leg.rotation.z = sx * 0.06;
     parts.push(leg);
   }
-  const bed = terrainHeight(x, z);
+  const bed = ground(x, z);
   const h = Math.max(0.2, F - bed - 0.15);
   for (const sx of [-1, 1]) {
     const brace = box(scene, 0.04, Math.hypot(0.6, h), 0.04, x + sx * 0.3, bed + h / 2 + 0.05, z, PALETTE.wood);
@@ -403,31 +403,39 @@ function raisedWalkway(scene: Scene, b: Building, grid: Grid): BuildingMeshes {
 }
 
 /**
- * A dirt track: a strip laid on the ground that follows the terrain, the way roads drape over hills in a city
- * builder. The strip is a subdivided patch whose vertices sit just above the heightfield, so it never cuts
- * into a slope; it runs to the cell edge on every side that meets another piece (paths join paths flush) and
- * stops short with a rounded end where it is open. A stair climbs to a higher deck.
+ * A dirt track: a narrow strip (half a cell wide) that follows the terrain the way roads drape over hills in a
+ * city builder. It runs from the cell centre to every edge that meets another piece and stops short where it
+ * is open, so a trail bends and branches with the cells it is laid on; paths join paths flush, and a stair
+ * climbs from the ground to a higher deck. Vertices sit just above the rendered ground, so nothing clips.
  */
 function path(scene: Scene, b: Building, grid: Grid): BuildingMeshes {
   const { x, z } = cellCenter(b.cells[0]);
   const parts: Mesh[] = [];
   const joins = deckJoins(b, grid);
-  const met = (di: number, dj: number) => joins.find(j => j.side.i === di && j.side.j === dj)!.kind !== "open";
-  const x0 = x - (met(-1, 0) ? 0.5 : 0.36), x1 = x + (met(1, 0) ? 0.5 : 0.36);
-  const z0 = z - (met(0, -1) ? 0.5 : 0.36), z1 = z + (met(0, 1) ? 0.5 : 0.36);
-  const N = 6;
-  const strip = MeshBuilder.CreateGround("path", { width: x1 - x0, height: z1 - z0, subdivisions: N }, scene);
-  strip.position.set((x0 + x1) / 2, 0, (z0 + z1) / 2);
-  const pos = strip.getVerticesData(VertexBuffer.PositionKind)!;
-  for (let k = 0; k < pos.length; k += 3) pos[k + 1] = terrainHeight(pos[k] + strip.position.x, pos[k + 2] + strip.position.z) + 0.06;
-  strip.updateVerticesData(VertexBuffer.PositionKind, pos);
-  parts.push(tint(strip, ROPE));
+  const W = 0.5, LIFT = 0.05, N = 4;
+  const strip = (x0: number, x1: number, z0: number, z1: number) => {
+    const m = MeshBuilder.CreateGround("path", { width: x1 - x0, height: z1 - z0, subdivisions: N }, scene);
+    m.position.set((x0 + x1) / 2, 0, (z0 + z1) / 2);
+    const pos = m.getVerticesData(VertexBuffer.PositionKind)!;
+    for (let k = 0; k < pos.length; k += 3) pos[k + 1] = ground(pos[k] + m.position.x, pos[k + 2] + m.position.z) + LIFT;
+    m.updateVerticesData(VertexBuffer.PositionKind, pos);
+    parts.push(tint(m, ROPE));
+  };
+  const met = joins.filter(j => j.kind !== "open");
+  if (met.length === 0) strip(x - 0.3, x + 0.3, z - 0.3, z + 0.3);
+  else {
+    strip(x - W / 2, x + W / 2, z - W / 2, z + W / 2);
+    for (const j of met) {
+      const ax = j.side.i, az = j.side.j;
+      if (ax) strip(Math.min(x + ax * W / 2, x + ax * 0.5), Math.max(x + ax * W / 2, x + ax * 0.5), z - W / 2, z + W / 2);
+      else strip(x - W / 2, x + W / 2, Math.min(z + az * W / 2, z + az * 0.5), Math.max(z + az * W / 2, z + az * 0.5));
+    }
+  }
   for (const j of joins) {
     if (j.kind !== "step") continue;
     // The stair up to a deck: treads from the ground at the edge up to the neighbour's floor.
     const ax = j.side.i, az = j.side.j;
-    const ex = x + ax * 0.5, ez = z + az * 0.5;
-    const base = terrainHeight(ex, ez) + 0.06;
+    const base = ground(x + ax * 0.5, z + az * 0.5) + LIFT;
     const top = b.floorY + j.dh;
     const n = Math.max(2, Math.ceil((top - base) / 0.13));
     const depth = Math.min(0.45, 0.15 * n);
@@ -435,12 +443,12 @@ function path(scene: Scene, b: Building, grid: Grid): BuildingMeshes {
       const front = 0.5 - depth * (n - k + 1) / n;
       const len = 0.5 - front, mid = (front + 0.5) / 2;
       const h = base + ((top - base) * k) / n;
-      const foot = terrainHeight(x + ax * mid, z + az * mid);
-      parts.push(box(scene, ax ? len : 0.7, h - foot, az ? len : 0.7, x + ax * mid, (h + foot) / 2, z + az * mid, k % 2 ? PALETTE.planks : PALETTE.wood));
+      const foot = ground(x + ax * mid, z + az * mid);
+      parts.push(box(scene, ax ? len : W + 0.1, h - foot, az ? len : W + 0.1, x + ax * mid, (h + foot) / 2, z + az * mid, k % 2 ? PALETTE.planks : PALETTE.wood));
     }
   }
-  // A few pebbles along the verge.
-  for (const [dx, dz, s] of [[-0.38, 0.2, 0.06], [0.4, -0.3, 0.05], [0.1, 0.42, 0.04]] as [number, number, number][]) parts.push(rock(scene, x + dx, terrainHeight(x + dx, z + dz) + 0.03, z + dz, s, STONE, dx * 10));
+  // A pebble or two along the verge.
+  for (const [dx, dz, s] of [[-0.38, 0.3, 0.05], [0.4, -0.34, 0.04]] as [number, number, number][]) parts.push(rock(scene, x + dx, ground(x + dx, z + dz) + 0.02, z + dz, s, STONE, dx * 10));
   return { root: mergeFlat("path", parts, scene) };
 }
 
@@ -478,7 +486,7 @@ function dock(scene: Scene, b: Building): BuildingMeshes {
     if (sx === 0 && sz === 0) continue;
     const x = cx + sx * (w / 2 - 0.15), z = cz + sz * (d / 2 - 0.15);
     parts.push(stilt(scene, x, z, F - 0.12, 0.16, 6));
-    const bed = terrainHeight(x, z) - STILT_SINK;
+    const bed = ground(x, z) - STILT_SINK;
     const bandH = Math.min(0.8, Math.max(0.2, (F - bed) * 0.45));
     parts.push(cyl(scene, 0.165, bandH, x, bed + bandH / 2, z, BLUE, 6));
   }
@@ -504,7 +512,7 @@ function harbor(scene: Scene, b: Building): BuildingMeshes {
   const { cx, cz, w, d } = bounds(b.cells);
   const F = b.floorY;
   const parts: Mesh[] = [];
-  const bed = Math.min(...b.cells.map(c => { const { x, z } = cellCenter(c); return terrainHeight(x, z); })) - 0.2;
+  const bed = Math.min(...b.cells.map(c => { const { x, z } = cellCenter(c); return ground(x, z); })) - 0.2;
   parts.push(box(scene, w - 0.04, F - bed, d - 0.04, cx, (F + bed) / 2, cz, STONE));
   parts.push(box(scene, w, 0.1, d, cx, F - 0.05, cz, STONE_LIGHT));
   for (const k of [0.25, 0.5, 0.75]) parts.push(box(scene, w - 0.02, 0.02, d - 0.02, cx, bed + (F - bed) * k, cz, "#7f7c75")); // courses
@@ -591,7 +599,7 @@ function lighthouse(scene: Scene, b: Building): BuildingMeshes {
 function breakwater(scene: Scene, b: Building): BuildingMeshes {
   const { x, z } = cellCenter(b.cells[0]);
   const parts: Mesh[] = [];
-  const bed = terrainHeight(x, z);
+  const bed = ground(x, z);
   const top = 0.9;
   parts.push(box(scene, 0.9, top - bed - 0.2, 0.9, x, (top - 0.2 + bed) / 2, z, "#5d6d7a"));
   // A heap of blue-grey rocks, biggest at the centre.
@@ -603,7 +611,7 @@ function breakwater(scene: Scene, b: Building): BuildingMeshes {
 function seaWall(scene: Scene, b: Building): BuildingMeshes {
   const { x, z } = cellCenter(b.cells[0]);
   const parts: Mesh[] = [];
-  const bed = terrainHeight(x, z);
+  const bed = ground(x, z);
   // Stone footing, blue plank face, a plank cap and a pole lamp.
   parts.push(box(scene, 0.98, Math.max(0.2, 1.0 - bed), 0.98, x, (1.0 + bed) / 2, z, STONE_LIGHT));
   parts.push(box(scene, 0.96, 0.5, 0.96, x, 1.25, z, BLUE));

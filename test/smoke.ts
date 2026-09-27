@@ -155,6 +155,29 @@ try {
   });
   assert(marker.marker !== null && marker.n === laid.n - 1, "a fresh town shows the pier suggestion; the starter town came back");
 
+  // Land tools: landfill raises the rendered ground and the cell's class; a tree can be planted on it.
+  const land = await page.evaluate(() => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    api.grant(500, 0, 50);
+    const grid = api.grid;
+    let c: { i: number; j: number } | null = null;
+    for (let i = -30; i < 30 && !c; i++) for (let j = -30; j < 30; j++) { const q = { i, j }; if (grid.classAt(q) === "flat" && !grid.buildingAt(q) && grid.heightAt(q) < 0.2 && !grid.neighbors(q).some((n: any) => grid.buildingAt(n))) { c = q; break; } }
+    if (!c) return null;
+    const before = api.scene.getMeshByName("ground").getBoundingInfo && api.terrainHeight(c.i + 0.5, c.j + 0.5);
+    api.place("landfill", c.i, c.j);
+    const after = api.terrainHeight(c.i + 0.5, c.j + 0.5);
+    const cls = grid.classAt(c);
+    const extraBefore = api.sim.extraTrees.length;
+    api.place("plantTree", c.i, c.j);
+    const planted = api.sim.extraTrees.length === extraBefore + 1;
+    const trees = api.sim.trees.length;
+    api.place("clearTree", c.i, c.j);
+    const cleared = api.sim.trees[trees - 1];
+    return { c, before, after, cls, planted, cleared, landfill: api.sim.landfill.length };
+  });
+  console.log("Land:", JSON.stringify(land));
+  assert(land && land.after > land.before + 0.3 && land.cls === "high" && land.planted && land.cleared === -1 && land.landfill === 1, "landfill raises the ground; plant and clear work on it");
+
   // Walkthrough card and deck lift: a fresh town opens on step 1 with the Sea tab pulsing; ] lifts the deck.
   const walk = await page.evaluate(() => {
     const api = (window as unknown as { __tidewater: Api }).__tidewater;

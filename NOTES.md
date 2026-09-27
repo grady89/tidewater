@@ -556,6 +556,35 @@ What other builders do and what was taken from each:
   still runs at the cap. A gallery script was used to shoot every kind three at a time from a low angle and
   compare against the sheets before committing.
 
+### Fifth hands-on feedback: trails, painting, camera keys, people, activity, land tools
+- Paths are now narrow dirt trails (half a cell wide) that drape over the *rendered* terrain: `world/terrain.ts`
+  keeps the un-flattened height grid and exposes `heightAt(x, z)`, which interpolates on the same triangles the
+  mesh draws (Babylon's ground splits each quad on the low-x/high-z → high-x/low-z diagonal), so a strip laid
+  0.05 above it never cuts a slope the way sampling the analytic heightfield did. Every view factory reads
+  ground height through `view/ground.ts` (a swappable sampler) rather than the heightfield directly.
+- Dragging a street tool paints along the pointer's track cell by cell (each pointer step adds the L from the
+  last painted cell, revisits skipped, 40-cell cap) instead of one L from the start.
+- A/D and the arrows were mirrored: the camera's right vector was forward × up instead of up × forward.
+- Walkers keep their post: a worker arriving at work stands there (turning, shifting weight) until the shift
+  ends and the homeward wave replaces them; homecomers shrink indoors over 0.5 s instead of popping. Loiterers
+  stand, step to a seeded spot, stand again — no more gliding circles. `PERSON_SCALE` 0.62 (a person ≈ 0.37 of a
+  cell; Cities: Skylines is ≈ 0.22 — still a touch large on purpose, for readability from the default camera).
+- Swimmers: the ledger counts them per beach cell for shark risk; the view now shows at most SWIM_FRACTION of
+  the population in total, spread over beaches with knee-deep water, in the water. The old draw-all put a line
+  of figures along the whole shore.
+- Activity cues: `BOAT_MIN_RANGE` 5 → 7 so boats visibly leave; a line of red net floats trails a boat while it
+  is on its ground; a working smokehouse puffs from the chimney; the pier's info line says how far out its boats
+  are fishing; a market that sold nothing at the peak while fish sat above the reserve now says why (under
+  water at the peak / no walkway to a pier / no workers) — the first playtest had exactly that puzzle.
+- Land tools (Land tab): **Landfill** (45$ + 4 timber) raises one flat cell to `LANDFILL_HEIGHT` 0.9 — dry at
+  every tide, still below the hill — recorded in `state.landfill` and re-applied by `Grid.attach`; the terrain
+  mesh's height grid is raised inside the cell (one grid step of skirt) and the water's heightmap updated, so
+  the sea discards there. Priced so it is a decision: the game is about building against the tide, and fill is
+  the one deliberate way to move its edge. Raising and lowering terrain freely was rejected for that reason.
+  **Plant tree** (3$) adds a site to `state.extraTrees` (ages line up in `state.trees` after the fixed sites)
+  that grows like a felled tree regrows; **Clear tree** sets the age to −1 (never regrows) and pays a timber for
+  a grown one. Lumber camps see planted trees. Saves from before get empty lists.
+
 ### Chunk merge (the M12 perf pass, done for the mirror)
 - `view/buildingViews.ts` now merges every building in an 8×8-cell chunk into one mesh (`chunk:i,j`), rebuilt
   when any building in the chunk appears, leaves or changes its mesh signature. 300 buildings → 15 chunk meshes;

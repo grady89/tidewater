@@ -14,8 +14,8 @@ export type BuildingKind =
 /** Service coverage layers; each building that provides one writes its staffed fraction within `radius`. */
 export type ServiceKind = "water" | "leisure" | "night" | "treatment" | "lifeguard" | "firewatch";
 export const SERVICE_KINDS: ServiceKind[] = ["water", "leisure", "night", "treatment", "lifeguard", "firewatch"];
-export type Category = "Homes" | "Streets" | "Sea" | "Production" | "Services" | "Leisure";
-export const CATEGORIES: Category[] = ["Homes", "Streets", "Sea", "Production", "Services", "Leisure"];
+export type Category = "Homes" | "Streets" | "Sea" | "Production" | "Services" | "Leisure" | "Land";
+export const CATEGORIES: Category[] = ["Homes", "Streets", "Sea", "Production", "Services", "Leisure", "Land"];
 /**
  * flat: terrain TIDE_LO..TIDE_HI. deep: below TIDE_LO. high: above TIDE_HI. flatOrDeep: anywhere under the
  * spring tide. shore: flat cell orthogonally adjacent to a high cell. edge: deep cells against the shore (piers
@@ -96,6 +96,14 @@ export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
   breakwater: { name: "Breakwater", category: "Sea", w: 1, d: 1, cls: "deep", cost: { money: 60, planks: 4 }, workers: 0, residents: 0, upkeep: 0.2, floor: 1.0, network: "leaf", desc: "Per cell; shelters harbours within 6 from storms and blocks the wave" },
   seaWall: { name: "Sea wall", category: "Sea", w: 1, d: 1, cls: "flat", cost: { money: 25, timber: 3 }, workers: 0, residents: 0, upkeep: 0.1, floor: "ground", network: "leaf", desc: "Per cell on the flats; shields what stands behind it from the wave" },
 };
+
+// Land tools
+/** Landfill raises a flat cell to this height: dry at every tide, still below the hill. */
+export const LANDFILL_HEIGHT = 0.9;
+export const LANDFILL_COST = { money: 45, timber: 4 };
+export const PLANT_COST = 3;
+/** Timber from clearing a grown tree by hand. */
+export const CLEAR_TIMBER = 1;
 
 /** Share of a building's money cost returned when the player removes it (planks and timber are not returned). */
 export const REMOVE_REFUND = 0.5;

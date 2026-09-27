@@ -4,14 +4,17 @@
 import { ArcRotateCamera, Color3, Matrix, Mesh, MeshBuilder, Quaternion, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
 import { BuildingKind, BUILDINGS, PlacementClass } from "../sim/balance";
 import { boatPurchaseBlocker, buyBoat, canAfford, placeCost, removeBuilding, tryPlace } from "../sim/economy";
-import { LIFT_MAX } from "../sim/balance";
+import { LANDFILL_HEIGHT, LIFT_MAX } from "../sim/balance";
 import { Grid, HALF, worldToCell } from "../sim/grid";
 import { terrainHeight } from "../sim/heightfield";
+import { addLandfill, clearBlocker, clearTree, landfillBlocker, plantBlocker, plantTree } from "../sim/land";
 import { addLantern, lanternBlocker } from "../sim/services";
 import { Building, Cell } from "../sim/state";
 import { floodFate } from "../sim/tide";
 
-export type Tool = BuildingKind | "boat" | "lanternPost";
+export type Tool = BuildingKind | "boat" | "lanternPost" | "landfill" | "plantTree" | "clearTree";
+const SPECIAL: ReadonlySet<Tool> = new Set<Tool>(["boat", "lanternPost", "landfill", "plantTree", "clearTree"]);
+export function isBuildingTool(t: Tool): t is BuildingKind { return !SPECIAL.has(t); }
 export type Fate = "safe" | "spring" | "always";
 
 const CLICK_SLOP_PX = 5;
@@ -57,7 +60,11 @@ export class Placement {
 
   /** Extra deck height for stilt pieces, in LIFT_STEP steps ([ and ] keys). */
   lift = 0;
-  get liftable(): boolean { return this.tool !== "boat" && this.tool !== "lanternPost" && BUILDINGS[this.tool].floor === "stilts"; }
+  get liftable(): boolean { return isBuildingTool(this.tool) && BUILDINGS[this.tool].floor === "stilts"; }
+  /** Called with the cell when landfill goes down, so the view can raise the ground. */
+  onLandfill: (c: Cell) => void = () => {};
+  /** Set when a land tool succeeded (the smoke reads it); the view polls the ledger anyway. */
+  landChanged = false;
   adjustLift(delta: number): void {
     this.lift = Math.max(0, Math.min(LIFT_MAX, this.lift + delta));
     this.refresh();
@@ -122,13 +129,16 @@ export class Placement {
   /** Height of the plane the pointer is picked against: the deck the tool would build. */
   private pickY(): number {
     if (this.tool === "boat" || this.tool === "lanternPost") return BUILDINGS.pier.floor as number;
+    if (this.tool === "landfill") return 0.6;
+    if (!isBuildingTool(this.tool)) return 1.0;
     const f = BUILDINGS[this.tool].floor;
     return typeof f === "number" ? f : 0.6;
   }
 
   /** Tools that can go on the hill are picked against the terrain itself. */
   private picksTerrain(): boolean {
-    if (this.tool === "boat" || this.tool === "lanternPost") return false;
+    if (this.tool === "plantTree" || this.tool === "clearTree") return true;
+    if (!isBuildingTool(this.tool)) return false;
     const cls = BUILDINGS[this.tool].cls;
     return cls === "high" || cls === "flatOrHigh";
   }
@@ -177,6 +187,9 @@ export class Placement {
       const b = this.grid.buildingAt(anchor);
       return { cells: [anchor], blocker: lanternBlocker(state, this.grid, anchor), warn: null, fate: "safe", y: b?.floorY ?? 1 };
     }
+    if (this.tool === "landfill") return { cells: [anchor], blocker: landfillBlocker(state, this.grid, anchor), warn: null, fate: "safe", y: LANDFILL_HEIGHT + 0.03 };
+    if (this.tool === "plantTree") return { cells: [anchor], blocker: plantBlocker(state, this.grid, anchor), warn: null, fate: "safe", y: this.grid.heightAt(anchor) + 0.05 };
+    if (this.tool === "clearTree") return { cells: [anchor], blocker: clearBlocker(state, this.grid, anchor), warn: null, fate: "safe", y: this.grid.heightAt(anchor) + 0.05 };
     const kind = this.tool;
     const def = BUILDINGS[kind];
     const cells = this.grid.footprint(kind, anchor);
@@ -292,6 +305,12 @@ export class Placement {
       result = at && buyBoat(state, at) ? at : null;
     } else if (this.tool === "lanternPost") {
       result = addLantern(state, this.grid, anchor) ? this.grid.buildingAt(anchor) : null;
+    } else if (this.tool === "landfill") {
+      if (addLandfill(state, this.grid, anchor)) { this.onLandfill(anchor); this.landChanged = true; }
+    } else if (this.tool === "plantTree") {
+      if (plantTree(state, this.grid, anchor)) this.landChanged = true;
+    } else if (this.tool === "clearTree") {
+      if (clearTree(state, this.grid, anchor)) this.landChanged = true;
     } else {
       result = tryPlace(state, this.grid, this.tool, anchor, this.toolLift);
     }

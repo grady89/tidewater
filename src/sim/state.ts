@@ -2,7 +2,7 @@
 import { TIDE_HI } from "../config";
 import { BuildingKind, FISH_CAP, ResourceKind, SERVICE_KINDS, ServiceKind, STARTING_FISH, STARTING_MONEY } from "./balance";
 import { filled, zeros } from "./fields";
-import { initialTrees } from "./trees";
+import { initialTrees, TreeSite } from "./trees";
 
 export function emptyCoverage(): Record<ServiceKind, number[]> {
   const out = {} as Record<ServiceKind, number[]>;
@@ -159,8 +159,12 @@ export interface SimState {
   buildings: Record<number, Building>;
   nextId: number;
   assignments: Assignment[];
-  /** Age of every tree site, 0..1 (see trees.ts). */
+  /** Age of every tree site, 0..1 (see trees.ts); −1 = cleared by the player. Planted sites follow the fixed ones. */
   trees: number[];
+  /** Tree sites the player planted, appended after the fixed sites. */
+  extraTrees: TreeSite[];
+  /** Cells raised to dry ground by landfill (cell indices). */
+  landfill: number[];
   fields: Fields;
   /** Pollution sources for the current cycle: per-tick rates at cells (rebuilt at every settlement). */
   emitters: Emitter[];
@@ -206,6 +210,8 @@ export function createState(seed = 1): SimState {
     nextId: 1,
     assignments: [],
     trees: initialTrees(),
+    extraTrees: [],
+    landfill: [],
     fields: { pollution: zeros(), fish: filled(FISH_CAP), coverage: emptyCoverage(), shark: zeros(), fire: zeros() },
     emitters: [],
     sharkEmitters: [],

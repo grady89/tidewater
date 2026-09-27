@@ -16,6 +16,7 @@ export function deserialize(json: string): SimState {
   const s = JSON.parse(json) as Partial<SimState>;
   if (s.version !== 2) throw new Error(`unsupported save version ${String(s.version)}`);
   s.achievements ??= []; // saves from before backlog 7
+  s.extraTrees ??= []; s.landfill ??= []; // saves from before the land tools
   const fresh = createState();
   for (const key of Object.keys(fresh) as (keyof SimState)[]) {
     if (s[key] === undefined) throw new Error(`save is missing "${key}"`);

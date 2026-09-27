@@ -2,8 +2,8 @@
 import { ArcRotateCamera, Color4, DefaultRenderingPipeline, Engine, Matrix, Scene, Vector3 } from "@babylonjs/core";
 import { CameraControl } from "./build/cameraControl";
 import { Placement, Tool } from "./build/placement";
-import { SIM_TICK, TIDE_PERIOD } from "./config";
-import { BUILDINGS, STORM_WAVE_AMP, WAVE_HEIGHT, WAVE_WIDTH } from "./sim/balance";
+import { SIM_TICK, SIZE, TIDE_PERIOD } from "./config";
+import { BUILDINGS, LANDFILL_HEIGHT, STORM_WAVE_AMP, WAVE_HEIGHT, WAVE_WIDTH } from "./sim/balance";
 import { districtOf } from "./sim/districts";
 import { startStorm, startTsunami } from "./sim/events";
 import { ignite } from "./sim/fire";
@@ -32,6 +32,7 @@ import { OverlayKind, Overlays } from "./view/overlays";
 import { Ship } from "./view/ship";
 import { Trees } from "./view/trees";
 import { Walkers } from "./view/walkers";
+import { setGroundSampler } from "./view/ground";
 import { Wildlife } from "./view/wildlife";
 import { computeLighting, createLights, duskAt } from "./world/lighting";
 import { createSky } from "./world/sky";
@@ -53,6 +54,7 @@ const cameraControl = new CameraControl(camera, canvas, scene);
 
 const lights = createLights(scene);
 const terrain = createTerrain(scene);
+setGroundSampler((x, z) => terrain.heightAt(x, z));
 const water = createWater(scene, terrain.heightTex);
 const sky = createSky(scene);
 // Babylon's mirror clips StandardMaterials under the plane on its own; the terrain's custom shader needs telling,
@@ -102,12 +104,22 @@ const achievements = new AchievementPopup(document.getElementById("achievement")
 const markerLabel = new MarkerLabel(document.getElementById("markerLabel")!, "Pier goes here");
 achievements.adopt(state);
 placement.onSelect = b => info.select(b);
+placement.onLandfill = c => { terrain.raise([c], LANDFILL_HEIGHT); trees.groundKey++; views.clear(); };
+if (state.landfill.length) syncGround();
 cameraControl.onHome = () => api.frameTown(30);
 
 /** Swap the whole ledger (load, new town) and let every view rebuild from it. */
+/** The ground as the ledger has it: the heightfield plus every landfill cell. */
+function syncGround(): void {
+  terrain.reset();
+  terrain.raise(state.landfill.map(k => ({ i: Math.floor(k / SIZE) - SIZE / 2, j: (k % SIZE) - SIZE / 2 })), LANDFILL_HEIGHT);
+  trees.groundKey++;
+  views.clear();
+}
 function adopt(next: SimState): void {
   state = next;
   grid.attach(state);
+  syncGround();
   views.clear();
   walkers.clear();
   info.select(null);
@@ -294,6 +306,8 @@ const api = {
     const r = canvas.getBoundingClientRect();
     return { x: s.x * k + r.left, y: s.y * k + r.top };
   },
+  /** Rendered ground height (landfill included) at a world point. */
+  terrainHeight: (x: number, z: number) => terrain.heightAt(x, z),
   /** The ground point under a screen position (client pixels), for camera checks. */
   groundAt(clientX: number, clientY: number) {
     const g = cameraControl.groundAt(clientX, clientY);

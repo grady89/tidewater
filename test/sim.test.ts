@@ -1,10 +1,11 @@
 // Sim-only unit checks. Nothing here may pull in Babylon; the hygiene test enforces that for src/sim/**.
 import { describe, expect, it } from "vitest";
 import { HIGH_WATER_MARK, LOW_WATER_MARK, SPRING_HI, SPRING_LO, STILT_LENGTH, TIDE_HI, TIDE_LO, TIDE_PERIOD, WALKWAY_SNAP } from "../src/config";
-import { BEACH_MAX_HEIGHT, BOAT_COST, BOAT_MIN_RANGE, BOAT_RANGE, BUILDINGS, CAP_BASE, DRAWDOWN_LEVEL, DRAWDOWN_SECONDS, FIRE_BURN_SECONDS, FIRE_IGNITE_THRESHOLD, FISH_CAP, HAPPY, INJURY_NATURAL_CYCLES, LEVEL_UP_HAPPINESS, MAX_LEVEL, OYSTER_POLLUTION_KILL, LIFT_COST, LIFT_MAX, LIFT_STEP, PLANK_ORDER_SIZE, REMOVE_REFUND, STARTING_MONEY, TRADE_EVERY, TRADE_EVERY_LIGHTHOUSE, TREATMENT_RADIUS, TREE_REGROW_CYCLES, WAREHOUSE_CAP } from "../src/sim/balance";
+import { BEACH_MAX_HEIGHT, BOAT_COST, BOAT_MIN_RANGE, BOAT_RANGE, BUILDINGS, CAP_BASE, DRAWDOWN_LEVEL, DRAWDOWN_SECONDS, FIRE_BURN_SECONDS, FIRE_IGNITE_THRESHOLD, FISH_CAP, HAPPY, INJURY_NATURAL_CYCLES, LEVEL_UP_HAPPINESS, MAX_LEVEL, OYSTER_POLLUTION_KILL, CLEAR_TIMBER, LANDFILL_COST, LANDFILL_HEIGHT, LIFT_COST, LIFT_MAX, LIFT_STEP, PLANK_ORDER_SIZE, REMOVE_REFUND, STARTING_MONEY, TRADE_EVERY, TRADE_EVERY_LIGHTHOUSE, TREATMENT_RADIUS, TREE_REGROW_CYCLES, WAREHOUSE_CAP } from "../src/sim/balance";
 import { ACHIEVEMENTS, checkAchievements } from "../src/sim/achievements";
 import { deserialize, serialize } from "../src/sim/save";
 import { DISTRICT_MIN, districtName, districtOf, districts } from "../src/sim/districts";
+import { addLandfill, clearBlocker, clearTree, landfillBlocker, plantBlocker, plantTree, treeAt } from "../src/sim/land";
 import { ISLE } from "../src/sim/isle";
 import { startCell, suggestPier } from "../src/sim/start";
 import { TREE_SITES } from "../src/sim/trees";
@@ -946,6 +947,54 @@ describe("placement (streets, docks, refunds)", () => {
     expect(grid.canPlace("pier", fp)).toBe(true);
     const hut = Object.values(state.buildings)[0];
     expect(Math.hypot(s!.i - hut.cells[0].i, s!.j - hut.cells[0].j)).toBeLessThan(12);
+  });
+});
+
+describe("land tools", () => {
+  it("landfill raises a flat cell to dry ground that takes a house, costs money and timber, and survives a save", () => {
+    const { state, grid } = town();
+    state.resources.money += 500; state.resources.timber += 20;
+    let c: Cell | null = null;
+    for (let i = -30; i < 30 && !c; i++) for (let j = -30; j < 30; j++) { const q = { i, j }; if (grid.classAt(q) === "flat" && !grid.buildingAt(q) && grid.heightAt(q) < 0.2) { c = q; break; } }
+    expect(c).not.toBeNull();
+    expect(landfillBlocker(state, grid, c!)).toBeNull();
+    const money = state.resources.money, timber = state.resources.timber;
+    expect(addLandfill(state, grid, c!)).toBe(true);
+    expect(state.resources.money).toBe(money - LANDFILL_COST.money);
+    expect(state.resources.timber).toBe(timber - LANDFILL_COST.timber);
+    expect(grid.classAt(c!)).toBe("high");
+    expect(grid.heightAt(c!)).toBeCloseTo(LANDFILL_HEIGHT, 5);
+    expect(landfillBlocker(state, grid, c!)).toMatch(/flats/);
+    state.resources.money += 100;
+    const hut = tryPlace(state, grid, "hut", c!);
+    expect(hut).not.toBeNull();
+    expect(hut!.floorY).toBeCloseTo(1.0, 6);
+    const round = new Grid(deserialize(serialize(state)));
+    expect(round.classAt(c!)).toBe("high");
+    expect(round.heightAt(c!)).toBeCloseTo(LANDFILL_HEIGHT, 5);
+  });
+  it("plants a sapling on dry ground that grows, and clears a grown tree for a little timber", () => {
+    const { state, grid } = town();
+    state.resources.money += 100;
+    let c: Cell | null = null;
+    for (let i = -30; i < 30 && !c; i++) for (let j = -30; j < 30; j++) { const q = { i, j }; if (grid.classAt(q) === "high" && !grid.buildingAt(q) && treeAt(state, q) < 0) { c = q; break; } }
+    expect(c).not.toBeNull();
+    expect(plantBlocker(state, grid, c!)).toBeNull();
+    const n = state.trees.length;
+    expect(plantTree(state, grid, c!)).toBe(true);
+    expect(state.trees.length).toBe(n + 1);
+    expect(state.extraTrees.length).toBe(1);
+    expect(plantBlocker(state, grid, c!)).toMatch(/tree stands/);
+    advanceCycles(state, grid, TREE_REGROW_CYCLES + 1);
+    expect(state.trees[n]).toBe(1);
+    const timber = state.resources.timber;
+    expect(clearTree(state, grid, c!)).toBe(true);
+    expect(state.trees[n]).toBe(-1);
+    expect(state.resources.timber).toBe(timber + CLEAR_TIMBER);
+    expect(clearBlocker(state, grid, c!)).toMatch(/No tree/);
+    advanceCycles(state, grid, 2);
+    expect(state.trees[n]).toBe(-1); // cleared trees never regrow
+    expect(deserialize(serialize(state)).extraTrees.length).toBe(1);
   });
 });
 

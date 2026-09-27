@@ -265,6 +265,11 @@ export function settleCycle(state: SimState, grid: Grid): void {
     r.shellfish -= shellfish; stats.income += shellfish * PRICE_SHELLFISH; stats.shellfishSold += shellfish;
     b.output = fish + shellfish;
   }
+  // The commonest "why is nothing selling": every market is cut off or unstaffed at the peak.
+  const markets = buildings.filter(b => b.kind === "market");
+  if (markets.length && !markets.some(b => active(b) && b.workers > 0) && r.fish > reserve) {
+    notify(state, markets.some(b => b.cut) ? "The market was under water at the peak: nothing sold" : markets.some(b => !b.reached) ? "The market has no walkway to a pier: nothing sold" : "The market has no workers: nothing sold");
+  }
 
   produce(state, grid, buildings);
   regrowTrees(state);

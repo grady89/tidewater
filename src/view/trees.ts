@@ -3,9 +3,9 @@
 // stacked tiers, each tier a little darker toward the ground, on a plain straight trunk. Rebuilt only when an
 // age changes.
 import { Color4, Matrix, Mesh, MeshBuilder, Quaternion, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
-import { terrainHeight } from "../sim/heightfield";
 import { SimState } from "../sim/state";
-import { TREE_SITES } from "../sim/trees";
+import { treeSites } from "../sim/trees";
+import { ground } from "./ground";
 import { flatMaterial, mergeFlat, tint } from "../world/flatMesh";
 
 const TRUNK = "#5b4634";
@@ -15,6 +15,8 @@ export class Trees {
   private readonly trunks: Mesh;
   private readonly canopies: Mesh;
   private lastKey = "";
+  /** Bump when the ground changes (landfill) so trees re-seat. */
+  groundKey = 0;
 
   constructor(scene: Scene) {
     const trunk = MeshBuilder.CreateCylinder("t", { diameterTop: 0.14, diameterBottom: 0.22, height: 1.3, tessellation: 5 }, scene);
@@ -34,18 +36,19 @@ export class Trees {
   }
 
   sync(state: SimState): void {
-    const key = state.trees.join(",");
+    const sites = treeSites(state);
+    const key = state.trees.join(",") + "|" + this.groundKey;
     if (key === this.lastKey) return;
     this.lastKey = key;
-    const n = TREE_SITES.length;
+    const n = sites.length;
     const trunkM = new Float32Array(n * 16), canopyM = new Float32Array(n * 16), colors = new Float32Array(n * 4);
     let seed = 11;
     const rnd = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
-    TREE_SITES.forEach((site, k) => {
+    sites.forEach((site, k) => {
       const age = state.trees[k] ?? 1;
-      const s = site.s * (0.05 + 0.95 * age);
+      const s = age < 0 ? 0 : site.s * (0.05 + 0.95 * age); // cleared trees are gone
       const yaw = rnd() * Math.PI;
-      const pos = new Vector3(site.x, terrainHeight(site.x, site.z) - 0.05, site.z);
+      const pos = new Vector3(site.x, ground(site.x, site.z) - 0.05, site.z);
       const q = Quaternion.FromEulerAngles(0, yaw, 0);
       Matrix.Compose(new Vector3(s, s, s), q, pos).copyToArray(trunkM, k * 16);
       Matrix.Compose(new Vector3(s, s, s), q, pos).copyToArray(canopyM, k * 16);

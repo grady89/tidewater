@@ -1,7 +1,7 @@
 // The UI: resource bar, build menu by category, tide clock, last-cycle ledger, notifications. Plain DOM over the
 // canvas, read-only over the sim.
 import { Fate, Tool } from "../build/placement";
-import { BOAT_COST, BUILDING_KINDS, BuildingKind, BUILDINGS, CATEGORIES, Category, LANTERN_COST, LIFT_COST, LIFT_STEP, PLANK_ORDER_SIZE, TRADE_PLANK_PRICE } from "../sim/balance";
+import { BOAT_COST, BUILDING_KINDS, BuildingKind, BUILDINGS, CATEGORIES, Category, CLEAR_TIMBER, LANDFILL_COST, LANTERN_COST, LIFT_COST, LIFT_STEP, PLANK_ORDER_SIZE, PLANT_COST, TRADE_PLANK_PRICE } from "../sim/balance";
 import { canAfford } from "../sim/economy";
 import { Grid } from "../sim/grid";
 import { population, SimState } from "../sim/state";
@@ -26,6 +26,9 @@ const TOOLS: ToolDef[] = [
   ...BUILDING_KINDS.map(kind => ({ tool: kind as Tool, label: BUILDINGS[kind].name, category: BUILDINGS[kind].category, cost: costOf(kind) })),
   { tool: "boat", label: "Boat", category: "Sea", cost: `${BOAT_COST}$` },
   { tool: "lanternPost", label: "Lantern post", category: "Streets", cost: `${LANTERN_COST}$` },
+  { tool: "landfill", label: "Landfill", category: "Land", cost: `${LANDFILL_COST.money}$+${LANDFILL_COST.timber}t` },
+  { tool: "plantTree", label: "Plant tree", category: "Land", cost: `${PLANT_COST}$` },
+  { tool: "clearTree", label: "Clear tree", category: "Land", cost: `+${CLEAR_TIMBER}t` },
 ];
 const KEYS = "123456789";
 
@@ -201,6 +204,9 @@ export class Hud {
   private lock(state: SimState, tool: Tool): string | null {
     if (tool === "boat") return state.resources.money >= BOAT_COST ? null : "no money";
     if (tool === "lanternPost") return state.resources.money >= LANTERN_COST ? null : "no money";
+    if (tool === "landfill") return state.resources.money < LANDFILL_COST.money ? "no money" : state.resources.timber < LANDFILL_COST.timber ? "no timber" : null;
+    if (tool === "plantTree") return state.resources.money >= PLANT_COST ? null : "no money";
+    if (tool === "clearTree") return null;
     const def = BUILDINGS[tool];
     if (def.requires && !this.grid.has(def.requires)) return `needs ${BUILDINGS[def.requires].name.toLowerCase()}`;
     if (!canAfford(state, def.cost)) {
