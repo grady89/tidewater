@@ -35,24 +35,45 @@ try {
     return { ...b, renderer: api.engine.getGlInfo().renderer, chosen: api.view.quality() };
   });
   console.log(`[quality] ${GPU ? "GPU" : "SwiftShader (--disable-gpu)"} · ${built.renderer} · ${built.buildings} buildings, ${built.boats} boats · first-launch probe: ${built.chosen.note}`);
-  const results: Record<string, number> = {};
-  for (const q of ["high", "medium", "low"] as const) {
-    const fps = await page.evaluate(async (quality: Quality) => {
+  const measure = async (): Promise<Record<string, number>> => {
+    const results: Record<string, number> = {};
+    for (const q of ["high", "medium", "low"] as const) {
+      const fps = await page.evaluate(async (quality: Quality) => {
+        const api = (window as unknown as { __tidewater: Api }).__tidewater;
+        api.setQuality(quality);
+        api.setSpeed(1);
+        await new Promise(r => setTimeout(r, 1000));
+        let frames = 0;
+        const obs = api.scene.onAfterRenderObservable.add(() => frames++);
+        const t0 = performance.now();
+        await new Promise(r => setTimeout(r, 5000));
+        api.scene.onAfterRenderObservable.remove(obs);
+        return frames / ((performance.now() - t0) / 1000);
+      }, q);
+      results[q] = fps;
+      console.log(`[quality] ${q}: ${fps.toFixed(1)} fps`);
+    }
+    return results;
+  };
+  console.log(`[quality] tidewater ${JSON.stringify(await measure())}`);
+  // The other coasts (docs/biomes): the same big town on the Fjord and the Atoll, each preset.
+  for (const [face, seed, biome] of [[0, 2, "fjord"], [6, 2, "atoll"]] as const) {
+    const b2 = await page.evaluate(async ({ face, seed, biome }) => {
       const api = (window as unknown as { __tidewater: Api }).__tidewater;
-      api.setQuality(quality);
-      api.setSpeed(1);
-      await new Promise(r => setTimeout(r, 1000));
-      let frames = 0;
-      const obs = api.scene.onAfterRenderObservable.add(() => frames++);
-      const t0 = performance.now();
-      await new Promise(r => setTimeout(r, 5000));
-      api.scene.onAfterRenderObservable.remove(obs);
-      return frames / ((performance.now() - t0) / 1000);
-    }, q);
-    results[q] = fps;
-    console.log(`[quality] ${q}: ${fps.toFixed(1)} fps`);
+      const url = "/test/scenario.ts";
+      const sc = (await import(url)) as typeof import("./scenario");
+      await api.returnToWorld({ instant: true });
+      api.newSector(face, seed, `Quality ${biome}`, biome);
+      await api.enterSector(face, { instant: true });
+      api.grant(100000, 5000, 5000);
+      const b = sc.bigTown(api.sim, api.grid);
+      api.advance(2);
+      api.frameTown(30);
+      return b;
+    }, { face, seed, biome });
+    console.log(`[quality] ${biome}: ${b2.buildings} buildings, ${b2.boats} boats`);
+    console.log(`[quality] ${biome} ${JSON.stringify(await measure())}`);
   }
-  console.log(`[quality] ${JSON.stringify(results)}`);
   // The World at each preset: the big town's miniature on one face, eleven uncharted seas, the clouds by preset.
   await page.evaluate(async () => {
     const api = (window as unknown as { __tidewater: Api }).__tidewater;

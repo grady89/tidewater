@@ -9,8 +9,8 @@ import type { TidewaterApi as Api } from "../src/main";
 const PORT = 5186;
 const BIOMES: { id: "tidewater" | "fjord" | "atoll"; face: number; seed: number }[] = [
   { id: "tidewater", face: 1, seed: 0 },
-  { id: "fjord", face: 0, seed: 3 },
-  { id: "atoll", face: 6, seed: 1 },
+  { id: "fjord", face: 0, seed: 2 },
+  { id: "atoll", face: 6, seed: 2 },
 ];
 
 async function waitReady(page: Page): Promise<void> {

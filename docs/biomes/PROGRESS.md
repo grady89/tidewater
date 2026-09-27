@@ -34,16 +34,16 @@ never push `main`. Where BIOMES.md is silent, choose the simplest option and log
 - [DONE] new-sector flow lists biomes by band (BAND_GATING respected); faces tint and miniatures use the biome look; sector card shows the biome.
 
 ## Stage 6 — tests and tooling
-- [TODO] scenario towns for Fjord and Atoll; smoke sections per biome; screenshots to shots/biomes/; fuzzer random biome per seed; quality.ts per biome.
+- [DONE] scenario towns for Fjord and Atoll; smoke sections per biome; screenshots to shots/biomes/; fuzzer random biome per seed; quality.ts per biome.
 
 ## Stage 7 — balance pass
-- [TODO] starter positive within 4 cycles; level 2 ~cycle 8 alone; level 3 ~cycle 15 with a company purchase; record in NOTES.md.
+- [DONE] starter positive within 4 cycles; level 2 ~cycle 8 alone; level 3 ~cycle 15 with a company purchase; record in NOTES.md.
 
 ## Stage 8 — review and audit
-- [TODO] side-by-side screenshots; fix rough spots; ARCHITECTURE.md, HANDOFF.md (Biomes section), NOTES.md; mark this file.
+- [DONE] side-by-side screenshots; fix rough spots; ARCHITECTURE.md, HANDOFF.md (Biomes section), NOTES.md; mark this file.
 
 ## Stage 9 — sea lanes (only if all DONE and nothing BLOCKED)
 - [TODO] behind `LANES_ENABLED=false`.
 
 ## Last thing that worked
-- Stage 5 complete: biomesFor lists the band first then every other coast (BAND_GATING respected), charted = registered, newSector/newTown carry the biome, card blurbs, faces/miniatures tint per look (from 2b); test/biomeShots.ts + npm run shots:biomes writes shots/biomes/. Fjord crests lowered to 5.1 with snow from 4.2; resource bar wraps.
+- Stages 6–8: scenario helpers (biomeTown, placeNear, joinByLine, growStreetAny; starterTown/growStreet/placeByWalkway hardened), console API (forceBiome, view.fauna, view.biome, clearSector, grantGood, orderGood), smoke sections per coast with shots to shots/biomes/, fuzzer coast per seed + new invariants, quality.ts per coast; balance probe recorded in NOTES.md; ARCHITECTURE.md, HANDOFF.md, NOTES.md updated. Build+test+smoke green.

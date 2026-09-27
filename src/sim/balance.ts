@@ -348,7 +348,7 @@ export const LEVEL_FOODS: readonly number[] = [0, 1, 2, 3];
 /** Foreign luxury a level-3 resident uses per cycle. */
 export const LUXURY_PER_RESIDENT = 0.02;
 /** Market price of each food (fish and shellfish keep PRICE_FISH / PRICE_SHELLFISH). */
-export const FOOD_PRICE: Record<string, number> = { fish: PRICE_FISH, shellfish: PRICE_SHELLFISH, rice: 3, coconut: 3, dates: 3, crab: 4, stockfish: 5, taro: 3 };
+export const FOOD_PRICE: Record<string, number> = { fish: PRICE_FISH, shellfish: PRICE_SHELLFISH, rice: 3, coconut: 3, dates: 3, crab: 4, stockfish: 6, taro: 3 };
 
 // Toolworks (BIOMES.md §2: iron)
 export const TOOLWORKS_RADIUS = 8;
@@ -370,7 +370,7 @@ export const ORDER_SIZE = PLANK_ORDER_SIZE;
 export const STOCKFISH_RATE = 6;
 export const SALT_PER_STOCKFISH = 0.2;
 /** Without salt the racks make plain dried fish: this fraction of the stockfish. */
-export const STOCKFISH_UNSALTED = 0.5;
+export const STOCKFISH_UNSALTED = 0.6;
 /** Whale season: every WHALE_SEASON_EVERY cycles, for WHALE_SEASON_LENGTH cycles, from WHALE_SEASON_FIRST. */
 export const WHALE_SEASON_EVERY = 10;
 export const WHALE_SEASON_LENGTH = 3;
@@ -398,7 +398,7 @@ export const HAPPY_AURORA = 0.03;
 export const PEARLS_PER_SHIFT = 1.2;
 export const PEARL_RADIUS = 8;
 /** Coconuts a fully staffed grove gathers per grown palm within COCONUT_RADIUS, per cycle. */
-export const COCONUT_PER_TREE = 0.6;
+export const COCONUT_PER_TREE = 1.0;
 export const COCONUT_RADIUS = 6;
 /** Bleaching: lagoon cells whose pollution is above BLEACH_POLLUTION whiten by BLEACH_RATE a cycle and recover by BLEACH_RECOVER. */
 export const BLEACH_POLLUTION = 0.25;

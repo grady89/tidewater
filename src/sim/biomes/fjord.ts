@@ -121,6 +121,7 @@ export const FJORD: Biome = registerBiome({
   unique: ["stockfishRacks", "whalingStation", "ironMine", "iceHouse", "iceBreakerPier"],
   excluded: ["oysterBed", "clamCamp", "sharkNet", "lifeguard"],
   sharks: false,
+  startNear: { i: 0, j: HEAD_Z - 2 }, // the head of the fjord, where the flats meet the channel
   shape: seed => ({ height: fjordHeight(seed), trees: fjordTrees }),
   thresholds: { flats: 260, region: 150, piers: 6, treed: 40 },
   validate: s => {

@@ -6,7 +6,9 @@ import { SIM_TICK } from "../src/config";
 import { BuildingKind, BUILDINGS, FISH_CAP, GoodKind, LIFT_MAX, MAX_LEVEL } from "../src/sim/balance";
 import { addCapped, buyBoat, capFor, isHarbour, removeBuilding, tryPlace } from "../src/sim/economy";
 import { startStorm, startTsunami } from "../src/sim/events";
+import { BiomeId, chartedBiomes, tideScaleOf } from "../src/sim/biomes";
 import { emptyStock, GOOD_IDS } from "../src/sim/goods";
+import { materialCode } from "../src/sim/materials";
 import { ignite } from "../src/sim/fire";
 import { cellIndex, Grid, HALF, inBounds } from "../src/sim/grid";
 import { addLandfill, clearTree, plantTree } from "../src/sim/land";
@@ -39,6 +41,8 @@ export interface FuzzResult {
   failures: Failure[];
   /** Ledger hash at the end — a determinism check between runs and builds. */
   hash: string;
+  /** The coast this seed played. */
+  biome: string;
   /** Cycles that ended with the purse below zero (allowed: upkeep is unconditional; counted for QA.md). */
   negativeMoneyCycles: number;
   ms: number;
@@ -100,6 +104,15 @@ export function checkInvariants(state: SimState, grid: Grid, ledger: Ledger): st
     const cap = capFor(state, g);
     if (r[g] > Math.max(cap, ledger.stocks[g]) + 1e-9) out.push(`stock ${g} = ${r[g].toFixed(3)} over cap ${cap} (was ${ledger.stocks[g].toFixed(3)})`);
   }
+  // 2b. The coast's own state: bleaching is a 0..1 fraction on lagoon cells only; every biome counter is finite.
+  const lagoon = materialCode("lagoon");
+  for (let k = 0; k < state.fields.bleach.length; k++) {
+    const b = state.fields.bleach[k];
+    if (!fin(b) || b < -1e-9 || b > 1 + 1e-9) out.push(`bleach[${k}] = ${b}`);
+    if (b > 0 && grid.materials[k] !== lagoon) out.push(`bleach on a non-lagoon cell ${k}`);
+  }
+  for (const [key, v] of Object.entries(state.biomeState)) if (!fin(v)) out.push(`biomeState.${key} = ${v}`);
+  if (state.tide.scale !== tideScaleOf(state.world.biome)) out.push(`tide scale ${state.tide.scale} ≠ the coast's ${tideScaleOf(state.world.biome)}`);
   // 3. Double entry: the purse moved exactly by the sum of the entries since the last check.
   const expected = ledger.money + ledger.entries;
   if (Math.abs(r.money - expected) > 1e-6) out.push(`money ${r.money.toFixed(4)} ≠ ${ledger.money.toFixed(4)} + entries ${ledger.entries.toFixed(4)}`);
@@ -181,7 +194,9 @@ export function runSeed(seed: number, cycles: number, onProgress?: (cycle: numbe
   const t0 = performance.now();
   const rand = rng(seed * 7919 + 13);
   const pick = <T>(xs: readonly T[]): T => xs[Math.floor(rand() * xs.length)];
-  let { state, grid } = newGame(1, seed % 5 === 0 ? seed : 0); // every fifth seed plays a generated island
+  // Every fifth seed plays a generated island, and those take turns round the charted coasts (the original island is Tidewater's).
+  const biome: BiomeId = seed % 5 === 0 ? chartedBiomes()[Math.floor(seed / 5) % chartedBiomes().length] : "tidewater";
+  let { state, grid } = newGame(1, seed % 5 === 0 ? seed : 0, biome);
   const actions: Record<string, number> = {};
   const placed: Partial<Record<BuildingKind, number>> = {};
   const failures: Failure[] = [];
@@ -300,5 +315,5 @@ export function runSeed(seed: number, cycles: number, onProgress?: (cycle: numbe
   } finally {
     auditMoney(null);
   }
-  return { seed, cycles: state.tide.cycle, actions, placed, failures, hash: stateHash(state), negativeMoneyCycles, ms: performance.now() - t0 };
+  return { seed, cycles: state.tide.cycle, actions, placed, failures, hash: stateHash(state), negativeMoneyCycles, ms: performance.now() - t0, biome };
 }

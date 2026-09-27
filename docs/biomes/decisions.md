@@ -109,3 +109,15 @@ Calls made where BIOMES.md is silent, or where the code's balance and BIOMES.md 
 25. **Visual tweak after the first shots:** the Fjord's crests stand at 5.1 (from 5.8) and the look's snow line
     at 4.2 (BIOMES.md says 4.0; the validation still counts cells above 4.0), so the snow reads as a cap rather
     than a slab. The resource bar wraps at half the viewport now that a coast can show eight goods.
+26. **Where the starting hut looks for its flats is the biome's call** (`Biome.startNear`): the island's centre
+    for Tidewater and the Atoll (the inner reef flat), the head of the fjord for the Fjord — the centre of a
+    fjord is the channel, and the first towns kept landing on a narrow bank ledge with no room for a market.
+27. **Balance (Stage 7) only touched new numbers:** unsalted racks 0.5 → 0.6, stockfish 5$ → 6$ at the market
+    and 6 → 7 from the company, coconut 0.6 → 1.0 per palm. Level 2 lands at cycle 13–14 on every coast because
+    the base happiness needs a well before it crosses 0.8; the base numbers stand (NOTES.md "Session D").
+28. **The scenario helpers grew up with the coasts** (test-only code): paths count as street, the street may grow
+    off the market when its walkways are boxed in, `biomeTown`/`joinByLine`/`growStreetAny` put a coast's own
+    kinds down. Tidewater's scripted towns are unchanged where the old behaviour succeeded, since every new path
+    is a fallback taken only when the old one placed nothing.
+29. **The smoke's caustics check pins the quality preset to High** before measuring: the first-launch probe can pick
+    Low on a loaded machine (a vitest run alongside the smoke did exactly that), and Low turns caustics off.

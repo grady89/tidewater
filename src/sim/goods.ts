@@ -38,7 +38,7 @@ export const GOODS: Record<GoodId, GoodDef> = {
   coconut: def("coconut", "coconut", "food", 100, 0, 3),
   dates: def("dates", "dates", "food", 100, 0, 3),
   crab: def("crab", "crab", "food", 100, 0, 4),
-  stockfish: def("stockfish", "stockfish", "food", 100, 6, 5),
+  stockfish: def("stockfish", "stockfish", "food", 100, 7, 6),
   taro: def("taro", "taro", "food", 100, 0, 3),
   // Luxuries: the company buys them (prices fall with volume) and carries them to islands that make none.
   pearls: def("pearls", "pearls", "luxury", 40, 14, 20),

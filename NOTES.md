@@ -905,3 +905,44 @@ the island's water and terrain render exactly as before.
   graphics; if that falls short of 60, cut bloom first.
 - Draw calls will drop a lot once the decoration layer is replaced: the study's props are ~290 unmerged meshes.
   Merging stilts/decks per house or instancing is the obvious first optimisation when real placement lands.
+
+## Session D (overnight, branch `biomes`): the six-biome framework, the Fjord and the Atoll
+
+BIOMES.md is the design; docs/biomes/PROGRESS.md the stage ledger; docs/biomes/decisions.md the twenty-odd
+calls the design left open (numbered, cited from the code). ARCHITECTURE.md "Biomes" is the map. What a future
+session should know that those only imply:
+
+- **Tidewater plays as it did, except the two house-level rules.** The goods registry, the tide scaling, the
+  materials, the looks and the shader uniforms all default to the study's values; seed 0's fingerprint test
+  still pins the island, and the M2/M3/M5/M9 scenarios pass with their numbers. The two changes: a home needs
+  two food kinds in stock for level 2 (fish + shellfish: an oyster bed or a clam camp) and three plus a foreign
+  luxury for level 3 (the company sells rice and coffee to a Tidewater harbor). The smoke's M7 grants those.
+- **Balance pass (Stage 7), measured with a scripted "natural" player** — the starter town, then the second
+  food building as soon as it is affordable, then a well, then huts; a harbor granted at cycle 9 and a luxury +
+  a third food ordered at cycle 10 (the numbers in the log below are cycles):
+
+  | coast | second food | level 2 | level 3 (with the purchase) | money over the first 4 cycles |
+  |---|---|---|---|---|
+  | Tidewater (seed 7 / 0) | oyster bed c1 | c14 / c21 | not within 24 (happiness 0.71 with 8 residents) | positive |
+  | Fjord (seeds 2, 4, 7) | racks c3–c5 (unsalted) | c13 | c16 | positive (+52$) |
+  | Atoll (seeds 2, 4, 7) | grove c1 | c14 | c17 (seed 2; the others lacked a third food in time) | positive |
+
+  Level 2 lands around cycle 13–14 on every coast rather than the brief's ~8, and the reason is the base game,
+  not the new numbers: happiness sits at 0.69–0.74 until a well (+0.10) is affordable and placed, and the
+  level-up threshold is 0.8. The new numbers were nudged where they were plainly off: unsalted racks make 0.6
+  of the stockfish (was 0.5: at 0.5 the racks lost money against selling the fish), stockfish sells for 6$ at
+  the market (fish 4$; the salt is imported), the company buys it at 7$; a coconut grove gathers 1.0 per grown
+  palm within 6 (was 0.6). Nothing in balance.ts that existed before this session moved.
+- **Starter towns on the new coasts** needed the scenario helpers to grow up: `starterTown` grows the street
+  until a market fits (the Fjord's ledges), `growStreet` may grow off the market's edge when its walkways are
+  boxed in (the Atoll's reef flat), paths count as street for `placeByWalkway`, and `biomeTown` / `joinByLine`
+  / `growStreetAny` put the coast's own kinds down and join a hill kind to the street. The Fjord's starting hut
+  looks for its flats at the head of the fjord (`Biome.startNear`); the island's centre is the channel.
+- **What the fuzzer found:** nothing new in the two-seed vitest run per coast; the overnight 50 × 2000 run has
+  not been made on this branch (`npm run fuzz`; every fifth seed now plays a generated island on the next charted
+  coast).
+- **Rough edges worth knowing** (HANDOFF.md "Biomes" has the list): the Fjord's ridges read as smooth slabs
+  under the snow (the shaper's noise is small against its profile); the whaling station's boat slot shows a
+  fishing boat, not a whaleboat; the aurora is a sky term only (no light on the ground); sea ice is a colour
+  and a swell change, not a mesh; the ice-breaker pier's prow is a plain wedge; nothing announces the
+  favourite luxury's bonus in the info panel beyond the happiness figure.

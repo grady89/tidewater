@@ -10,7 +10,11 @@ describe("sim fuzzer", () => {
     expect(a.cycles).toBe(20);
     expect(Object.values(a.actions).reduce((n, v) => n + v, 0)).toBeGreaterThan(40);
     expect(a.hash).toBe(b.hash);
-    const c = runSeed(5, 12); // every fifth seed plays a generated island
-    expect(c.failures.map(f => f.invariant + " · " + f.detail)).toEqual([]);
+    // Every fifth seed plays a generated island on the next charted coast: 5 the Atoll, 10 the Fjord, 15 Tidewater again.
+    for (const seed of [5, 10]) {
+      const c = runSeed(seed, 12);
+      expect(c.failures.map(f => f.invariant + " · " + f.detail)).toEqual([]);
+      expect(c.biome).toBe(seed === 5 ? "atoll" : "fjord"); // chartedBiomes() runs in BIOME_IDS order: tidewater, atoll, fjord
+    }
   });
 });

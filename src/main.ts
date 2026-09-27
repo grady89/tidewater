@@ -8,6 +8,9 @@ import { districtOf } from "./sim/districts";
 import { startStorm, startTsunami } from "./sim/events";
 import { ignite } from "./sim/fire";
 import { biomeFor } from "./sim/biomes";
+import { hatching } from "./sim/biomes/atoll";
+import { seaIce, whaleSeason } from "./sim/biomes/fjord";
+import { materialCode } from "./sim/materials";
 import { GoodId } from "./sim/goods";
 import { Grid } from "./sim/grid";
 import { crossCommuters, ferryTerminals } from "./sim/network";
@@ -661,7 +664,7 @@ const api = {
     sky: () => ({ day: dayFraction(state.time), sun: { x: lastLight.skySun.x, y: lastLight.skySun.y, z: lastLight.skySun.z }, moon: lastLight.moon, night: lastLight.night, lit: { x: lastLight.sunDir.x, y: lastLight.sunDir.y, z: lastLight.sunDir.z } }),
     stormMix: () => stormMix,
     drawCalls: () => scene.getActiveMeshes().length,
-    audio: () => ({ started: audio.started, state: audio.state, muted: audio.muted, cries: audio.cries, hammers: audio.hammers, bells: audio.bells }),
+    audio: () => ({ started: audio.started, state: audio.state, muted: audio.muted, cries: audio.cries, hammers: audio.hammers, bells: audio.bells, horns: audio.horns, creaks: audio.creaks, chirps: audio.chirps }),
     netFloats: () => ({ count: effects.netFloatCount, y: effects.netFloatY }),
     personScale: () => PERSON_SCALE,
     porters: () => ({ now: walkers.porters, spawned: walkers.portersSpawned }),
@@ -671,6 +674,10 @@ const api = {
     caustics: () => water.caustics,
     gulls: () => wildlife.gullCount,
     crabs: () => wildlife.crabCount,
+    /** Every fauna kit's live count (the coast's picks). */
+    fauna: () => ({ gulls: wildlife.gullCount, crabs: wildlife.crabCount, seals: wildlife.sealCount, puffins: wildlife.puffinCount, whales: wildlife.whaleCount, turtles: wildlife.turtleCount, shoals: wildlife.shoalCount }),
+    /** What the view shows of the coast: the look in use, sea ice, the aurora, the hatching's dark lanterns, the bleached count. */
+    biome: () => ({ look: look.id, ice: iceMix, aurora: look.sky.aurora, hatching: hatching(state), lanterns: views.lanternCounts, bleached: state.biomeState.bleached ?? 0, palms: look.trees.kit, boat: look.boat, hat: look.walker.hat, house: look.house }),
     ferry: () => ferry.pose,
     ferryTerminals: () => { const t = ferryTerminals(grid); return t ? { harbor: t.harbor.id, isle: t.isle.map(b => b.id) } : null; },
     commuters: () => crossCommuters(state, grid),
@@ -733,6 +740,29 @@ const api = {
     if (b) ignite(state, b);
   },
   /** Force the weather: a storm through this cycle, or the tsunami sequence now. */
+  /** Force a coast's hazard or moment (the smoke): advances the clock to it, or starts it, and syncs the view. */
+  forceBiome(event: "whaleSeason" | "seaIce" | "avalanche" | "hatching" | "bleach" | "cyclone") {
+    const cycle0 = state.tide.cycle;
+    const until = (done: () => boolean) => { for (let k = 0; k < 40 && !done(); k++) advanceCycles(state, grid, 1); };
+    switch (event) {
+      case "whaleSeason": until(() => whaleSeason(state.tide.cycle)); break;
+      case "seaIce": until(() => seaIce(state.tide.cycle)); break;
+      case "avalanche": startStorm(state, grid); advanceCycles(state, grid, 2); break;
+      case "hatching": until(() => hatching(state)); break;
+      case "bleach": {
+        const lagoon = materialCode("lagoon");
+        const emitters: { k: number; rate: number }[] = [];
+        for (let k = 0; k < grid.materials.length; k++) if (grid.materials[k] === lagoon) { state.fields.pollution[k] = 0.6; if (k % 7 === 0) emitters.push({ k, rate: 0.02 }); }
+        state.emitters = emitters;
+        advanceCycles(state, grid, 3);
+        break;
+      }
+      case "cyclone": startStorm(state, grid); break;
+    }
+    viewTime += (state.tide.cycle - cycle0) * TIDE_PERIOD;
+    syncView();
+    return { event, cycle: state.tide.cycle, biomeState: { ...state.biomeState }, storm: state.storm.active, damaged: Object.values(state.buildings).filter(b => b.damaged).length, log: state.log.slice(-2) };
+  },
   forceStorm() {
     startStorm(state, grid);
     syncView();
@@ -749,6 +779,8 @@ const api = {
   get mode() { return mode; },
   /** A fresh town on face `n` (island `seed`, named), not entered. */
   newSector,
+  /** Clear a face without the confirm (the smoke). */
+  clearSector(face: number) { deleteSector(store, face); if (activeFace === face) activeFace = readActive(store); refreshFace(face); },
   /** Dive into face `n` (the sector must exist); `instant` skips the flight. Resolves true once the island is up. */
   enterSector,
   /** Back to the World from the island; `instant` skips the flight. */

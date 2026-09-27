@@ -3,8 +3,9 @@
 Where things stand after the overnight build (ROADMAP M0–M14 + backlog 1–7, all DONE, nothing BLOCKED), the
 daytime playtest session that followed it on 2026-09-26 — nine rounds of Grady's feedback, an art pass from
 their Midjourney reference sheets, and the systems those turned up — and the second overnight build on branch
-`globe` (2026-09-27): the World, a floating globe of twelve seas the game now launches into (see "The World"
-below). Read CLAUDE.md first; NOTES.md has every decision the brief didn't make, section by section (the
+`globe``globe` (2026-09-27): the World, a floating globe of twelve seas the game now launches into (see "The World"
+below), and the third overnight build on branch `biomes` (2026-09-27): the six-biome framework with the Fjord and
+the Atoll (see "Biomes" below). Read CLAUDE.md first; NOTES.md has every decision the brief didn't make, section by section (the
 playtest sections are at the end, before "Chunk merge"); PROGRESS.md has the per-milestone status and run log;
 docs/globe/ has the World's design notes, decisions, review, audit and its own ledger. This file is the summary.
 Everything through the `qa` merge is on `origin/main` (github.com/grady89/tidewater); the World is on
@@ -118,9 +119,8 @@ island renders as before. Sectors are sim-only (`sim/sectors.ts`, tested without
 of the old autosave and slots (old keys left in place), export/import of a sector record.
 
 What to know:
-- **Only the Tidewater biome exists.** The new-sea card lists the band's biomes (Tidewater/Delta/Dunes,
-  Atoll/Cinder/Delta, Fjord) with the rest shown "uncharted" and disabled. `BAND_GATING` (config.ts, off) would
-  confine Tidewater to the temperate band once other biomes exist.
+- **Three coasts exist** (Tidewater, the Fjord, the Atoll: see "Biomes" below); Delta, Cinder and Dunes are
+  listed "uncharted" and disabled. `BAND_GATING` (config.ts, off) confines each coast to its band when on.
 - **Escape at the island's top level returns to the World** (it used to open the Town menu; the speed bar's
   Town… still does, and the menu has the World button). Every dialog is in-page (`ui/dialog.ts`).
 - **The sun follows the player's clock** (06:00 dawn, 12:00 noon, 18:00 sunset); the World has a moonlit floor
@@ -129,6 +129,59 @@ What to know:
   second dives). **Integrated graphics unmeasured** for the World as for the island.
 - The first-launch quality probe now measures the World (that is what a first launch shows); its verdict
   applies to both scenes.
+
+## Biomes (branch `biomes`, 2026-09-27)
+
+What exists: the base additions BIOMES.md §2 and §5 ask for, then the Fjord (§3.3) and the Atoll (§3.2) in
+full, wired into the World. Read BIOMES.md, then docs/biomes/decisions.md (every number and reading the design
+left open), ARCHITECTURE.md "Biomes" (where each piece lives), NOTES.md "Session D" (the balance pass).
+
+- **Goods registry** (`sim/goods.ts`): 21 goods with roles, caps and the company's prices; stockpiles keyed by
+  id; the resource bar shows what the coast makes plus what it holds. **Food variety:** any food feeds, eaten in
+  proportion; two kinds for level 2, three plus a foreign luxury for level 3; the favourite luxury adds
+  happiness. **Toolworks** (base): burns iron, +20% output within 8. **The Trade Company** carries what the
+  coast cannot make (plus planks) and buys what it makes at prices that fall with volume; the harbor's panel
+  is the order book. **Cell materials** beside the classes; **tides scale per biome** (the stilt rule, marks,
+  flood lines, wave, floors all follow); **the Biome interface and registry**, **the looks**, and the shaders'
+  new uniforms (bands, snow, material tints, water tints, lagoon, ice, aurora; defaults = the study).
+- **The Fjord:** channel and ridges, tide ×1.6, stockfish racks (salt from the company), whaling station and
+  whale season, iron mine, ice house, sea ice every sixth cycle and the ice-breaker pier, avalanches after
+  storms, the aurora; stave houses, longboats, hooded walkers, pines, seals, whale spouts, puffins; wind, ice
+  creak, a horn for the whales.
+- **The Atoll:** a ring round a lagoon with one or two passes, tide ×0.6, dive platform + pearl house, coconut
+  grove, reef nursery, cyclones, coral bleaching (a field, painted into the water), turtle hatching the night
+  after every spring peak (beach lanterns go dark; a lasting tourism bonus); round huts that gain a verandah and
+  a second storey, outriggers, straw hats, palms that bend in a cyclone, turtles, reef-fish shoals, frigatebirds.
+- **The World:** the new-sea card lists the band's coasts first, then every other (BAND_GATING off; on, only
+  the band's); Delta, Cinder and Dunes stay "uncharted" until their files exist; faces and miniatures wear each
+  sector's look; the sector card names the coast. `npm run shots:biomes` writes shots/biomes/; the smoke has a
+  section per coast; the fuzzer plays a generated island on the next charted coast every fifth seed;
+  `npm run quality` measures each coast at each preset.
+
+Known-rough:
+- The Fjord's ridges are smooth slabs under the snow cap; the shaper's noise (±1.3) is small against its
+  profile. More noise on the crests, or a second ridge line, would break the silhouette.
+- The whaling station's berth shows an ordinary fishing boat; the ice-breaker pier is the pier plus a wedge and
+  a brazier; the ice house is a stone hut. Fine at the World's scale, generic up close.
+- Sea ice is a colour and a stilled swell on the water plane, not ice meshes; the aurora lights only the sky.
+- Level 2 lands around cycle 13–14 on every coast (the brief hoped ~8) because the base happiness needs a well
+  first; nothing new was tuned for it (NOTES.md "Session D").
+- The Atoll's reef flats are narrow: the scripted starter boxes itself in unless the street grows off the
+  market, and a human player's first homes go up on the motu by paths. Worth a hint in the walkthrough.
+- The company's price slide is per visit, not cumulative; a lane economy (Stage 9) will want the cumulative one.
+- `sim/biomes/registry.ts` vs `index.ts`, and `fields.ts` importing the lattice from `cells.ts`: two import-order
+  traps, both commented where they bite (decisions.md #20).
+
+Three things next:
+1. **Play a Fjord and an Atoll sea with a mouse** from the World's card: found, build the coast's kinds through
+   the palette, order salt / a luxury from the harbor panel, watch a whale season, an ice cycle, a hatching.
+   Everything has only been driven headless.
+2. **Sea lanes** (BIOMES.md §4): the World ledger, surplus/deficit flow between harbors on adjacent built
+   faces, the company's route. Stage 9 began it behind `LANES_ENABLED` (config.ts, off): see docs/biomes/
+   PROGRESS.md for where it stopped.
+3. **Delta, Cinder, Dunes** (BIOMES.md §3.4–3.6): each is a `sim/biomes/<id>.ts` + `view/biomes/<id>.ts` pair
+   following the Fjord and Atoll files; the materials (mangrove, lava, dune, oasis, vent, spring, fertile) and
+   the shader tints are already there for them.
 
 ## Balance observations from the playtests
 
@@ -145,7 +198,7 @@ What to know:
 - The island's flats hold ~160 filled jobs and ~260 buildings; the isle adds ~90 land cells.
 - Boats must fish at least 7 cells out (`BOAT_MIN_RANGE`) or they never visibly leave the pier.
 
-## The three things to do next
+## The three things to do next (as of the  session; the Biomes section above has its own three)
 
 1. **Play the World with a mouse, then merge `globe`.** Launch, spin, hover, begin a sea, dive, build, Escape
    back, rename and delete through the dialogs, import an export; on a phone, pinch and tap. It has only been

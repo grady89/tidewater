@@ -66,6 +66,8 @@ export interface Biome {
   tourism?(state: SimState): number;
   /** A lantern that must stay dark right now (the hatchlings' beach). */
   lanternDimmed?(state: SimState, grid: Grid, b: Building): boolean;
+  /** The cell the starting hut looks for its flats from; the island's centre (0, 0) when unset. */
+  startNear?: { i: number; j: number };
 }
 
 const REGISTRY = new Map<BiomeId, Biome>();

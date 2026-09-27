@@ -29,6 +29,8 @@ export class BuildingViews {
   private readonly lit: Mesh;
   private readonly dark: Mesh;
   private lanternSig = "";
+  /** Lit and dark lanterns at the last sync (a probe). */
+  lanternCounts = { lit: 0, dark: 0 };
 
   constructor(private readonly scene: Scene, private readonly grid: Grid) {
     const mats = lanternMaterials(scene);
@@ -83,6 +85,7 @@ export class BuildingViews {
         Matrix.Translation(p.x, p.y, p.z).copyToArray(on ? litM : darkM, (on ? litM : darkM).length);
       }
     }
+    this.lanternCounts = { lit: litM.length / 16, dark: darkM.length / 16 };
     const lsig = parts.join(",");
     if (lsig !== this.lanternSig) {
       this.lanternSig = lsig;
