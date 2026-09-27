@@ -31,6 +31,9 @@ export const DAY_CYCLES = 2;
  * building. So nothing standard floods at an ordinary high tide, and only a walkway on ground below
  * SPRING_FLOOD_TERRAIN goes under at a spring peak. Low ground means long stilts, which cost more (balance.ts).
  */
+/** The World: when true, the Tidewater biome may only be founded on temperate faces; when false, on any face. */
+export const BAND_GATING = false;
+
 export const STILT_MIN = 0.5;
 export const CLEARANCE = 0.1;
 /** A standard walkway on terrain below this floods at spring tides (its stilts end below the spring peak). */
