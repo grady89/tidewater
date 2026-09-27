@@ -5,7 +5,7 @@ import { Color4, Matrix, Mesh, MeshBuilder, Quaternion, Scene, StandardMaterial,
 import { SIZE } from "../config";
 import { BUILDINGS, SWIM_FRACTION } from "../sim/balance";
 import { cellCenter, cellIndex, Grid } from "../sim/grid";
-import { terrainHeight } from "../sim/heightfield";
+import { ground as groundHeight } from "./ground";
 import { ferryTerminals } from "../sim/network";
 import { Building, Cell, Phase, population, SimState } from "../sim/state";
 import { flatMaterial, mergeFlat, tint } from "../world/flatMesh";
@@ -301,7 +301,7 @@ export class Walkers {
         const t = viewTime * 0.5 + k * 1.7 + sk * 0.01;
         const x = water.i + 0.5 + Math.cos(t) * 0.28 + (k - 1) * 0.22, z = water.j + 0.5 + Math.sin(t * 0.8) * 0.28;
         // Chest-deep: the waterline crosses the tunic.
-        const y = Math.max(level + Math.sin(viewTime * 2 + k) * 0.02 - CHEST, terrainHeight(x, z) + 0.02);
+        const y = Math.max(level + Math.sin(viewTime * 2 + k) * 0.02 - CHEST, groundHeight(x, z) + 0.02);
         out.push({ pos: new Vector3(x, y, z), yaw: t, color: Color4.FromHexString(COLORS[(k + sk) % COLORS.length]) });
       }
     }

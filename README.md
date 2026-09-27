@@ -39,7 +39,7 @@ milestone and drops screenshots in `shots/`.
 | Order planks | the button in the panel once you have a harbor; the trade ship brings them |
 | Overlays | Pollution, Fish, Sharks, Fire — the buttons above the ledger line |
 | Speed | the bar at the bottom: pause (space), 1×, 2×, 4× |
-| Save / load / new town | **Town…** at the bottom, or Esc |
+| Save / load / new town | **Town…** at the bottom, or Esc. **New town** starts on the island of the seed in the field (0 is the original island; **Random** picks another) |
 | Sound | the speaker button; it starts on your first click |
 | Reflections | **Reflections** at the bottom — a second render of the scene in the water; off by default |
 

@@ -117,7 +117,9 @@
       .slot-buttons { display: flex; gap: 4px; flex-shrink: 0; }
       .slot button, .menu-actions button { font: inherit; font-size: 11px; color: var(--ink); background: rgba(255, 255, 255, 0.06); border: 1px solid var(--panel-line); border-radius: 6px; padding: 3px 8px; cursor: pointer; }
       .slot button:disabled { opacity: 0.4; cursor: default; }
-      .menu-actions { display: flex; justify-content: flex-end; }
+      .menu-actions { display: flex; justify-content: flex-end; align-items: center; gap: 6px; }
+      .seed-field { margin-right: auto; display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--ink-dim); }
+      .seed-field input { width: 84px; font: inherit; font-size: 11px; color: var(--ink); background: rgba(255, 255, 255, 0.06); border: 1px solid var(--panel-line); border-radius: 6px; padding: 3px 6px; }
       #info { position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); width: 260px; padding: 12px 16px 14px; display: grid; gap: 8px; }
       #info[hidden] { display: none; }
       .info-head { display: flex; justify-content: space-between; align-items: center; }

@@ -5,7 +5,7 @@ import { Matrix, Mesh, MeshBuilder, Quaternion, Scene, Vector3 } from "@babylonj
 import { TIDE_HI, TIDE_LO } from "../config";
 import { BUILDINGS } from "../sim/balance";
 import { cellIndex, Grid, HALF, inBounds } from "../sim/grid";
-import { terrainHeight } from "../sim/heightfield";
+import { ground as groundHeight } from "./ground";
 import { Building, SimState } from "../sim/state";
 import { mergeFlat, tint } from "../world/flatMesh";
 
@@ -120,7 +120,7 @@ export class Wildlife {
     for (let k = cells.length - 1; k > 0; k--) { const r = Math.floor(rnd() * (k + 1)); [cells[k], cells[r]] = [cells[r], cells[k]]; }
     this.sites = cells.slice(0, CRAB_SITES).map(k => {
       const x = Math.floor(k / 64) - HALF + 0.2 + rnd() * 0.6, z = (k % 64) - HALF + 0.2 + rnd() * 0.6;
-      return { x, z, h: terrainHeight(x, z), phase: rnd() * 6.28 };
+      return { x, z, h: groundHeight(x, z), phase: rnd() * 6.28 };
     });
   }
 

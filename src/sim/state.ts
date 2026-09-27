@@ -150,6 +150,8 @@ export interface TradeState {
 export interface SimState {
   version: 2;
   seed: number;
+  /** The island: the seed the player asked for (0 = the original island); island.ts turns it into ground. */
+  world: { seed: number };
   /** RNG stream state (see rng.ts). */
   rng: number;
   /** Game seconds elapsed. */
@@ -200,10 +202,11 @@ export interface SimState {
   log: string[];
 }
 
-export function createState(seed = 1): SimState {
+export function createState(seed = 1, islandSeed = 0): SimState {
   return {
     version: 2,
     seed,
+    world: { seed: islandSeed | 0 },
     rng: seed | 0,
     time: 0,
     tick: 0,
@@ -213,7 +216,7 @@ export function createState(seed = 1): SimState {
     buildings: {},
     nextId: 1,
     assignments: [],
-    trees: initialTrees(),
+    trees: initialTrees(islandSeed),
     extraTrees: [],
     landfill: [],
     loan: { owed: 0, perCycle: 0, taken: 0 },

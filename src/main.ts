@@ -107,13 +107,13 @@ const markerLabel = new MarkerLabel(document.getElementById("markerLabel")!, "Pi
 achievements.adopt(state);
 placement.onSelect = b => info.select(b);
 placement.onLandfill = c => { terrain.raise([c], LANDFILL_HEIGHT); trees.groundKey++; views.clear(); };
-if (state.landfill.length) syncGround();
+if (state.landfill.length || state.world.seed !== 0) syncGround();
 cameraControl.onHome = () => api.frameTown(30);
 
 /** Swap the whole ledger (load, new town) and let every view rebuild from it. */
 /** The ground as the ledger has it: the heightfield plus every landfill cell. */
 function syncGround(): void {
-  terrain.reset();
+  terrain.reset(grid.island.height);
   terrain.raise(state.landfill.map(k => ({ i: Math.floor(k / SIZE) - SIZE / 2, j: (k % SIZE) - SIZE / 2 })), LANDFILL_HEIGHT);
   trees.groundKey++;
   views.clear();
@@ -128,10 +128,11 @@ function adopt(next: SimState): void {
   achievements.adopt(state);
   syncView();
 }
-function newTown(): void {
+/** A fresh town on island `seed` (0 = the original island). */
+function newTown(seed = 0): void {
   try { localStorage.removeItem(AUTOSAVE_KEY); } catch { /* ignore */ }
   tutorial.reset();
-  adopt(newGame(SEED).state);
+  adopt(newGame(SEED, seed).state);
 }
 function load(json: string): void {
   let next: SimState;
@@ -140,7 +141,7 @@ function load(json: string): void {
   save();
 }
 
-const menu = new SaveMenu(document.getElementById("menu")!, { serialize: () => serialize(state), cycle: () => state.tide.cycle, load, newTown });
+const menu = new SaveMenu(document.getElementById("menu")!, { serialize: () => serialize(state), cycle: () => state.tide.cycle, islandSeed: () => state.world.seed, load, newTown });
 let speed: Speed = 1;
 const audio = new Audio();
 const REFLECTIONS_KEY = "tidewater.reflections";
@@ -343,6 +344,7 @@ const api = {
     commuters: () => crossCommuters(state, grid),
     riders: () => ferry.riders().length,
     isleOpen: () => grid.isleOpen(),
+    island: () => { const i = grid.island; return { seed: i.seed, noiseSeed: i.noiseSeed, rerolls: i.rerolls, stats: i.stats }; },
     achievementsShown: () => achievements.shown.slice(),
     camera: () => cameraControl.pose,
     category: () => hud.category,

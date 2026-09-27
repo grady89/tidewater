@@ -48,11 +48,14 @@ export function suggestPier(grid: Grid): Cell | null {
 export function seedTown(state: SimState, grid: Grid): void {
   const c = startCell(grid);
   if (grid.canPlace("hut", [c])) grid.place("hut", [c]);
+  const isl = grid.island;
+  if (isl.seed !== 0) notify(state, `Island ${isl.seed}: ${isl.stats.flats} flat cells, ${isl.stats.piers} pier sites${isl.rerolls ? ` (after ${isl.rerolls} reroll${isl.rerolls === 1 ? "" : "s"})` : ""}`);
   notify(state, "A hut on the flats. Build a pier, buy a boat, lay walkways.");
 }
 
-export function newGame(seed = 1): { state: SimState; grid: Grid } {
-  const state = createState(seed);
+/** A fresh ledger and grid: `seed` drives the RNG, `islandSeed` the ground (0 = the original island). */
+export function newGame(seed = 1, islandSeed = 0): { state: SimState; grid: Grid } {
+  const state = createState(seed, islandSeed);
   const grid = new Grid(state);
   seedTown(state, grid);
   return { state, grid };

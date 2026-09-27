@@ -18,6 +18,7 @@ export function deserialize(json: string): SimState {
   s.achievements ??= []; // saves from before backlog 7
   s.extraTrees ??= []; s.landfill ??= []; // saves from before the land tools
   s.loan ??= { owed: 0, perCycle: 0, taken: 0 };
+  s.world ??= { seed: 0 }; // saves from before seeded islands: the original island
   if (s.tsunami && s.tsunami.due === undefined) s.tsunami.due = -1; // saves from before the warning cycle
   const fresh = createState();
   for (const key of Object.keys(fresh) as (keyof SimState)[]) {

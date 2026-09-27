@@ -103,6 +103,14 @@ export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
 /** The ferry crossing between the harbor and the isle's piers, as walking distance for job assignment. */
 export const FERRY_COST = 10;
 
+// A seeded island must offer a playable start (island.ts); candidates that don't are rerolled.
+export const ISLAND_MIN_FLATS = 400;
+export const ISLAND_MIN_REGION = 250;
+export const ISLAND_MIN_PIER_SITES = 3;
+export const ISLAND_MIN_HARBOR_SITES = 1;
+export const ISLAND_MIN_TREED = 60;
+export const ISLAND_MAX_REROLLS = 32;
+
 // Loans (one at a time): the lump sum, the interest on it, and how many settlements repay it.
 export const LOAN_AMOUNT = 300;
 export const LOAN_INTEREST = 0.2;

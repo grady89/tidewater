@@ -31,6 +31,7 @@ try {
   page.on("pageerror", e => errors.push(e.message));
   page.on("console", m => { if (m.type() === "error" && !m.text().startsWith("Failed to load resource")) errors.push(m.text()); });
   page.on("response", r => { if (r.status() >= 400) errors.push(`${r.status()} ${r.url()}`); });
+  page.on("dialog", d => d.accept()); // the Town menu's "new town?" confirm
 
   await page.goto(`http://localhost:${PORT}/`);
   await waitReady(page);
@@ -842,6 +843,36 @@ try {
   assert(after.cycle === before.cycle && after.money === before.money, "ledger restored");
   assert(after.chunks === before.chunks && after.meshes === after.chunks && after.chunks > 0 && after.chunks <= 64, "view rebuilt one merged mesh per chunk");
   await page.screenshot({ path: "shots/m1.png" });
+
+  // Task 4: the Town menu's seed field starts a town on another island; Random fills the field; the autosave
+  // carries the island through a reload; seed 0 is the original island again.
+  const t4before = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; api.menu(true); return { h: api.terrainHeight(0.5, 0.5), seedShown: (document.querySelector("#menu .seed") as HTMLInputElement).value }; });
+  await page.click("#menu .random");
+  const randomValue = await page.inputValue("#menu .seed");
+  await page.fill("#menu .seed", "7");
+  await page.click("#menu .new");
+  await page.waitForTimeout(300);
+  const t4 = await page.evaluate(() => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    const hut = Object.values(api.sim.buildings)[0] as any;
+    return { menuOpen: !document.getElementById("menu")!.hidden, seed: api.sim.world.seed, island: api.view.island(), buildings: Object.keys(api.sim.buildings).length, hutClass: hut ? api.grid.classAt(hut.cells[0]) : null, h: api.terrainHeight(0.5, 0.5), trees: api.sim.trees.length, log: api.sim.log.slice(-2) };
+  });
+  await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; api.frameTown(30); });
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: "shots/t4-island7.png" });
+  await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.save());
+  await page.reload();
+  await waitReady(page);
+  const t4after = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { seed: api.sim.world.seed, h: api.terrainHeight(0.5, 0.5) }; });
+  await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.newTown());
+  const t4zero = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { seed: api.sim.world.seed, h: api.terrainHeight(0.5, 0.5) }; });
+  console.log("T4 islands:", JSON.stringify({ t4before, randomValue, t4, t4after, t4zero }));
+  assert(t4before.seedShown === "0" && /^[1-9]\d*$/.test(randomValue), "seed field shows the current island and Random fills a positive seed");
+  assert(!t4.menuOpen && t4.seed === 7 && t4.island.seed === 7 && t4.island.stats.flats >= 400, "new town on island 7, valid");
+  assert(t4.buildings === 1 && t4.hutClass === "flat" && t4.trees > 0, "the starting hut stands on island 7's flats");
+  assert(Math.abs(t4.h - t4before.h) > 0.05, "the rendered ground changed with the island");
+  assert(t4after.seed === 7 && Math.abs(t4after.h - t4.h) < 1e-6, "the island survives a reload");
+  assert(t4zero.seed === 0 && Math.abs(t4zero.h - t4before.h) < 1e-6, "seed 0 is the original island again");
 
   // Headless fps on the real GPU, averaged over 5 s.
   const fps = await page.evaluate(async () => {

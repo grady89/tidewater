@@ -210,7 +210,10 @@ Leisure & tourism
 - Notifications feed (immigrants arrived, oyster bed died, shark incident, boat lost, storm coming, the sea is pulling back).
 - Speed: pause / 1× / 2× / 4×. Time is game time; the tide period is in game seconds.
 - Camera: orbit, zoom, pan (drag with middle/right or WASD). Edge scroll off by default.
-- Save/load: autosave to localStorage every cycle; manual save slots (3); load on start if present; "new town" resets.
+- Save/load: autosave to localStorage every cycle; manual save slots (3); load on start if present; "new town" resets,
+  on an island chosen by a seed (the Town menu's seed field and "Random" button). Seed 0 is the original island, exactly;
+  any other seed's island is generated and validated (`island.ts`: flats, a contiguous flats region, pier and harbor
+  sites, trees on the hill) and rerolled until it passes. The seed lives in the ledger (`world.seed`) and in saves.
 - Start: 500$, 2 boats available to buy, a hut, a pier suggestion highlighted. Short 5-step tutorial via notifications.
 
 ## 12. Audio (last)
@@ -224,7 +227,8 @@ src/
   config.ts               sizes, tide constants, day length, caps
   world/                  terrain, water, sky, lighting, trees (from sessions 1–2)
   sim/                    ledger: state.ts, rng.ts, balance.ts, tide.ts, buildings.ts (catalog + factories of sim entries),
-                          grid.ts, network.ts, fields.ts, workers.ts, economy.ts, people.ts, events.ts, trade.ts, save.ts
+                          grid.ts, network.ts, fields.ts, workers.ts, economy.ts, people.ts, events.ts, trade.ts, save.ts,
+                          heightfield.ts (noise per seed), island.ts (seeded islands: validation, rerolls, tree sites)
   view/                   meshes for pieces (pieces/*.ts), walkers.ts, boats.ts, overlays.ts, effects.ts (storm, wave, fire, damage)
   ui/                     hud.ts, buildMenu.ts, infoPanel.ts, notifications.ts, tideClock.ts, overlaysToggle.ts, saveMenu.ts
   build/                  placement.ts (picking, ghost, validation → sim)

@@ -2,7 +2,8 @@
 // spatial index over them (rebuilt from state on load) plus the fixed terrain classification.
 import { CLEARANCE, DRY_TERRAIN, SIZE, SPRING_HI, STILT_MIN, TIDE_HI, TIDE_LO, WALKWAY_SNAP } from "../config";
 import { BEACH_MAX_HEIGHT, BuildingKind, BUILDINGS, LANDFILL_HEIGHT, LIFT_MAX, LIFT_STEP, PlacementClass } from "./balance";
-import { terrainHeight } from "./heightfield";
+import { cellClass } from "./heightfield";
+import { Island, island } from "./island";
 import { isleCell } from "./isle";
 import { Building, Cell, SimState } from "./state";
 
@@ -67,14 +68,18 @@ export class Grid {
     this.rebuild();
   }
 
-  /** Classify every cell from the heightfield (landfill is applied on top afterwards). */
+  /** The ledger's island: its heightfield and tree sites, from `state.world.seed`. */
+  get island(): Island { return island(this.state.world.seed); }
+
+  /** Classify every cell from the island's heightfield (landfill is applied on top afterwards). */
   private resetTerrain(): void {
+    const height = this.island.height;
     for (let i = -HALF; i < HALF; i++) for (let j = -HALF; j < HALF; j++) {
-      const h = terrainHeight(i + 0.5, j + 0.5);
+      const h = height(i + 0.5, j + 0.5);
       const k = cellIndex(i, j);
       this.heights[k] = h;
       this.isle[k] = isleCell({ i, j }) ? 1 : 0;
-      this.classes[k] = h < TIDE_LO ? "deep" : h <= TIDE_HI ? "flat" : "high";
+      this.classes[k] = cellClass(h);
       this.deep[k] = h < TIDE_LO ? 1 : 0;
       this.water[k] = h <= TIDE_HI ? 1 : 0;
     }

@@ -713,6 +713,39 @@ What other builders do and what was taken from each:
   boats at the isle pier, empty isle huts and the houses filled, 4 mainland hands crew the isle boats. The isle
   hut's distance from the market is exactly market→harbor + 10 + pier→hut. Smoke B6: 4 commuters, 4 riders.
 
+### Task 4: seeded islands
+- `heightfield.ts › islandHeight(seed)` is the old `terrainHeight` with the noise seed as a parameter: the hash
+  already mixed `TERRAIN_SEED` (0) in, so seed 0 runs the identical arithmetic and the original island comes out
+  byte for byte (the sim test pins a fingerprint of all 4096 cell heights, `19bacd86`, and the old `mainLand = 750`).
+  The radial falloff is the same for every seed, so no main island ever reaches the isle, which is blended in
+  unchanged at (22.5, 22.5); the isle is left out of every validation count.
+- `island.ts › island(seed)` returns the first candidate that passes; candidate k is `candidateSeed(seed, k)` —
+  the seed itself first, then a hash of (seed, k) — so a seed always gives the same island. Validation
+  (thresholds in balance.ts, `ISLAND_*`): ≥ 400 flat cells, a 4-connected flats region ≥ 250, ≥ 3 pier sites by
+  the grid's edge rule (deep anchor, flat beside it, two deep cells seaward), ≥ 1 harbor site (a 3×3 block under
+  −1.5), ≥ 60 trees on high cells. Tree sites come from the same 70-site placer as before, moved into island.ts
+  and fed the candidate's heightfield.
+- "≥ 60 high cells with trees" is read as tree *sites* on high cells, not distinct cells: the original island's
+  70 sites share 45 cells, so the distinct-cell reading would fail seed 0, which the brief says must stand as it
+  is. With the sites reading seed 0 passes on its own (island() still exempts seed 0 as a guard, and the test
+  asserts it passes without the exemption).
+- Reroll rate, seeds 1..200: 114 of 200 needed at least one reroll (57%), 269 rerolls in all (1.35 per island),
+  the worst seed took 11, none hit the cap (`ISLAND_MAX_REROLLS` 32, after which the original island stands in
+  and the count says so). Almost every rejection is the tree rule — the noise makes plenty of islands whose hill is
+  too small or too steep for 60 of the 70 sites — with 16 of 200 also short of flats and 16 short of a contiguous
+  region. A candidate costs ~5 ms (4096 heights + 3000 tree tries), so the worst seed opens in ~60 ms. The rate
+  is logged in the ledger too: a seeded town's first notification says "Island N: F flat cells, P pier sites
+  (after R rerolls)".
+- The ledger carries `world.seed` (the requested seed; old saves get 0), `createState(seed, islandSeed)` sizes the
+  tree ages from the island, and `Grid.island` is `island(state.world.seed)` — `attach` reclassifies from it, so a
+  load onto another island just works. The view samples ground through `view/ground.ts` everywhere now (boats'
+  bed, swimmers, crab spots, the camera floor, the placement ray used to read the seed-0 heightfield directly);
+  `terrain.reset(height)` rebuilds the mesh and the water's heightmap for the island in `syncGround`.
+- The Town menu: an "Island seed" field (shows the current island's seed when opened), **Random** (1..999999),
+  and **New town** on that seed after the usual confirm. The RNG seed stays `SEED` = 1: the island seed changes
+  the ground, not the dice. `newTown()` in the console API defaults to seed 0, so the smoke's scenarios keep the
+  original island; its Task 4 block drives the menu with real clicks, reloads onto island 7, and returns to 0.
+
 ## Findings on the v1 questions
 
 (placement and connectivity exist now; play a few cycles and write answers here)

@@ -7,7 +7,7 @@ import { autoStilts, boatPurchaseBlocker, buyBoat, canAfford, placeCost, removeB
 import { BOAT_COST, LANDFILL_COST, LANDFILL_HEIGHT, LANTERN_COST, LIFT_MAX, PLANT_COST } from "../sim/balance";
 import { CLEARANCE, SPRING_HI, TIDE_HI } from "../config";
 import { Grid, HALF, worldToCell } from "../sim/grid";
-import { terrainHeight } from "../sim/heightfield";
+import { ground as groundHeight } from "../view/ground";
 import { addLandfill, clearBlocker, clearTree, landfillBlocker, plantBlocker, plantTree } from "../sim/land";
 import { addLantern, lanternBlocker } from "../sim/services";
 import { Building, Cell } from "../sim/state";
@@ -165,7 +165,7 @@ export class Placement {
     const o = ray.origin, d = ray.direction;
     let x: number, z: number;
     if (this.picksTerrain()) {
-      const under = (t: number) => o.y + d.y * t < terrainHeight(o.x + d.x * t, o.z + d.z * t);
+      const under = (t: number) => o.y + d.y * t < groundHeight(o.x + d.x * t, o.z + d.z * t);
       let hit = -1, prev = 0;
       for (let t = 0.35; t < 250; t += 0.35) {
         if (d.y >= 0 && o.y + d.y * t > 8) return null;

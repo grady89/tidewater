@@ -5,7 +5,7 @@ import { Color4, Matrix, Mesh, MeshBuilder, Quaternion, Scene, StandardMaterial,
 import { HIGH_WATER_MARK, LOW_WATER_MARK } from "../config";
 import { BUILDINGS } from "../sim/balance";
 import { cellCenter, Grid, worldToCell } from "../sim/grid";
-import { terrainHeight } from "../sim/heightfield";
+import { ground as groundHeight } from "./ground";
 import { seaPath } from "../sim/sea";
 import { Building, Cell, SimState } from "../sim/state";
 import { phaseProgress } from "../sim/tide";
@@ -206,7 +206,7 @@ export class Boats {
           }
         } else {
           const m = moorings[k % moorings.length];
-          const bed = terrainHeight(m.x, m.z);
+          const bed = groundHeight(m.x, m.z);
           const afloat = level - bed > DRAFT;
           const y = afloat ? level + waveHeight(m.x, m.z, viewTime) - DRAFT * 0.3 : bed + 0.05;
           const roll = afloat ? 0.03 * Math.sin(viewTime * 1.1 + k * 2) : HEEL * (k % 2 === 0 ? 1 : -1);

@@ -13,7 +13,7 @@
 // on a plain click. Edge scrolling is off, as the brief asks.
 import { ArcRotateCamera, Matrix, Scene, Vector3 } from "@babylonjs/core";
 import { HALF } from "../sim/grid";
-import { terrainHeight } from "../sim/heightfield";
+import { ground as groundHeight } from "../view/ground";
 
 const GROUND_Y = 0.6;              // the plane drags and zooms are measured on (the flats' high-water line)
 const MIN_DIST = 6, MAX_DIST = 110;
@@ -183,7 +183,7 @@ export class CameraControl {
     for (let k = 0; k < 4; k++) {
       const px = c.target.x + c.radius * Math.cos(c.alpha) * Math.sin(beta);
       const pz = c.target.z + c.radius * Math.sin(c.alpha) * Math.sin(beta);
-      const floor = Math.max(terrainHeight(px, pz), this.waterLevel) + CLEARANCE;
+      const floor = Math.max(groundHeight(px, pz), this.waterLevel) + CLEARANCE;
       const py = c.target.y + c.radius * Math.cos(beta);
       if (py >= floor) break;
       beta = clamp(Math.acos(clamp((floor - c.target.y) / c.radius, -1, 1)), MIN_BETA, MAX_BETA);

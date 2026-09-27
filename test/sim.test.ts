@@ -1,7 +1,7 @@
 // Sim-only unit checks. Nothing here may pull in Babylon; the hygiene test enforces that for src/sim/**.
 import { describe, expect, it } from "vitest";
 import { CLEARANCE, DRY_TERRAIN, HIGH_WATER_MARK, LOW_WATER_MARK, SPRING_FLOOD_TERRAIN, SPRING_HI, SPRING_LO, STILT_MIN, TIDE_HI, TIDE_LO, TIDE_PERIOD, WALKWAY_SNAP } from "../src/config";
-import { BEACH_MAX_HEIGHT, BOAT_COST, BOAT_MIN_RANGE, BOAT_RANGE, BUILDINGS, CAP_BASE, DRAWDOWN_LEVEL, DRAWDOWN_SECONDS, FIRE_BURN_SECONDS, FIRE_IGNITE_THRESHOLD, FISH_CAP, HAPPY, INJURY_NATURAL_CYCLES, LEVEL_UP_HAPPINESS, MAX_LEVEL, OYSTER_POLLUTION_KILL, CLEAR_TIMBER, FERRY_COST, LANDFILL_COST, LANDFILL_HEIGHT, LIFT_MAX, LIFT_STEP, LOAN_AMOUNT, LOAN_INTEREST, LOAN_REPAY_CYCLES, PLANK_ORDER_SIZE, REMOVE_REFUND, STARTING_MONEY, STILT_COST_PER_UNIT, WAVE_HEIGHT, TRADE_EVERY, TRADE_EVERY_LIGHTHOUSE, TREATMENT_RADIUS, TREE_REGROW_CYCLES, WAREHOUSE_CAP } from "../src/sim/balance";
+import { BEACH_MAX_HEIGHT, BOAT_COST, BOAT_MIN_RANGE, BOAT_RANGE, BUILDINGS, CAP_BASE, DRAWDOWN_LEVEL, DRAWDOWN_SECONDS, FIRE_BURN_SECONDS, FIRE_IGNITE_THRESHOLD, FISH_CAP, HAPPY, INJURY_NATURAL_CYCLES, LEVEL_UP_HAPPINESS, MAX_LEVEL, OYSTER_POLLUTION_KILL, CLEAR_TIMBER, FERRY_COST, ISLAND_MIN_TREED, LANDFILL_COST, LANDFILL_HEIGHT, LIFT_MAX, LIFT_STEP, LOAN_AMOUNT, LOAN_INTEREST, LOAN_REPAY_CYCLES, PLANK_ORDER_SIZE, REMOVE_REFUND, STARTING_MONEY, STILT_COST_PER_UNIT, WAVE_HEIGHT, TRADE_EVERY, TRADE_EVERY_LIGHTHOUSE, TREATMENT_RADIUS, TREE_REGROW_CYCLES, WAREHOUSE_CAP } from "../src/sim/balance";
 import { ACHIEVEMENTS, checkAchievements } from "../src/sim/achievements";
 import { deserialize, serialize } from "../src/sim/save";
 import { DISTRICT_MIN, districtName, districtOf, districts } from "../src/sim/districts";
@@ -10,6 +10,8 @@ import { dayFraction, duskAt, isDaytime, moonVector, NOON_SUN, sunVector } from 
 import { canBorrow, loanInstalment, takeLoan } from "../src/sim/loan";
 import { DAY_CYCLES } from "../src/config";
 import { ISLE } from "../src/sim/isle";
+import { candidate, candidateSeed, island, islandFailures, rerollRate } from "../src/sim/island";
+import { islandHeight, terrainHeight } from "../src/sim/heightfield";
 import { startCell, suggestPier } from "../src/sim/start";
 import { TREE_SITES } from "../src/sim/trees";
 import { rollTsunami, sheltered, shielded, startStorm, startTsunami, tsunamiDue, warnTsunami, waveDirection } from "../src/sim/events";
@@ -899,6 +901,78 @@ describe("second island (backlog 6)", () => {
     tick(state, grid);
     assignWorkers(state, grid);
     expect(crossCommuters(state, grid)).toBe(0);
+  });
+});
+
+describe("seeded islands (Task 4)", () => {
+  /** FNV over every cell height to 1e-4: the original island, pinned. */
+  function fingerprint(grid: Grid): string {
+    let fp = 2166136261;
+    for (let k = 0; k < grid.heights.length; k++) {
+      const v = Math.round(grid.heights[k] * 10000);
+      fp ^= v & 0xffff; fp = Math.imul(fp, 16777619);
+      fp ^= (v >>> 16) & 0xffff; fp = Math.imul(fp, 16777619);
+    }
+    return (fp >>> 0).toString(16);
+  }
+  it("seed 0 is the original island, exactly, and passes validation on its own", () => {
+    const zero = island(0);
+    expect(zero.noiseSeed).toBe(0);
+    expect(zero.rerolls).toBe(0);
+    expect(islandFailures(zero.stats)).toEqual([]);
+    expect(zero.trees).toBe(TREE_SITES);
+    expect(zero.trees.length).toBe(70);
+    for (const [x, z] of [[3.2, -4.1], [-17.5, 8.25], [22.5, 22.5], [0.5, 0.5]]) expect(islandHeight(0)(x, z)).toBe(terrainHeight(x, z));
+    const { grid } = newGame(1);
+    expect(fingerprint(grid)).toBe("19bacd86");
+    expect(fingerprint(newGame(1, 0).grid)).toBe("19bacd86");
+    expect(zero.stats).toEqual({ flats: 555, region: 555, piers: 142, harbors: 1820, treed: 70 });
+  });
+  it("every seed gives a validated island, the same one every time, rerolled when its first candidate fails", () => {
+    for (let s = 1; s <= 40; s++) {
+      const isl = island(s);
+      expect(islandFailures(isl.stats), `seed ${s}`).toEqual([]);
+      expect(island(s)).toBe(isl);
+      expect(candidateSeed(s, 0)).toBe(s);
+      expect(isl.noiseSeed).toBe(candidateSeed(s, isl.rerolls));
+      expect(isl.trees.length).toBeGreaterThanOrEqual(ISLAND_MIN_TREED);
+    }
+    // Seed 1's own noise fails the rules; the island is a later candidate. Seeds 2 and 3 pass first time.
+    expect(island(1).rerolls).toBeGreaterThan(0);
+    expect(island(1).noiseSeed).not.toBe(1);
+    expect(islandFailures(candidate(1, 0).stats).length).toBeGreaterThan(0);
+    expect(islandFailures(candidate(1, island(1).rerolls).stats)).toEqual([]);
+    expect(island(2).rerolls).toBe(0);
+    expect(island(3).rerolls).toBe(0);
+    const rate = rerollRate(1, 41);
+    expect(rate.fallbacks).toBe(0);
+    expect(rate.rerolled).toBeLessThanOrEqual(32);
+    expect(rate.rerolls).toBeGreaterThan(0);
+  });
+  it("a town on another island carries its seed, starts on its flats, saves it, and reads old saves as seed 0", () => {
+    const { state, grid } = newGame(1, 7);
+    expect(state.world.seed).toBe(7);
+    expect(grid.island.seed).toBe(7);
+    expect(state.trees.length).toBe(island(7).trees.length);
+    expect(state.log.some(m => /^Island 7: \d+ flat cells, \d+ pier sites/.test(m))).toBe(true);
+    const hut = buildingList(state)[0];
+    expect(hut.kind).toBe("hut");
+    expect(grid.classAt(hut.cells[0])).toBe("flat");
+    expect(grid.onIsle(hut.cells)).toBe(false);
+    expect(grid.island.stats.flats).toBeGreaterThanOrEqual(400);
+    const zero = newGame(1).grid;
+    let differ = 0;
+    for (let i = -32; i < 32; i++) for (let j = -32; j < 32; j++) if (zero.classAt({ i, j }) !== grid.classAt({ i, j })) differ++;
+    expect(differ).toBeGreaterThan(200);
+    expect(stateHash(newGame(1, 7).state)).toBe(stateHash(state));
+    const copy = deserialize(serialize(state));
+    expect(copy.world.seed).toBe(7);
+    const round = new Grid(copy);
+    expect(round.heightAt(hut.cells[0])).toBe(grid.heightAt(hut.cells[0]));
+    expect(round.classAt(hut.cells[0])).toBe("flat");
+    const old = JSON.parse(serialize(state)) as Partial<SimState>;
+    delete old.world;
+    expect(deserialize(JSON.stringify(old)).world.seed).toBe(0);
   });
 });
 

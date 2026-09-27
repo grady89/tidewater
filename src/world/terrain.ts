@@ -2,12 +2,10 @@
 // analytic heightfield so the view and the ledger always agree.
 import { Mesh, MeshBuilder, RawTexture, Scene, ShaderMaterial, Texture, Vector3, VertexBuffer } from "@babylonjs/core";
 import { SIZE } from "../config";
-import { terrainHeight } from "../sim/heightfield";
+import { HeightFn, terrainHeight } from "../sim/heightfield";
 import { Cell } from "../sim/state";
 import { terrainFS, terrainVS } from "../../shaders/terrain";
 import { Lighting, MORNING } from "./lighting";
-
-export { terrainHeight };
 
 // ---------- heightmap texture ----------
 // 16-bit height split across r,g. Encodes (H + 5) / 12; the water shader decodes with the same constants.
@@ -20,16 +18,16 @@ function encodeHeight(hdata: Uint8Array, row: number, col: number, h: number): v
   hdata[i] = q >> 8; hdata[i + 1] = q & 255; hdata[i + 2] = 0; hdata[i + 3] = 255;
 }
 
-function bakeHeightData(hdata: Uint8Array): void {
+function bakeHeightData(hdata: Uint8Array, sample: HeightFn): void {
   const TW = HEIGHT_TEX_SIZE;
   for (let row = 0; row < TW; row++) for (let col = 0; col < TW; col++) {
     const x = (col / (TW - 1) - 0.5) * SIZE, z = (row / (TW - 1) - 0.5) * SIZE;
-    encodeHeight(hdata, row, col, terrainHeight(x, z));
+    encodeHeight(hdata, row, col, sample(x, z));
   }
 }
 
-function bakeHeightTexture(scene: Scene, hdata: Uint8Array): RawTexture {
-  bakeHeightData(hdata);
+function bakeHeightTexture(scene: Scene, hdata: Uint8Array, sample: HeightFn): RawTexture {
+  bakeHeightData(hdata, sample);
   const tex = RawTexture.CreateRGBATexture(hdata, HEIGHT_TEX_SIZE, HEIGHT_TEX_SIZE, scene, false, false, Texture.BILINEAR_SAMPLINGMODE);
   tex.wrapU = tex.wrapV = Texture.CLAMP_ADDRESSMODE;
   return tex;
@@ -46,15 +44,16 @@ export interface Terrain {
   heightAt(x: number, z: number): number;
   /** Raise the ground under these cells to `height` (landfill): mesh and heightmap. */
   raise(cells: Cell[], height: number): void;
-  /** Back to the heightfield (a new town). */
-  reset(): void;
+  /** Back to the heightfield (a new town), optionally another island's. */
+  reset(height?: HeightFn): void;
 }
 
 const SUBDIVISIONS = 170;
 
-export function createTerrain(scene: Scene): Terrain {
+export function createTerrain(scene: Scene, height: HeightFn = terrainHeight): Terrain {
+  let sample = height;
   const hdata = new Uint8Array(HEIGHT_TEX_SIZE * HEIGHT_TEX_SIZE * 4);
-  const heightTex = bakeHeightTexture(scene, hdata);
+  const heightTex = bakeHeightTexture(scene, hdata, sample);
 
   // The un-flattened grid of heights is kept for sampling and for landfill; the drawn mesh is flat-shaded
   // (its vertices are unshared) and rebuilt from the grid whenever the ground changes.
@@ -62,7 +61,7 @@ export function createTerrain(scene: Scene): Terrain {
   const gridH = new Float32Array((N + 1) * (N + 1));
   const vx = (col: number) => (col * SIZE) / N - SIZE / 2;
   const vz = (row: number) => ((N - row) * SIZE) / N - SIZE / 2;
-  for (let row = 0; row <= N; row++) for (let col = 0; col <= N; col++) gridH[row * (N + 1) + col] = terrainHeight(vx(col), vz(row));
+  for (let row = 0; row <= N; row++) for (let col = 0; col <= N; col++) gridH[row * (N + 1) + col] = sample(vx(col), vz(row));
 
   const mesh = MeshBuilder.CreateGround("ground", { width: SIZE, height: SIZE, subdivisions: N }, scene);
   const applyGrid = () => {
@@ -122,15 +121,16 @@ export function createTerrain(scene: Scene): Terrain {
         const TW = HEIGHT_TEX_SIZE;
         for (let row = 0; row < TW; row++) for (let col = 0; col < TW; col++) {
           const x = (col / (TW - 1) - 0.5) * SIZE, z = (row / (TW - 1) - 0.5) * SIZE;
-          if (x >= c.i && x <= c.i + 1 && z >= c.j && z <= c.j + 1) encodeHeight(hdata, row, col, Math.max(terrainHeight(x, z), height));
+          if (x >= c.i && x <= c.i + 1 && z >= c.j && z <= c.j + 1) encodeHeight(hdata, row, col, Math.max(sample(x, z), height));
         }
       }
       applyGrid();
       heightTex.update(hdata);
     },
-    reset() {
-      for (let row = 0; row <= N; row++) for (let col = 0; col <= N; col++) gridH[row * (N + 1) + col] = terrainHeight(vx(col), vz(row));
-      bakeHeightData(hdata);
+    reset(height) {
+      if (height) sample = height;
+      for (let row = 0; row <= N; row++) for (let col = 0; col <= N; col++) gridH[row * (N + 1) + col] = sample(vx(col), vz(row));
+      bakeHeightData(hdata, sample);
       applyGrid();
       heightTex.update(hdata);
     },

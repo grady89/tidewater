@@ -30,19 +30,32 @@ export function writeSlot(n: number, json: string, meta: SlotInfo): boolean {
 export interface SaveMenuHooks {
   serialize(): string;
   cycle(): number;
+  /** The seed of the island the town stands on (0 = the original island). */
+  islandSeed(): number;
   load(json: string): void;
-  newTown(): void;
+  newTown(seed: number): void;
+}
+
+/** The seed a typed value means: a whole number from 0 up; anything else is the original island. */
+export function parseSeed(text: string): number {
+  const n = Math.floor(Number(text));
+  return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
 export class SaveMenu {
   private readonly panel: HTMLElement;
+  private readonly seedInput: HTMLInputElement;
 
   constructor(private readonly root: HTMLElement, private readonly hooks: SaveMenuHooks) {
-    root.innerHTML = `<div class="menu-head"><h2>Town</h2><button type="button" class="close" aria-label="Close">×</button></div><div class="slots"></div><div class="menu-actions"><button type="button" class="new">New town</button></div>`;
+    root.innerHTML = `<div class="menu-head"><h2>Town</h2><button type="button" class="close" aria-label="Close">×</button></div><div class="slots"></div><div class="menu-actions"><label class="seed-field">Island seed <input class="seed" type="number" min="0" step="1" inputmode="numeric" aria-label="Island seed"></label><button type="button" class="random">Random</button><button type="button" class="new">New town</button></div>`;
     this.panel = root.querySelector<HTMLElement>(".slots")!;
+    this.seedInput = root.querySelector<HTMLInputElement>(".seed")!;
     root.querySelector(".close")!.addEventListener("click", () => this.toggle(false));
+    root.querySelector(".random")!.addEventListener("click", () => { this.seedInput.value = String(1 + Math.floor(Math.random() * 999999)); });
     root.querySelector(".new")!.addEventListener("click", () => {
-      if (window.confirm("Start a new town? The current one is kept only if you saved it to a slot.")) { hooks.newTown(); this.toggle(false); }
+      const seed = parseSeed(this.seedInput.value);
+      const where = seed === 0 ? "the original island" : `island ${seed}`;
+      if (window.confirm(`Start a new town on ${where}? The current one is kept only if you saved it to a slot.`)) { hooks.newTown(seed); this.toggle(false); }
     });
     root.hidden = true;
     this.render();
@@ -52,7 +65,7 @@ export class SaveMenu {
 
   toggle(open = this.root.hidden): void {
     this.root.hidden = !open;
-    if (open) this.render();
+    if (open) { this.seedInput.value = String(this.hooks.islandSeed()); this.render(); }
   }
 
   private render(): void {

@@ -2,41 +2,22 @@
 // per-site age in state.trees (1 = grown, 0 = just felled). Lumber camps fell grown trees nearby; felled trees
 // regrow over TREE_REGROW_CYCLES. The view scales each tree by its age.
 import { LUMBER_RADIUS, TREE_REGROW_CYCLES } from "./balance";
-import { terrainHeight } from "./heightfield";
+import { island } from "./island";
 import { Building, Cell, SimState } from "./state";
 
 export interface TreeSite { x: number; z: number; s: number; cell: Cell }
 
-const TREE_SEED = 7;
-const TREE_COUNT = 70;
+/** The original island's tree sites (seed 0), in a fixed order. Other islands: `island(seed).trees`. */
+export const TREE_SITES: readonly TreeSite[] = island(0).trees;
 
-function makeSites(): TreeSite[] {
-  let seed = TREE_SEED;
-  const rnd = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
-  const sites: TreeSite[] = [];
-  for (let tries = 0; tries < 3000 && sites.length < TREE_COUNT; tries++) {
-    const x = (rnd() - 0.5) * 56, z = (rnd() - 0.5) * 56;
-    const h = terrainHeight(x, z);
-    if (h < 1.3 || h > 5.2) continue;
-    const slope = Math.abs(terrainHeight(x + 0.6, z) - terrainHeight(x - 0.6, z)) + Math.abs(terrainHeight(x, z + 0.6) - terrainHeight(x, z - 0.6));
-    if (slope > 1.1) continue;
-    const s = 0.8 + rnd() * 0.7;
-    rnd(); // the cone's yaw in the study; keep the stream aligned for the view
-    sites.push({ x, z, s, cell: { i: Math.floor(x), j: Math.floor(z) } });
-  }
-  return sites;
-}
-
-/** The island's tree sites, in a fixed order. */
-export const TREE_SITES: readonly TreeSite[] = makeSites();
-
-export function initialTrees(): number[] {
-  return TREE_SITES.map(() => 1);
+export function initialTrees(islandSeed = 0): number[] {
+  return island(islandSeed).trees.map(() => 1);
 }
 
 /** Every tree site: the island's fixed ones, then any the player planted. Ages in state.trees line up. */
 export function treeSites(state: SimState): readonly TreeSite[] {
-  return state.extraTrees.length ? [...TREE_SITES, ...state.extraTrees] : TREE_SITES;
+  const fixed = island(state.world.seed).trees;
+  return state.extraTrees.length ? [...fixed, ...state.extraTrees] : fixed;
 }
 
 function near(site: TreeSite, cells: Cell[], radius: number): boolean {
