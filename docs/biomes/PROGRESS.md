@@ -31,7 +31,7 @@ never push `main`. Where BIOMES.md is silent, choose the simplest option and log
 - [DONE] ring shaper + lagoon + pass, tide ×0.6, dive platform + pearl house, coconut grove, reef nursery, cyclone, bleaching, turtle hatching, fauna, outriggers, round huts, straw hats, ambience, validation.
 
 ## Stage 5 — World wiring
-- [TODO] new-sector flow lists biomes by band (BAND_GATING respected); faces tint and miniatures use the biome look; sector card shows the biome.
+- [DONE] new-sector flow lists biomes by band (BAND_GATING respected); faces tint and miniatures use the biome look; sector card shows the biome.
 
 ## Stage 6 — tests and tooling
 - [TODO] scenario towns for Fjord and Atoll; smoke sections per biome; screenshots to shots/biomes/; fuzzer random biome per seed; quality.ts per biome.
@@ -46,4 +46,4 @@ never push `main`. Where BIOMES.md is silent, choose the simplest option and log
 - [TODO] behind `LANES_ENABLED=false`.
 
 ## Last thing that worked
-- Stage 4 (Atoll) complete: sim/biomes/atoll.ts (ring shaper, lagoon material, passes, bleaching field, turtle hatching, cyclone profile), four kinds + factories, round huts (verandah, second storey), outriggers, palms that bend, turtles/shoals/frigatebirds, bleach in the water; test/atoll.test.ts 6 checks; 116 tests, build+smoke green. Pushed.
+- Stage 5 complete: biomesFor lists the band first then every other coast (BAND_GATING respected), charted = registered, newSector/newTown carry the biome, card blurbs, faces/miniatures tint per look (from 2b); test/biomeShots.ts + npm run shots:biomes writes shots/biomes/. Fjord crests lowered to 5.1 with snow from 4.2; resource bar wraps.

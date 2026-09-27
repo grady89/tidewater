@@ -12,7 +12,7 @@ import { GoodId } from "./sim/goods";
 import { Grid } from "./sim/grid";
 import { crossCommuters, ferryTerminals } from "./sim/network";
 import { deserialize, serialize } from "./sim/save";
-import { Biome, defaultName, deleteSector, exportSector, FACES, importSector, listMetas, migrateLegacy, readActive, readMeta, readSector, renameSector, SectorMeta, Store, writeActive, writeSector } from "./sim/sectors";
+import { Biome, biomeAllowed, defaultName, deleteSector, exportSector, FACES, importSector, listMetas, migrateLegacy, readActive, readMeta, readSector, renameSector, SectorMeta, Store, writeActive, writeSector } from "./sim/sectors";
 import { newGame } from "./sim/start";
 import { WorldUi } from "./globe/ui";
 import { Framing, World } from "./globe/world";
@@ -163,7 +163,7 @@ if (state.landfill.length || state.world.seed !== 0 || state.world.biome !== "ti
 /** A fresh town on island `seed` (0 = the original island), replacing the active sector's town. */
 function newTown(seed = 0): void {
   tutorial.reset();
-  adopt(newGame(SEED, seed).state);
+  adopt(newGame(SEED, seed, state.world.biome).state); // the sector keeps its coast
   save();
 }
 function load(json: string): void {
@@ -222,9 +222,10 @@ function download(name: string, text: string): void {
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-/** A fresh town on a face (not entered): island `seed`, named, Tidewater. */
+/** A fresh town on a face (not entered): island `seed`, named, on the chosen coast (an uncharted one falls back to Tidewater). */
 function newSector(face: number, seed: number, name: string, biome: Biome = "tidewater"): SectorMeta {
-  const meta = writeSector(store, face, newGame(SEED, seed).state, { name: name.trim() || defaultName(store), biome });
+  const coast: Biome = biomeAllowed(face, biome) ? biome : "tidewater";
+  const meta = writeSector(store, face, newGame(SEED, seed, coast).state, { name: name.trim() || defaultName(store), biome: coast });
   refreshFace(face);
   return meta;
 }

@@ -103,3 +103,9 @@ Calls made where BIOMES.md is silent, or where the code's balance and BIOMES.md 
 23. **Coral bleaching is a ledger field** (`fields.bleach`, saved; old saves get zeros) rather than biome-state,
     because it is spatial — CLAUDE.md §3 says fields are the mechanism. It rides to the water shader in the height
     texture's alpha channel (alpha = 1 − bleach), which nothing read before.
+24. **World listing with gating off:** a face lists its band's coasts first (Tidewater first wherever it is a
+    guest), then every other biome; charted means registered in `sim/biomes`, so Delta, Cinder and Dunes stay
+    greyed "uncharted" until their files exist. `newSector` falls back to Tidewater for an uncharted id.
+25. **Visual tweak after the first shots:** the Fjord's crests stand at 5.1 (from 5.8) and the look's snow line
+    at 4.2 (BIOMES.md says 4.0; the validation still counts cells above 4.0), so the snow reads as a cap rather
+    than a slab. The resource bar wraps at half the viewport now that a coast can show eight goods.

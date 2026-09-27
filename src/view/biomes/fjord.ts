@@ -6,7 +6,7 @@ import type { BiomeLook } from "./index";
 export const FJORD_LOOK: BiomeLook = {
   id: "fjord",
   water: { shallow: "#7fb7b0", mid: "#2b6f78", deep: "#10303f" },
-  terrain: { sandDeep: "#6f6a5e", sand: "#a9a08a", grassLo: "#3f7346", grassHi: "#2f5e3a", rock: "#6b6a66", snowLine: 4.0, snow: "#eef2f5" },
+  terrain: { sandDeep: "#6f6a5e", sand: "#a9a08a", grassLo: "#3f7346", grassHi: "#2f5e3a", rock: "#6b6a66", snowLine: 4.2, snow: "#eef2f5" },
   materialTints: {},
   lagoon: { tint: "#9fe8dc", mix: 0 },
   sky: { fogTint: "#b8c6cf", fogMix: 0.35, aurora: 1 },

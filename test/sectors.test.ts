@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { BAND_GATING } from "../src/config";
 import { compress, decompress, isPacked } from "../src/sim/compress";
 import { serialize, stateHash } from "../src/sim/save";
-import { agoLabel, bandOf, biomeAllowed, biomesFor, defaultName, deleteSector, exportSector, FACES, importSector, listMetas, migrateLegacy, readActive, readMeta, readSector, renameSector, Store, writeActive, writeSector } from "../src/sim/sectors";
+import { agoLabel, bandOf, biomeAllowed, biomeBlurb, BIOMES_BY_BAND, biomesFor, defaultName, isCharted, deleteSector, exportSector, FACES, importSector, listMetas, migrateLegacy, readActive, readMeta, readSector, renameSector, Store, writeActive, writeSector } from "../src/sim/sectors";
 import { newGame } from "../src/sim/start";
 import { advanceCycles } from "../src/sim/tick";
 import { bigTown, starterTown } from "./scenario";
@@ -26,17 +26,20 @@ function town(seed = 7) {
 }
 
 describe("the World's sectors: bands and biomes", () => {
-  it("has two polar, five temperate and five tropical faces, and only Tidewater is charted", () => {
+  it("has two polar, five temperate and five tropical faces; Tidewater, the Fjord and the Atoll are charted", () => {
     expect([0, 11].map(bandOf)).toEqual(["polar", "polar"]);
     expect([1, 2, 3, 4, 5].map(bandOf)).toEqual(Array(5).fill("temperate"));
     expect([6, 7, 8, 9, 10].map(bandOf)).toEqual(Array(5).fill("tropical"));
-    expect(biomesFor(3).map(b => b.biome)).toEqual(["tidewater", "delta", "dunes"]);
-    expect(biomesFor(8).map(b => b.biome)).toEqual(["tidewater", "atoll", "cinder", "delta"]);
-    expect(biomesFor(0).map(b => b.biome)).toEqual(["tidewater", "fjord"]);
+    // The band's own coasts first, then (gating off) every other, Tidewater first wherever it is a guest.
+    expect(biomesFor(3).map(b => b.biome)).toEqual(["tidewater", "delta", "dunes", "atoll", "cinder", "fjord"]);
+    expect(biomesFor(8).map(b => b.biome)).toEqual(["tidewater", "atoll", "cinder", "delta", "dunes", "fjord"]);
+    expect(biomesFor(0).map(b => b.biome)).toEqual(["tidewater", "fjord", "delta", "dunes", "atoll", "cinder"]);
     for (let f = 0; f < FACES; f++) {
       expect(biomeAllowed(f, "tidewater")).toBe(!BAND_GATING || bandOf(f) === "temperate");
-      for (const b of biomesFor(f)) if (b.biome !== "tidewater") expect(b.charted).toBe(false);
+      for (const b of biomesFor(f)) expect(b.charted).toBe(isCharted(b.biome) && (!BAND_GATING || BIOMES_BY_BAND[bandOf(f)].includes(b.biome)));
     }
+    expect(isCharted("fjord")).toBe(true); expect(isCharted("atoll")).toBe(true); expect(isCharted("delta")).toBe(false);
+    expect(biomeBlurb("fjord")).toMatch(/stockfish/);
     expect(BAND_GATING).toBe(false);
   });
 });

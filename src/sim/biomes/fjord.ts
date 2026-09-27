@@ -18,7 +18,7 @@ import type { Grid } from "../grid";
 /** Where the channel runs (along z, the mouth at +z), where its head is, and how the ridges stand either side. */
 const HEAD_Z = -12;
 const CHANNEL_HALF = 3.2, BANK_TOP = 6.5, CREST_X = 12.5, OUTER_SHORE = 19.5;
-const CHANNEL_DEPTH = -3.6, CREST_HEIGHT = 5.8;
+const CHANNEL_DEPTH = -3.6, CREST_HEIGHT = 5.1;
 const TREE_COUNT = 150;
 
 /** The Fjord's heightfield for one noise seed: a cross-section in |x| swept along z, the channel filling at the head. */

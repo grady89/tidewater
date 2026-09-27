@@ -3,8 +3,9 @@
 // live under "tidewater.sector.N" (the state, LZW-packed) and "tidewater.sector.N.meta" (a small metadata
 // object read at every launch). The autosave and the three old save slots migrate here once.
 import { BAND_GATING } from "../config";
-import { Band, BIOME_LABEL, BiomeId } from "./biomes";
+import { Band, BIOME_IDS, BIOME_LABEL, BiomeId, biomeOf, chartedBiomes } from "./biomes";
 import { compress, decompress, isPacked } from "./compress";
+import { GOODS } from "./goods";
 import { deserialize, serialize } from "./save";
 import { population, SimState } from "./state";
 
@@ -18,15 +19,28 @@ export function bandOf(face: number): Band {
 export type Biome = BiomeId;
 export { BIOME_LABEL };
 export const BIOMES_BY_BAND: Record<Band, Biome[]> = { temperate: ["tidewater", "delta", "dunes"], tropical: ["atoll", "cinder", "delta"], polar: ["fjord"] };
-/** Only Tidewater exists tonight; everything else is uncharted. */
-export const CHARTED: ReadonlySet<Biome> = new Set<Biome>(["tidewater"]);
+/** A biome is charted once its file is registered (sim/biomes): Tidewater, the Fjord and the Atoll so far. */
+export function isCharted(biome: Biome): boolean {
+  return chartedBiomes().includes(biome);
+}
 
-/** The biomes a face offers, in the band's order, with Tidewater first when it may go there. */
+/** One line on what a coast makes, for the new-sector card. */
+export function biomeBlurb(biome: Biome): string {
+  const b = biomeOf(biome);
+  const foods = b.foods.map(g => GOODS[g].name).join(" and ");
+  const tide = b.tide === 1 ? "the usual tide" : `tide ×${b.tide}`;
+  return `${foods}; ${GOODS[b.luxury].name}; ${tide}`;
+}
+
+/**
+ * The biomes a face offers: its band's first (BIOMES.md §1), then — with BAND_GATING off — every other biome, so any
+ * coast can be founded anywhere; Tidewater is listed first on any face it may take. Charted = registered.
+ */
 export function biomesFor(face: number): { biome: Biome; charted: boolean }[] {
   const band = bandOf(face);
-  const list = BIOMES_BY_BAND[band].slice();
-  if (!BAND_GATING && !list.includes("tidewater")) list.unshift("tidewater");
-  return list.map(biome => ({ biome, charted: CHARTED.has(biome) && (biome !== "tidewater" || !BAND_GATING || band === "temperate") }));
+  const own = BIOMES_BY_BAND[band];
+  const list: Biome[] = BAND_GATING ? own.slice() : [...(own.includes("tidewater") ? [] : ["tidewater" as Biome]), ...own, ...BIOME_IDS.filter(b => b !== "tidewater" && !own.includes(b))];
+  return list.map(biome => ({ biome, charted: isCharted(biome) && (!BAND_GATING || own.includes(biome)) }));
 }
 export function biomeAllowed(face: number, biome: Biome): boolean {
   return biomesFor(face).some(b => b.biome === biome && b.charted);

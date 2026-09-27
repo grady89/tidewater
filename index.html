@@ -38,7 +38,7 @@
       #hud .hint { margin: 0; font-size: 11px; color: var(--ink-dim); line-height: 1.45; min-height: 16px; }
       #hud .hint.blocked { color: var(--bad); }
 
-      #resources { position: fixed; left: 16px; top: 16px; display: flex; gap: 18px; padding: 8px 14px; }
+      #resources { position: fixed; left: 16px; top: 16px; display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 8px 14px; max-width: calc(50vw - 250px); }
       #resources .res { display: grid; gap: 1px; }
       #resources .res-group { display: flex; gap: 18px; padding-left: 14px; border-left: 1px solid var(--panel-line); }
       #resources .res-group[data-role="luxury"] label { color: var(--accent); }
@@ -213,6 +213,7 @@
       .biome.active { color: var(--accent); border-color: rgba(255, 209, 138, 0.5); background: rgba(255, 209, 138, 0.08); }
       .biome.uncharted { opacity: 0.45; cursor: default; display: grid; gap: 1px; text-align: left; }
       .biome.uncharted span { font-size: 10px; color: var(--ink-dim); }
+      .biome-blurb { margin-top: 6px; font-size: 11px; color: var(--ink-dim); text-transform: none; letter-spacing: 0; }
       .world-bottom { position: absolute; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); display: grid; justify-items: center; gap: 8px; }
       .world-hint { font-size: 12px; color: var(--ink-dim); text-shadow: 0 1px 8px rgba(10, 30, 45, 0.45); white-space: nowrap; }
       .world-actions { padding: 6px 8px; }
