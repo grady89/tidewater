@@ -73,6 +73,8 @@ screenOf, migrated, setClock, clock, setNotice, scene).
 - The World: boot 0.4 s empty / 0.56 s with twelve towns; 15 draw calls empty, 39 with twelve one-hut towns
   (63 at most); dive 1.4 s, return 1.2 s; twenty World → sea → World round trips leave the JS heap where it was
   (−1.4 % after GC). Twelve 300-building towns pack to under 2.6 M UTF-16 units of localStorage (8 MB plain).
+  On the software renderer (`npm run quality`, SwiftShader) the World runs 18 / 18.5 / 23.6 fps at High /
+  Medium / Low against the island's 14 / 12 / 14 — lighter than the island, still under 30 there.
 - Starter town from 650$: pier, two boats, walkways, three huts, market, outfall — ends the build with 143$ under
   the stilt rule and nets +52$ over four cycles (136 / 133 / 160 / 195). First shipyard boat at cycle 10–11.
 

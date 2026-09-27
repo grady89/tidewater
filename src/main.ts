@@ -14,7 +14,7 @@ import { Biome, defaultName, deleteSector, exportSector, FACES, importSector, li
 import { newGame } from "./sim/start";
 import { WorldUi } from "./globe/ui";
 import { Framing, World } from "./globe/world";
-import { confirmDialog, dialogOpen, noticeDialog, promptDialog } from "./ui/dialog";
+import { closeDialog, confirmDialog, dialogOpen, noticeDialog, promptDialog } from "./ui/dialog";
 import { notify, onNotify, population, SimState } from "./sim/state";
 import { playtestFileName, PlaytestLog, readPlaytestEnabled, readPlaytestNotes, writePlaytestEnabled, writePlaytestNotes } from "./ui/playtest";
 import { advanceCycles, tick } from "./sim/tick";
@@ -244,7 +244,7 @@ const worldUi = new WorldUi(worldRoot, {
     const m = faceMeta(face);
     if (!m) return;
     const ok = await confirmDialog(`Clear ${m.name}? The town on it is gone for good.`, { ok: "Clear the sea", danger: true });
-    if (!ok) return;
+    if (!ok || mode !== "world") return; // the World's actions only land in the World
     deleteSector(store, face);
     if (activeFace === face) activeFace = readActive(store);
     refreshFace(face);
@@ -268,6 +268,8 @@ function islandFraming(): Framing {
   const p = cameraControl.pose;
   return { cx: p.x, cz: p.z, targetY: 0.6, radius: p.dist, alpha: p.yaw, beta: p.beta };
 }
+// A dialog belongs to the scene it was opened in: a switch cancels it, so a confirm can never land on the other
+// scene (a "Clear the sea?" answered from its own island would delete the ground under the player).
 function showWorld(): void {
   mode = "world";
   document.body.dataset.mode = "world";
@@ -277,6 +279,7 @@ function showWorld(): void {
   menu.toggle(false);
   settings.toggle(false);
   info.select(null);
+  closeDialog();
 }
 function showIsland(): void {
   mode = "island";
@@ -284,11 +287,12 @@ function showIsland(): void {
   worldRoot.hidden = true;
   cameraControl.enabled = true;
   placement.enabled = true;
+  closeDialog();
 }
 let transition: Promise<void> | null = null;
 /** The dive: adopt the sector's town in the resident island, fly the World camera into its face, cut, settle. */
 async function enterSector(face: number, opts: { instant?: boolean } = {}): Promise<boolean> {
-  if (transition || mode !== "world") return false;
+  if (transition || mode !== "world" || dialogOpen()) return false;
   const rec = readSector(store, face);
   if (!rec) return false;
   const run = async () => {
@@ -312,15 +316,16 @@ async function enterSector(face: number, opts: { instant?: boolean } = {}): Prom
 }
 /** The return: save the town into its sector, refresh its miniature, cut to the World at the same framing, fly out. */
 async function returnToWorld(opts: { instant?: boolean } = {}): Promise<boolean> {
-  if (transition || mode !== "island" || activeFace === null) return false;
-  const face = activeFace;
+  if (transition || mode !== "island") return false;
+  // A town with no sea to save into (its sea was cleared under it) still gets back to the World: a cut.
+  const face = activeFace ?? world.frontFace;
+  const homeless = activeFace === null;
   const run = async () => {
-    save();
-    refreshFace(face);
+    if (!homeless) { save(); refreshFace(face); }
     const framing = islandFraming();
     showWorld();
     worldUi.hideCard();
-    await world.flyBack(face, framing, opts.instant || reducedMotion() ? 0 : 1.2);
+    await world.flyBack(face, framing, homeless || opts.instant || reducedMotion() ? 0 : 1.2);
     worldUi.showCard(face, faceMeta(face));
   };
   transition = run();

@@ -179,6 +179,7 @@
       #world { position: fixed; inset: 0; pointer-events: none; }
       #world .glass, #world button, #world input { pointer-events: auto; }
       #world.fading { opacity: 0; transition: opacity 250ms ease-out; }
+      #world.fading * { pointer-events: none; } /* invisible during a flight, so not clickable either */
       #world { transition: opacity 250ms ease-out; }
       .world-title { position: absolute; left: 24px; top: 20px; }
       .world-title h1 { margin: 0; font: 400 44px/1 "Instrument Serif", Georgia, serif; letter-spacing: 0.01em; color: var(--ink); text-shadow: 0 1px 12px rgba(10, 30, 45, 0.35); }

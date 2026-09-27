@@ -35,16 +35,38 @@ and `npm run check:dist` on branch `globe`; results are at the end.
 - `npm run smoke`: green — every island check unchanged, then the World's checks; shots in shots/globe/
   (world-first-launch, island-after-dive, world-wide, world-narrow, world-twelve, world-night).
 - `npm run check:dist`: green (31 meshes at load, no 404s, no errors).
-- `npm run monkey -- --minutes 5` from the World: see below.
-- `npm run quality` (SwiftShader, island and World): see below.
+- `npm run monkey -- --minutes 5` from the World: green on the third run, after a real fix (below).
+- `npm run quality` (SwiftShader, island and World): numbers below.
 
 ### Monkey, 5 minutes from the World
 
-(filled after the run)
+The first run (14,913 actions, mean 163 fps, worst slow run 0.38 s, no console or page errors, no unhandled
+rejection, no stuck menu or dialog) failed its two event-survives-reload checks. An instrumented second run
+showed the island had no active sea at both reloads: the World's fading DOM stayed clickable during the dive,
+so a random click had opened "Clear the sea?" mid-flight, the island came up under it, and a random Enter
+confirmed it — deleting the sea the player stood on (review.md #13). Fixed: a dive is refused while a dialog
+is open, the fading DOM is inert, a scene switch cancels open dialogs, the World's actions re-check the mode,
+and a sea-less town can still return. Third run, clean: 14,863 actions in 5 minutes (3,302 left clicks, 1,200
+right, 294 middle, 1,594 left drags, 1,117 right, 875 middle, 1,544 wheel steps, 2,364 keys, 2,119 button
+presses, 318 seed-field entries, 136 resizes, a reload in a tsunami and one in a storm — both events survived,
+saved into sea 6), mean 161 fps, worst slow run 0.47 s, no console or page errors, no unhandled rejections,
+ended on the World with the menu and every dialog closed.
 
 ### Quality presets, World
 
-(filled after the run)
+`npm run quality` (SwiftShader, `--disable-gpu`: software rendering, the brief's worst-case proxy; the
+300-building town on one face, eleven uncharted seas, the camera on the orbit):
+
+| Renderer | High | Medium | Low |
+|---|---|---|---|
+| SwiftShader — island (as in QA.md) | 14.1 fps | 11.6 fps | 13.9 fps |
+| SwiftShader — World | 18.1 fps | 18.5 fps | 23.6 fps (17 draw calls) |
+| RTX 4060 Laptop — World (smoke, twelve towns) | 165 fps (the cap) | — | — |
+
+Read: the World is lighter than the island on the software renderer at every preset, and Low (no bloom,
+eight clouds) is a third faster than High there. The 30 fps floor motion.md hoped for on the software proxy
+is not met, as it is not met by the island either; SwiftShader is far slower than any real integrated GPU,
+and that machine is still the one to measure (HANDOFF.md, "things to do next").
 
 ## On waking
 

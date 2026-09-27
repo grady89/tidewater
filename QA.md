@@ -61,7 +61,8 @@ All on the RTX 4060 laptop (32 logical cores), Chrome headless with the GPU on u
   machine the presets are for — an integrated GPU — is still unmeasured; SwiftShader is far slower than any
   real iGPU, so these numbers bound the floor, not the typical laptop.
 - **Test suite** (`npm test`, 8 files in parallel): 14.3 s on a quiet machine (31 s with the fuzz holding 25
-  cores); before Task 6 the one-file suite took 60 s+.
+  cores); before Task 6 the one-file suite took 60 s+. With the World's two files (Session C): 10 files, 86
+  checks, 17 s.
 - **UI monkey, 15 minutes** (`npm run monkey`, seed 1, while the 50-seed fuzz held 25 cores): 33,446 actions
   (7,454 left clicks, 2,727 right clicks, 677 middle clicks, 3,547 left drags, 2,660 right drags, 2,005 middle
   drags, 3,357 wheel steps, 5,334 keys, 4,704 button presses, 665 seed-field entries, 316 resizes, a reload in a
@@ -69,4 +70,30 @@ All on the RTX 4060 laptop (32 logical cores), Chrome headless with the GPU on u
   their reload; the Town menu closed at the end. Mean 159 fps; the longest run under 30 fps was 1.04 s (a chunk
   rebuild after a burst of placements), inside the 2 s limit. A one-minute pass earlier: 2,350 actions, 149 fps,
   worst 1.19 s, clean.
+
+## Session C — the World (branch `globe`, 2026-09-27)
+
+The World's own numbers, all from `npm run smoke` on the 4060 unless said otherwise (docs/globe/review.md and
+audit.md have the full set):
+
+- Boot into the World: 0.38–0.39 s empty, 0.56–0.58 s with twelve towns, 0.33 s with the 300-building town
+  (its reload lands in the World in 0.52 s wall and cuts into the island in 0.62 s more).
+- Draw calls: 15 with no towns (12 seas, edges, clouds, sky), 39 with twelve one-hut towns, 63 at most.
+- 165 fps (the display cap) in the World with twelve towns; the island's checks unchanged at 165.
+- Heap: twenty World → sea → World round trips across three seas, after GC: −1.3 to −1.7 % (73.5 → 72.5 MB).
+- Storage: twelve 300-building towns are 4.04 M JSON characters (8 MB of UTF-16, over the 5 MB quota some
+  browsers give an origin); LZW-packed they are under 2.6 M code units (`test/sectors.test.ts` measures it).
+  Twelve fresh towns: 25 keys, 20 k units.
+- Dive 1.41 s, return 1.20 s (the designed 1.4 / 1.2 s flights); with reduced motion 78 / 22 ms.
+- **UI monkey, 5 minutes from the World** (`npm run monkey -- --minutes 5`, seed 1): the first run's two
+  failures ("the tsunami / the storm did not survive the reload") were one bug — the World's DOM stayed
+  clickable while it faded for the dive, so "Clear the sea?" could open mid-flight and be confirmed from the
+  island of that very sea, which then had no sector to save into and no way back (docs/globe/review.md #13;
+  fixed, with a smoke check). Third run: 14,863 actions, mean 161 fps, worst slow run 0.47 s, both events
+  survived their reload, zero errors or rejections, nothing left open.
+- **Quality presets, World** (`npm run quality`, SwiftShader `--disable-gpu`; the 300-building town on one
+  face, eleven uncharted seas, 17 draw calls): High 18.1 fps, Medium 18.5 fps, Low 23.6 fps — lighter than
+  the island at every preset on the software renderer (14.1 / 11.6 / 13.9 in the same run), and Low is a third
+  faster than High there. On the 4060 the World is at the 165 fps cap with twelve towns. Integrated graphics
+  remain unmeasured for both scenes.
 

@@ -76,3 +76,8 @@ export function noticeDialog(message: string, ok = "OK"): Promise<void> {
 export function dialogOpen(): boolean {
   return !!host && !host.hidden;
 }
+
+/** Close any open dialog as cancelled — the scene it belonged to is going away. */
+export function closeDialog(): void {
+  current?.();
+}

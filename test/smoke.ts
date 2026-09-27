@@ -1096,6 +1096,36 @@ try {
   assert(/isn't a Tiny Tides sea/.test(badText) && imported.built === 1, "a foreign file gets a notice and changes nothing");
   assert(imported.name === "Smoke Renamed" && imported.buildings === 2 && imported.seed === 0 && imported.minis.length === 1 && imported.minis[0].roofs === 2 && /imported/.test(imported.notice ?? "") && imported.card === 1, "Import puts the exported sea back on the shown face with its roofs");
 
+  // Dialogs and flights: a dive is refused while a dialog is open; the fading World DOM is inert during the
+  // flight; a confirm left open on the island is cancelled by the scene switch rather than applied later (the
+  // monkey once confirmed "Clear the sea?" from the island of that very sea).
+  await page.click("#world .world-card .delete");
+  const refused = await page.evaluate(async () => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { dialog: !document.getElementById("dialog")!.hidden, entered: await api.enterSector(1), mode: api.mode }; });
+  await page.click("#dialog .dialog-cancel");
+  assert(refused.dialog && !refused.entered && refused.mode === "world", "a dive is refused while a dialog is open");
+  const inert = await page.evaluate(async () => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    void api.enterSector(1);
+    await new Promise(r => setTimeout(r, 400));
+    const b = document.querySelector("#world .world-card .delete")!.getBoundingClientRect();
+    const under = document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2);
+    return { flying: api.world.pose().phase, fading: document.getElementById("world")!.classList.contains("fading"), under: under?.tagName };
+  });
+  await page.waitForFunction(() => (window as unknown as { __tidewater: Api }).__tidewater.mode === "island", null, { timeout: 10_000 });
+  assert(inert.flying === "flying" && inert.fading && inert.under === "CANVAS", "the World's buttons are inert while the dive flies: " + JSON.stringify(inert));
+  await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.menu(true));
+  await page.click("#menu .new");
+  const straddle = await page.evaluate(async () => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    const open = !document.getElementById("dialog")!.hidden;
+    const n = Object.keys(api.sim.buildings).length;
+    await api.returnToWorld({ instant: true });
+    await new Promise(r => setTimeout(r, 100));
+    return { open, closed: document.getElementById("dialog")!.hidden, n, after: Object.keys(api.sim.buildings).length, stored: api.world.faces()[1]?.buildings, mode: api.mode, card: api.world.shownCard() };
+  });
+  console.log("World dialogs:", JSON.stringify({ refused, inert, straddle }));
+  assert(straddle.open && straddle.closed && straddle.after === straddle.n && straddle.stored === straddle.n && straddle.mode === "world" && straddle.card === 1, "a confirm left open on the island is cancelled by the return, not applied");
+
   // Twelve seas: fill every face, dive into each and come back, reload, and all twelve are still there.
   const twelve = await page.evaluate(async () => {
     const api = (window as unknown as { __tidewater: Api }).__tidewater;

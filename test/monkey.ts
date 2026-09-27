@@ -132,11 +132,12 @@ try {
     const before = await frameStats(page);
     worstSlowRun = Math.max(worstSlowRun, before.maxSlowRunMs); fpsSum += before.fps; fpsSamples++;
     note(`force ${event}, save, reload`);
-    await page.evaluate(async (ev: string) => {
+    const forced = await page.evaluate(async (ev: string) => {
       const api = (window as unknown as { __tidewater: Api }).__tidewater;
       // The monkey may be up in the World: get onto an island (creating a sea if it never began one) so the
       // save lands in a sector; a flight already under way finishes first.
       const mode = () => api.mode; // read through a call: TS would otherwise narrow the getter inside the branch
+      const before = { mode: mode(), active: api.world.active(), dialog: !(document.getElementById("dialog")?.hidden ?? true) };
       if (mode() === "world") {
         let f = api.world.active();
         if (f === null) { api.newSector(1, 0, "Monkey"); f = 1; }
@@ -145,15 +146,21 @@ try {
       api.setSpeed(1);
       if (ev === "storm") api.forceStorm(); else api.forceTsunami();
       api.tickSeconds(ev === "tsunami" ? 8 : 2);
+      const live = ev === "storm" ? api.sim.storm.active : api.sim.tsunami.stage;
       api.save();
+      const active = api.world.active();
+      const raw = active !== null ? localStorage.getItem(`tidewater.sector.${active}`) : null;
+      return { before, mode: mode(), active, activeKey: localStorage.getItem("tidewater.sector.active"), live, saved: raw ? raw.length : 0, n: Object.keys(api.sim.buildings).length, cycle: api.sim.tide.cycle };
     }, event);
+    console.log(`[monkey] ${elapsedLabel} forced a ${event}: ${JSON.stringify(forced)}`);
     await page.reload();
     await waitReady(page);
     const state = await page.evaluate(async () => {
       const api = (window as unknown as { __tidewater: Api }).__tidewater;
       const f = api.world.active();
-      if (f !== null) await api.enterSector(f, { instant: true });
-      return { storm: api.sim.storm.active, stage: api.sim.tsunami.stage, n: Object.keys(api.sim.buildings).length, mode: api.mode };
+      const atBoot = { active: f, storm: api.sim.storm.active, stage: api.sim.tsunami.stage, n: Object.keys(api.sim.buildings).length };
+      const entered = f !== null ? await api.enterSector(f, { instant: true }) : null;
+      return { atBoot, entered, storm: api.sim.storm.active, stage: api.sim.tsunami.stage, n: Object.keys(api.sim.buildings).length, mode: api.mode };
     });
     counts[`reload-${event}`] = (counts[`reload-${event}`] ?? 0) + 1;
     console.log(`[monkey] ${elapsedLabel} reloaded during a ${event}: ${JSON.stringify(state)}`);

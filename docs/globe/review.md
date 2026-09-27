@@ -42,6 +42,13 @@ face turned from the sun, the dive at 0.35 / 0.8 / 1.25 s, the island after the 
 12. **A dive during the entrance left the globe half-risen.** The flight took over the phase, the rise stopped
     where it was, and the return showed the globe 30–50 units low (every smoke shot after a reload had it; the
     smoke asserts `globeY` now). A dive or a return during the entrance lands the globe first.
+13. **A confirm could outlive its scene** (found by the five-minute monkey, stage 7: both of its "event did not
+    survive the reload" failures were this). The World's DOM fades to invisible during the dive but stayed
+    clickable, so "Delete" could open its confirm mid-flight; the island then came up under the open dialog,
+    Enter confirmed it, and the sea under the player was cleared — no sector to autosave into, and the return
+    refused for want of one. Now: a dive is refused while a dialog is open, the fading DOM is inert, a scene
+    switch cancels any open dialog, the World's actions re-check they are still on the World, and a town whose
+    sea is gone can still return (a cut). The smoke drives all three paths.
 
 ## Checked and kept
 

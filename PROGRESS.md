@@ -108,3 +108,4 @@ Nothing left on ROADMAP.md: M0–M14 and backlog 1–7 are DONE, nothing BLOCKED
 - 2026-09-26 12:30 · Backlog 6 · 56a188a · headless 165 fps
 - 2026-09-26 12:55 · Backlog 7 · ee5c2f1 · headless 165 fps
 - 2026-09-26 (daytime playtest session) · a34ec6e → c149d07 · save-shape guard, CS camera, placement rework, walkthrough card, art pass from reference/, level streets + dirt trails + hill homes, land tools, loans, sun/moon/night, ambient audio, porters · headless 165 fps throughout · 60 sim tests
+- 2026-09-27 (overnight, branch `globe`, not merged) · 193878b (design stages 1–4) · b3be223 (sector model) · 9c4f3cc (the World: scene switch, rendering, input, UI, dive/return, tests) · a08b4d4 (detail pass) · the stage 7 commit (audit, the monkey's dialog bug, docs) · headless 165 fps in the World with twelve towns, boot 0.4–0.6 s, heap flat over 20 round trips, monkey 5 min clean · 86 sim tests · ledger in docs/globe/PROGRESS.md
