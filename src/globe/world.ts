@@ -170,7 +170,8 @@ export class World {
   /** `q` followed by a turn of `angle` about a world-space `axis`. */
   private static turned(q: Quaternion, axis: Vector3, angle: number): Quaternion {
     if (angle === 0) return q.clone();
-    return Quaternion.FromRotationMatrix(q.toRotationMatrix(new Matrix()).multiply(Matrix.RotationAxis(axis, angle)));
+    // Always back to unit length: a quaternion that drifts off it becomes a scale on the globe.
+    return Quaternion.FromRotationMatrix(q.toRotationMatrix(new Matrix()).multiply(Matrix.RotationAxis(axis.normalizeToNew(), angle))).normalize();
   }
 
   /** A pointer drag of (dx, dy) pixels turns the globe about the camera's up and right axes. */
@@ -685,9 +686,9 @@ export class World {
         this.idle = since > IDLE_AFTER ? Math.min(1, this.idle + dt / IDLE_RAMP) : 0;
         if (this.idle > 0) { this.spinGoal = World.turned(this.spinGoal, Vector3.Up(), IDLE_RATE * outCubic(this.idle) * dt); this.spinNow = this.spinGoal.clone(); }
       }
-      if (!this.spinNow.equalsWithEpsilon(this.spinGoal, 1e-7)) Quaternion.SlerpToRef(this.spinNow, this.spinGoal, reduced ? 1 : 1 - Math.exp(-SPIN_EASE * dt), this.spinNow);
+      if (!this.spinNow.equalsWithEpsilon(this.spinGoal, 1e-7)) { Quaternion.SlerpToRef(this.spinNow, this.spinGoal, reduced ? 1 : 1 - Math.exp(-SPIN_EASE * dt), this.spinNow); this.spinNow.normalize(); }
     }
-    this.root.rotationQuaternion!.copyFrom(this.spinNow);
+    this.root.rotationQuaternion!.copyFrom(this.spinNow.normalize());
     const spinMat = this.spinNow.toRotationMatrix(new Matrix());
     // Hover lifts.
     for (const fv of this.faces) {

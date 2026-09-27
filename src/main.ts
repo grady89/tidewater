@@ -755,6 +755,8 @@ const api = {
     globeY: () => world.globeY,
     /** The globe's spin as a quaternion [x, y, z, w]. */
     spin: () => world.spin.asArray(),
+    /** The globe's scale as rendered (the determinant of a sea's world matrix): 1 unless the spin has gone wrong. */
+    scale: () => { const m = world.faces[1].water; m.computeWorldMatrix(true); return m.getWorldMatrix().determinant(); },
     /** Spin the globe as a pointer drag of (dx, dy) pixels would (without the flick). */
     drag: (dx: number, dy: number) => { world.grab(); world.drag(dx, dy, false); world.release(); },
   },
