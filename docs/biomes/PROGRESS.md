@@ -12,7 +12,7 @@ never push `main`. Where BIOMES.md is silent, choose the simplest option and log
 ## Stage 1 — base additions every biome needs
 - [DONE] 1a goods registry `src/sim/goods.ts` (id, role, cap, company buy/sell); stockpiles keyed by good id; warehouses raise every cap; resource bar grouped by role, hides zero-stock goods this island cannot make.
 - [DONE] 1b `SimState.world.biome` (default "tidewater"); save version bump with backfill; sector metadata carries it.
-- [TODO] 1c cell materials beside classes (plain, lagoon, mangrove, lava, dune, oasis, vent, spring, fertile) set by the island generator, read by placement rules and colour.
+- [DONE] 1c cell materials beside classes (plain, lagoon, mangrove, lava, dune, oasis, vent, spring, fertile) set by the island generator, read by placement rules and colour.
 - [TODO] 1d food variety: any food feeds; level 2 needs 2 food kinds in stock, level 3 needs 3 + one foreign luxury; favourite luxury adds happiness; residents eat across food kinds proportionally.
 - [TODO] 1e Toolworks (base catalog, 2×2, 3 workers): consumes iron slowly, +20% output to production buildings in radius 8.
 - [TODO] 1f Trade Company as carrier: with a harbor the ship sells any good this biome cannot make at company prices, buys luxuries at prices that fall with volume; purchase queue in the harbor's info panel.
@@ -46,4 +46,4 @@ never push `main`. Where BIOMES.md is silent, choose the simplest option and log
 - [TODO] behind `LANES_ENABLED=false`.
 
 ## Last thing that worked
-- 1a+1b: goods registry, stockpiles keyed by good id, HUD bar by role, save v3 backfill, world.biome; build+test+smoke green.
+- 1c: materials (sim/materials.ts, Island.materials, Grid.materialOk, BuildingDef.material, placement blocker); smoke not rerun for 1c (sim-only change, unit tests green).

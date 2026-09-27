@@ -9,6 +9,7 @@ import { CLEARANCE, SPRING_HI, TIDE_HI } from "../config";
 import { Grid, HALF, worldToCell } from "../sim/grid";
 import { ground as groundHeight } from "../view/ground";
 import { addLandfill, clearBlocker, clearTree, landfillBlocker, plantBlocker, plantTree } from "../sim/land";
+import { MATERIAL_LABEL, UNBUILDABLE } from "../sim/materials";
 import { addLantern, lanternBlocker } from "../sim/services";
 import { Building, Cell } from "../sim/state";
 import { floodFate } from "../sim/tide";
@@ -249,6 +250,7 @@ export class Placement {
     const no = (blocker: string) => ({ cells, blocker, warn: null, fate: "safe" as Fate, y, stilt, cost, rot });
     if (!this.grid.classOk(def.cls, cells)) return no(classHint(def.cls));
     if (!this.grid.terrainOk(kind, cells)) return no(`Needs ground between ${def.terrain!.min} and ${def.terrain!.max} m`);
+    if (!this.grid.materialOk(kind, cells)) return no(def.material && !cells.some(c => UNBUILDABLE.has(this.grid.materialAt(c))) ? `Needs ${MATERIAL_LABEL[def.material]}` : "Nothing stands on the lava field");
     if (cells.some(c => this.grid.buildingAt(c))) return no("Occupied");
     if (this.grid.onIsle(cells) && !this.grid.isleOpen()) return no("Across the water: a harbor's ferry opens the isle");
     if (def.needsWalkway && !this.grid.touchesWalkway(cells)) return no("Must touch a walkway on the flats");

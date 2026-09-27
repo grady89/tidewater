@@ -30,6 +30,8 @@ export interface Island {
   rerolls: number;
   height: HeightFn;
   trees: readonly TreeSite[];
+  /** Material code per cell (materials.ts), indexed like the grid; all plain on the base island. */
+  materials: Uint8Array;
   stats: IslandStats;
 }
 
@@ -156,11 +158,11 @@ export function candidateSeed(seed: number, k: number): number {
 }
 
 /** The k-th candidate for a seed, generated and measured but not judged. */
-export function candidate(seed: number, k: number): { noiseSeed: number; height: HeightFn; trees: TreeSite[]; stats: IslandStats } {
+export function candidate(seed: number, k: number): { noiseSeed: number; height: HeightFn; trees: TreeSite[]; materials: Uint8Array; stats: IslandStats } {
   const noiseSeed = candidateSeed(seed, k);
   const height = islandHeight(noiseSeed);
   const trees = makeSites(height);
-  return { noiseSeed, height, trees, stats: islandStats(height, trees) };
+  return { noiseSeed, height, trees, materials: new Uint8Array(SIZE * SIZE), stats: islandStats(height, trees) };
 }
 
 const cache = new Map<number, Island>();

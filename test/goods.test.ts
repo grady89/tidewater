@@ -1,12 +1,14 @@
 // The goods registry, the biome on the ledger, and what the biomes add to every island: food variety, the
 // luxury rule, Toolworks, and the Trade Company as carrier. Sim only.
 import { describe, expect, it } from "vitest";
-import { CAP_BASE, WAREHOUSE_CAP } from "../src/sim/balance";
+import { BUILDINGS, CAP_BASE, WAREHOUSE_CAP } from "../src/sim/balance";
+import { cellIndex } from "../src/sim/grid";
+import { Material, materialCode, materialOf, MATERIALS } from "../src/sim/materials";
 import { addCapped, capFor } from "../src/sim/economy";
 import { BASE_MAKES, emptyStock, GOOD_IDS, GOOD_ROLES, goodsOfRole, GOODS, shownGoods } from "../src/sim/goods";
 import { deserialize, serialize } from "../src/sim/save";
 import { newGame } from "../src/sim/start";
-import { SimState } from "../src/sim/state";
+import { Cell, SimState } from "../src/sim/state";
 import { growStreet, placeByWalkway, starterTown } from "./scenario";
 
 describe("goods registry", () => {
@@ -68,5 +70,31 @@ describe("goods registry", () => {
     expect(loaded.trade.orders).toEqual({ planks: 20 });
     expect((loaded.trade as unknown as Record<string, number>).plankOrder).toBeUndefined();
     expect(() => deserialize(JSON.stringify({ ...old, version: 1 }))).toThrow(/version/);
+  });
+});
+
+describe("cell materials", () => {
+  it("the base island is plain everywhere; a material gates a kind, and nothing stands on lava", () => {
+    const { state, grid } = newGame(7);
+    starterTown(state, grid);
+    expect(grid.island.materials.every(m => m === 0)).toBe(true);
+    let c: Cell | null = null;
+    for (let i = -30; i < 30 && !c; i++) for (let j = -30; j < 30; j++) { const q = { i, j }; if (grid.classAt(q) === "flat" && !grid.buildingAt(q) && grid.touchesWalkway([q])) { c = q; break; } }
+    expect(c).not.toBeNull();
+    expect(grid.materialAt(c!)).toBe("plain");
+    expect(grid.canPlace("hut", [c!])).toBe(true);
+    grid.materials[cellIndex(c!.i, c!.j)] = materialCode("lava");
+    expect(grid.materialAt(c!)).toBe("lava");
+    expect(grid.canPlace("hut", [c!])).toBe(false);
+    grid.materials[cellIndex(c!.i, c!.j)] = materialCode("lagoon");
+    expect(grid.canPlace("hut", [c!])).toBe(true); // a plain kind takes any buildable material
+    const def = BUILDINGS.hut as { material?: Material };
+    def.material = "lagoon";
+    try {
+      expect(grid.canPlace("hut", [c!])).toBe(true);
+      grid.materials[cellIndex(c!.i, c!.j)] = materialCode("plain");
+      expect(grid.canPlace("hut", [c!])).toBe(false);
+    } finally { delete def.material; }
+    for (const m of MATERIALS) expect(materialOf(materialCode(m))).toBe(m);
   });
 });

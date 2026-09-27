@@ -1,6 +1,7 @@
 // Every tunable number in the economy, and the building catalog. No system may hard-code a value that lives here.
 import { CLEARANCE, DRY_TERRAIN, RAISED_FLOOR, SPRING_HI } from "../config";
 import { GoodId, GOOD_IDS, GOODS } from "./goods";
+import { Material } from "./materials";
 
 export type BuildingKind =
   | "hut" | "house" | "tallHouse"
@@ -38,6 +39,8 @@ export interface BuildingDef {
   cls: PlacementClass;
   /** Extra terrain-height window on top of the class (oyster beds: covered at high, exposed at low). */
   terrain?: { min: number; max: number };
+  /** A cell material every footprint cell must have (the biomes' pieces: a dive platform on the lagoon). */
+  material?: Material;
   /** Must touch a flat cell that carries a walkway (lumber camps on the hill). */
   needsWalkway?: boolean;
   /** Must touch a pier, dock, harbor or walkway (docks: crew walk in over a pier or a raised walkway). */

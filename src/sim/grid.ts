@@ -6,6 +6,7 @@ import { cellIndex, DIRS, HALF, inBounds } from "./cells";
 import { cellClass } from "./heightfield";
 import { Island, island } from "./island";
 import { isleCell } from "./isle";
+import { Material, materialOf, UNBUILDABLE } from "./materials";
 import { Building, Cell, SimState } from "./state";
 
 /** deep: always underwater. flat: the tidal flats, buildable. high: dry land above the tide. */
@@ -27,6 +28,8 @@ export class Grid {
   readonly beach = new Uint8Array(SIZE * SIZE);
   /** Cell index → on the second island (locked until the town has a harbor)? */
   readonly isle = new Uint8Array(SIZE * SIZE);
+  /** Cell index → material code (materials.ts), copied from the island; classes decide the rules, this gates the biomes' pieces. */
+  readonly materials = new Uint8Array(SIZE * SIZE);
   /** Bumped whenever the heights change (attach, landfill), so caches keyed on the terrain (the field flows) refresh. */
   terrainVersion = 0;
 
@@ -64,6 +67,7 @@ export class Grid {
   /** Classify every cell from the island's heightfield (landfill is applied on top afterwards). */
   private resetTerrain(): void {
     const height = this.island.height;
+    this.materials.set(this.island.materials);
     for (let i = -HALF; i < HALF; i++) for (let j = -HALF; j < HALF; j++) {
       const h = height(i + 0.5, j + 0.5);
       const k = cellIndex(i, j);
@@ -131,6 +135,14 @@ export class Grid {
     const t = BUILDINGS[kind].terrain;
     if (!t) return true;
     return cells.every(c => { const h = this.heightAt(c); return h >= t.min && h <= t.max; });
+  }
+  materialAt(c: Cell): Material {
+    return inBounds(c.i, c.j) ? materialOf(this.materials[cellIndex(c.i, c.j)]) : "plain";
+  }
+  /** The kind's material, if it wants one, on every cell; and nothing at all on a lava field. */
+  materialOk(kind: BuildingKind, cells: Cell[]): boolean {
+    const want = BUILDINGS[kind].material;
+    return cells.every(c => { const m = this.materialAt(c); return !UNBUILDABLE.has(m) && (!want || m === want); });
   }
 
   /** The cells a building of `kind` anchored at `c` would occupy, or null if that shape can't be formed there. */
@@ -213,7 +225,7 @@ export class Grid {
 
   canPlace(kind: BuildingKind, cells: Cell[]): boolean {
     const def = BUILDINGS[kind];
-    return this.classOk(def.cls, cells) && this.terrainOk(kind, cells) && cells.every(c => !this.buildingAt(c))
+    return this.classOk(def.cls, cells) && this.terrainOk(kind, cells) && this.materialOk(kind, cells) && cells.every(c => !this.buildingAt(c))
       && (!def.needsWalkway || this.touchesWalkway(cells)) && (!def.needsLink || this.touchesLink(cells))
       && (!def.requires || this.has(def.requires))
       && (!def.touches || this.touchesKind(cells, def.touches))
