@@ -7,6 +7,7 @@ import { BUILDINGS, LANDFILL_HEIGHT, STORM_WAVE_AMP, WAVE_HEIGHT, WAVE_WIDTH } f
 import { districtOf } from "./sim/districts";
 import { startStorm, startTsunami } from "./sim/events";
 import { ignite } from "./sim/fire";
+import { GoodId } from "./sim/goods";
 import { Grid } from "./sim/grid";
 import { crossCommuters, ferryTerminals } from "./sim/network";
 import { deserialize, serialize } from "./sim/save";
@@ -590,6 +591,10 @@ const api = {
     state.resources.money += money;
     state.resources.planks += planks;
     state.resources.timber += timber;
+  },
+  /** Cheat: `n` units of any registry good (the company's cargo without the ship). */
+  grantGood(good: GoodId, n: number) {
+    state.resources[good] += n;
   },
   /** View only: aim the camera at the town's centroid for screenshots. */
   frameTown(radius = 22) {

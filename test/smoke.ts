@@ -515,7 +515,12 @@ try {
     const tavern = sc.placeByWalkway(s, grid, "tavern", 1).length;
     let lanterns = 0;
     for (const w of (Object.values(s.buildings) as Building[]).filter(b => b.kind === "walkway" || b.kind === "raisedWalkway")) if (api.place("lanternPost", w.cells[0].i, w.cells[0].j)) lanterns++;
-    api.advance(8);
+    // Biomes: level 2 wants two foods, level 3 three and a foreign luxury (what the company carries).
+    // The market sells any food above the reserve at 30 a cycle, so the imported kinds are topped up half way.
+    api.grantGood("shellfish", 100); api.grantGood("rice", 100); api.grantGood("coffee", 10);
+    api.advance(4);
+    api.grantGood("shellfish", 100); api.grantGood("rice", 100);
+    api.advance(4);
     const best = town.huts.slice().sort((a, b) => b.level - a.level)[0];
     api.select(best.cells[0].i, best.cells[0].j);
     api.frameAt(best.cells[0].i + 0.5, best.cells[0].j + 0.5, 14);

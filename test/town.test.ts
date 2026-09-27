@@ -1,7 +1,7 @@
 // Happiness and services, the tutorial and the big town, districts, achievements, and placement rules.
 import { describe, expect, it } from "vitest";
 import { CLEARANCE, DRY_TERRAIN, SPRING_FLOOD_TERRAIN, SPRING_HI, STILT_MIN, TIDE_HI, TIDE_LO, WALKWAY_SNAP } from "../src/config";
-import { BUILDINGS, HAPPY, LEVEL_UP_HAPPINESS, MAX_LEVEL, LIFT_MAX, LIFT_STEP, REMOVE_REFUND, STILT_COST_PER_UNIT, WAVE_HEIGHT } from "../src/sim/balance";
+import { BUILDINGS, HAPPY, LEVEL_UP_CYCLES, LEVEL_UP_HAPPINESS, MAX_LEVEL, LIFT_MAX, LIFT_STEP, REMOVE_REFUND, STILT_COST_PER_UNIT, WAVE_HEIGHT } from "../src/sim/balance";
 import { ACHIEVEMENTS, checkAchievements } from "../src/sim/achievements";
 import { deserialize, serialize } from "../src/sim/save";
 import { DISTRICT_MIN, districtName, districtOf, districts } from "../src/sim/districts";
@@ -41,15 +41,39 @@ describe("happiness, services, leveling (M7)", () => {
     return { state, grid, t, well };
   }
 
-  it("a home with every coverage reaches level 3 within 8 cycles", () => {
+  it("a home with every coverage reaches level 2 on two foods within 8 cycles, and level 3 once a foreign luxury is in stock", () => {
     const { state, grid, t } = servedTown();
+    // Fish alone holds every home at level 1 however happy it is (BIOMES.md §2: two food kinds for level 2).
     advanceCycles(state, grid, 8);
+    expect(Math.max(...t.huts.map(h => h.level))).toBe(1);
+    expect(state.happiness).toBeGreaterThanOrEqual(LEVEL_UP_HAPPINESS);
+    // Shellfish on the table: level 2.
+    let bed: Building | null = placeByWalkway(state, grid, "oysterBed", 1)[0] ?? null;
+    for (let k = 0; k < 8 && !bed; k++) { growStreet(state, grid, 1); bed = placeByWalkway(state, grid, "oysterBed", 1)[0] ?? null; }
+    expect(bed).not.toBeNull();
+    let shellfishSeen = 0, reached2 = -1;
+    for (let c = 1; c <= 8 && reached2 < 0; c++) {
+      advanceCycles(state, grid, 1);
+      shellfishSeen = Math.max(shellfishSeen, state.resources.shellfish, state.last.shellfishSold);
+      if (Math.max(...t.huts.map(h => h.level)) === 2) reached2 = c;
+    }
+    expect(shellfishSeen).toBeGreaterThan(0);
+    expect(reached2).toBeGreaterThan(0);
+    expect(Math.max(...t.huts.map(h => h.level))).toBe(2);
+    // A third food and a foreign luxury (what the company carries): level 3. (A shark incident on the beach can
+    // cost a few cycles of grief, so allow a few more than the streak needs.)
+    state.resources.rice += 30;
+    state.resources.coffee += 10;
+    let reached3 = -1;
+    for (let c = 1; c <= LEVEL_UP_CYCLES + 6 && reached3 < 0; c++) { advanceCycles(state, grid, 1); if (t.huts.some(h => h.level === MAX_LEVEL)) reached3 = c; }
+    expect(reached3).toBeGreaterThan(0);
     const levels = t.huts.map(h => h.level);
     expect(Math.max(...levels)).toBe(MAX_LEVEL);
     const best = t.huts.find(h => h.level === MAX_LEVEL)!;
     expect(grid.capacityOf(best)).toBe(BUILDINGS.hut.residents + MAX_LEVEL - 1);
     expect(best.happiness).toBeGreaterThanOrEqual(LEVEL_UP_HAPPINESS);
     expect(state.log.some(m => /level 3/.test(m))).toBe(true);
+    expect(state.resources.coffee).toBeLessThan(10); // level-3 residents use a little of it
   });
 
   it("removing the well drops happiness", () => {

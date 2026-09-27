@@ -290,6 +290,8 @@ export const HAPPY = {
   pollution: 0.5,
   injury: 0.2,
   damage: 0.15,
+  /** The biome's favourite luxury in stock (BIOMES.md §2). */
+  favourite: 0.05,
 };
 /** Homes above this for LEVEL_UP_CYCLES cycles in a row grow a level (1..3): +1 resident per level, a nicer roof. */
 export const LEVEL_UP_HAPPINESS = 0.8;
@@ -326,3 +328,11 @@ export const FISH_FLOOR = 0.05;
 // Stockpile caps before warehouses
 export const CAP_BASE: Record<GoodKind, number> = Object.fromEntries(GOOD_IDS.map(g => [g, GOODS[g].cap])) as Record<GoodKind, number>;
 export const WAREHOUSE_CAP = 100;
+
+// Food variety and luxuries (BIOMES.md §2; sim/food.ts)
+/** Distinct food kinds in stock a home needs to hold each level (index = level). */
+export const LEVEL_FOODS: readonly number[] = [0, 1, 2, 3];
+/** Foreign luxury a level-3 resident uses per cycle. */
+export const LUXURY_PER_RESIDENT = 0.02;
+/** Market price of each food (fish and shellfish keep PRICE_FISH / PRICE_SHELLFISH). */
+export const FOOD_PRICE: Record<string, number> = { fish: PRICE_FISH, shellfish: PRICE_SHELLFISH, rice: 3, coconut: 3, dates: 3, crab: 4, stockfish: 5, taro: 3 };

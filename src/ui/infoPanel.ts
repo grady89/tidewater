@@ -1,6 +1,8 @@
 // Click a building: what it is, who works there, what it made, and why it might be idle. Read-only over the sim.
-import { BUILDINGS } from "../sim/balance";
+import { BUILDINGS, LEVEL_FOODS, MAX_LEVEL } from "../sim/balance";
 import { districtOf } from "../sim/districts";
+import { foodsInStock, foreignLuxuriesInStock } from "../sim/food";
+import { GOODS } from "../sim/goods";
 import { Grid } from "../sim/grid";
 import { at } from "../sim/fields";
 import { Building, SimState } from "../sim/state";
@@ -53,6 +55,15 @@ export class InfoPanel {
       rows.push(["Leisure", at(cov.leisure, c) > 0 ? `${Math.round(at(cov.leisure, c) * 100)}%` : "none"]);
       rows.push(["Lit at night", at(cov.night, c) > 0 ? "yes" : "no"]);
       rows.push(["Pollution", at(state.fields.pollution, c).toFixed(2)]);
+      // Biomes: the table decides the next level (sim/food.ts).
+      const foods = foodsInStock(state), luxuries = foreignLuxuriesInStock(state);
+      rows.push(["Foods", foods.length ? foods.map(g => GOODS[g].name).join(", ") : "none"]);
+      if (b.level < MAX_LEVEL) {
+        const next = b.level + 1;
+        const wants = [`${LEVEL_FOODS[next]} food kinds${foods.length >= LEVEL_FOODS[next] ? " ✓" : ""}`];
+        if (next >= 3) wants.push(`a foreign luxury${luxuries.length ? " ✓" : ""}`);
+        rows.push([`Level ${next} needs`, wants.join(" · ")]);
+      }
     }
     if (jobsAt(b) > 0) rows.push(["Workers", `${b.workers} / ${jobsAt(b)}`]);
     if ((def.slots ?? 0) > 0) rows.push(["Boats", `${b.boats} / ${def.slots}${b.atSea ? (b.ground ? ` · fishing ${Math.round(Math.hypot(b.ground.i - b.cells[0].i, b.ground.j - b.cells[0].j))} cells out` : " · at sea") : b.boats ? " · moored" : ""}`]);

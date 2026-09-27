@@ -1,7 +1,10 @@
 // The goods registry, the biome on the ledger, and what the biomes add to every island: food variety, the
 // luxury rule, Toolworks, and the Trade Company as carrier. Sim only.
 import { describe, expect, it } from "vitest";
-import { BUILDINGS, CAP_BASE, WAREHOUSE_CAP } from "../src/sim/balance";
+import { BUILDINGS, CAP_BASE, HAPPY, LUXURY_PER_RESIDENT, WAREHOUSE_CAP } from "../src/sim/balance";
+import { BIOME_IDS, favouriteOf, luxuryOf } from "../src/sim/biomes";
+import { consumeLuxury, eat, favouriteInStock, foodsInStock, foodTotal, foreignLuxuriesInStock, levelAllowed } from "../src/sim/food";
+import { advanceCycles } from "../src/sim/tick";
 import { cellIndex } from "../src/sim/grid";
 import { Material, materialCode, materialOf, MATERIALS } from "../src/sim/materials";
 import { addCapped, capFor } from "../src/sim/economy";
@@ -96,5 +99,75 @@ describe("cell materials", () => {
       expect(grid.canPlace("hut", [c!])).toBe(false);
     } finally { delete def.material; }
     for (const m of MATERIALS) expect(materialOf(materialCode(m))).toBe(m);
+  });
+});
+
+describe("food variety and the luxury rule", () => {
+  it("residents eat across every food kind in proportion to stock, and any food feeds", () => {
+    const { state } = newGame(7);
+    state.resources.fish = 30; state.resources.shellfish = 10; state.resources.rice = 0; state.resources.coconut = 20;
+    expect(foodsInStock(state)).toEqual(["fish", "shellfish", "coconut"]);
+    expect(foodTotal(state)).toBe(60);
+    expect(eat(state, 6)).toBeCloseTo(6, 9);
+    expect(state.resources.fish).toBeCloseTo(27, 9);
+    expect(state.resources.shellfish).toBeCloseTo(9, 9);
+    expect(state.resources.coconut).toBeCloseTo(18, 9);
+    // Short of food: the table is cleared and what there was is what was eaten.
+    state.resources.fish = 1; state.resources.shellfish = 0; state.resources.coconut = 2;
+    expect(eat(state, 6)).toBe(3);
+    expect(foodTotal(state)).toBe(0);
+    // Rice alone still feeds a Tidewater home.
+    state.resources.rice = 10;
+    expect(eat(state, 2)).toBe(2);
+  });
+
+  it("level 2 wants two foods, level 3 three and a foreign luxury; Tidewater's own smoked goods do not count", () => {
+    const { state } = newGame(7);
+    state.resources.fish = 10; state.resources.shellfish = 0;
+    expect(levelAllowed(state, 2)).toBe(false);
+    state.resources.shellfish = 5;
+    expect(levelAllowed(state, 2)).toBe(true);
+    expect(levelAllowed(state, 3)).toBe(false);
+    state.resources.rice = 5;
+    expect(levelAllowed(state, 3)).toBe(false); // three foods, no foreign luxury
+    state.resources.smoked = 20;
+    expect(foreignLuxuriesInStock(state)).toEqual([]);
+    expect(levelAllowed(state, 3)).toBe(false);
+    state.resources.pearls = 1;
+    expect(foreignLuxuriesInStock(state)).toEqual(["pearls"]);
+    expect(levelAllowed(state, 3)).toBe(true);
+    expect(consumeLuxury(state, 10)).toBeCloseTo(10 * LUXURY_PER_RESIDENT, 9);
+    expect(luxuryOf("tidewater")).toBe("smoked");
+  });
+
+  it("the favourite luxury adds HAPPY.favourite to every home; the favourites form BIOMES.md's ring", () => {
+    const { state, grid } = newGame(7);
+    starterTown(state, grid);
+    advanceCycles(state, grid, 3);
+    const before = state.happiness;
+    expect(favouriteOf("tidewater")).toBe("coffee");
+    expect(favouriteInStock(state)).toBe(false);
+    state.resources.coffee = 5;
+    expect(favouriteInStock(state)).toBe(true);
+    advanceCycles(state, grid, 1);
+    expect(state.happiness).toBeGreaterThan(before + HAPPY.favourite * 0.5);
+    // Each luxury is exactly one biome's favourite, and never the favourite of the biome that makes it.
+    const favourites = BIOME_IDS.map(favouriteOf);
+    expect(new Set(favourites).size).toBe(BIOME_IDS.length);
+    for (const b of BIOME_IDS) expect(favouriteOf(b)).not.toBe(luxuryOf(b));
+    expect(new Set(BIOME_IDS.map(luxuryOf))).toEqual(new Set(favourites));
+  });
+
+  it("the market sells every food above the town's reserve, first kinds first", () => {
+    const { state, grid } = newGame(7);
+    starterTown(state, grid);
+    advanceCycles(state, grid, 2);
+    state.resources.fish = 0; state.resources.rice = 80;
+    const money = state.resources.money;
+    advanceCycles(state, grid, 1);
+    expect(state.resources.rice).toBeLessThan(80);
+    expect(state.last.shellfishSold).toBeGreaterThan(0); // rice sales count with the other foods
+    expect(state.last.income).toBeGreaterThan(0);
+    void money;
   });
 });

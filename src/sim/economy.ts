@@ -6,12 +6,14 @@ import {
   BOAT_BASE_FISH, BOAT_COST, BUILDINGS, BuildingKind, CAP_BASE, CLAM_PER_CELL, CLAM_RADIUS, Cost, FOOD_PER_CYCLE,
   FOOD_RESERVE_CYCLES, GoodKind, HAPPY, IMMIGRANTS_PER_CYCLE, IMMIGRATION_HAPPINESS, LEVEL_UP_CYCLES, LEVEL_UP_HAPPINESS,
   LUMBER_TREES_PER_CYCLE, MARKET_SELL_PER_CYCLE, MAX_LEVEL, NET_LOFT_BONUS, NET_LOFT_RADIUS, OYSTER_YIELD,
-  POLLUTION_HAPPY_SCALE, PRICE_FISH, PRICE_SHELLFISH, PURCHASABLE_BOATS, SAWMILL_RATE, SHIPYARD_BOAT_COST,
+  POLLUTION_HAPPY_SCALE, FOOD_PRICE, PURCHASABLE_BOATS, SAWMILL_RATE, SHIPYARD_BOAT_COST,
   SHIPYARD_CYCLES, SMOKEHOUSE_RATE, SPRING_LOW_BONUS, TAX_PER_RESIDENT, TIMBER_PER_TREE, WAREHOUSE_CAP,
   WASTE_BACKLOG_PENALTY_MAX, WASTE_BACKLOG_PENALTY_PER_UNIT,
 } from "./balance";
 import { at } from "./fields";
 import { active, damageNear, fireSources, repairDamage, rollIgnitions } from "./fire";
+import { consumeLuxury, eat, favouriteInStock, foodsInStock, foodTotal, levelAllowed } from "./food";
+import { goodsOfRole } from "./goods";
 import { REMOVE_REFUND, STILT_COST_PER_UNIT } from "./balance";
 import { repayLoan } from "./loan";
 import { Grid } from "./grid";
@@ -226,11 +228,13 @@ export function homeHappiness(state: SimState, home: Building, fed: number, jobs
   const backlog = Math.min(WASTE_BACKLOG_PENALTY_MAX, state.wasteBacklog * WASTE_BACKLOG_PENALTY_PER_UNIT);
   const injury = home.shock > 0 || home.injured > 0 ? HAPPY.injury : 0;
   const damage = home.damaged || damageNear(grid, c, DAMAGE_GRIEF_RADIUS) ? HAPPY.damage : 0;
+  const favourite = favouriteInStock(state) ? HAPPY.favourite : 0;
   const h = HAPPY.base + HAPPY.fed * fed + HAPPY.jobs * jobs + HAPPY.water * at(cov.water, c) + HAPPY.leisure * at(cov.leisure, c)
-    + HAPPY.night * at(cov.night, c) - HAPPY.pollution * foul - backlog - injury - damage;
+    + HAPPY.night * at(cov.night, c) + favourite - HAPPY.pollution * foul - backlog - injury - damage;
   return Math.max(0, Math.min(1, h));
 }
 const DAMAGE_GRIEF_RADIUS = 3;
+const FOODS = goodsOfRole("food");
 
 /** The cycle settlement, run once at every high-tide peak. */
 export function settleCycle(state: SimState, grid: Grid): void {
@@ -241,39 +245,45 @@ export function settleCycle(state: SimState, grid: Grid): void {
   assignWorkers(state, grid);
   rebuildCoverage(state);
 
-  // Residents eat first, pay tax, and judge their lot.
-  let pop = 0, happySum = 0, houses = 0;
+  // Residents eat first (across every food kind in stock), pay tax, and judge their lot. The variety on the
+  // table at the start of the meal is what the house levels read.
+  const variety = foodsInStock(state).length;
+  let pop = 0, happySum = 0, houses = 0, level3 = 0;
   for (const b of buildings) {
     if (BUILDINGS[b.kind].residents === 0) continue;
     if (b.residents === 0) { b.happiness = 1; b.streak = 0; continue; }
     pop += b.residents;
     const need = b.residents * FOOD_PER_CYCLE;
-    let ate = Math.min(r.fish, need); r.fish -= ate;
-    const more = Math.min(r.shellfish, need - ate); r.shellfish -= more; ate += more;
+    const ate = eat(state, need);
     const fed = need > 0 ? ate / need : 1;
     const jobs = b.reached ? employed(state, b) / Math.max(1, b.residents - b.injured) : 0;
     b.happiness = homeHappiness(state, b, fed, jobs, grid);
     happySum += b.happiness; houses++;
-    // Growth: a run of good cycles adds a storey.
+    // Growth: a run of good cycles adds a storey, once the table is varied enough for it (sim/food.ts).
     if (b.happiness >= LEVEL_UP_HAPPINESS) b.streak++; else b.streak = 0;
-    if (b.streak >= LEVEL_UP_CYCLES && b.level < MAX_LEVEL) { b.level++; b.streak = 0; announceLevel(state, b); }
+    if (b.streak >= LEVEL_UP_CYCLES && b.level < MAX_LEVEL && levelAllowed(state, b.level + 1, variety)) { b.level++; b.streak = 0; announceLevel(state, b); }
+    if (b.level >= 3) level3 += b.residents;
   }
+  consumeLuxury(state, level3);
   state.happiness = houses ? happySum / houses : 1;
   stats.income += pop * TAX_PER_RESIDENT;
 
-  // Sales of what's left beyond the town's food reserve; producers' per-cycle output counters reset here.
+  // Sales of food left beyond the town's reserve, kind by kind in registry order (the reserve is kept out of the
+  // first kinds first); producers' per-cycle output counters reset here.
   const reserve = (pop + IMMIGRANTS_PER_CYCLE) * FOOD_PER_CYCLE * FOOD_RESERVE_CYCLES;
   for (const b of buildings) {
     if (b.kind !== "market") { if (BUILDINGS[b.kind].residents === 0) b.output = 0; continue; }
     b.output = 0;
     if (!active(b)) continue;
     let capacity = MARKET_SELL_PER_CYCLE * staffing(b);
-    const fish = Math.max(0, Math.min(r.fish - reserve, capacity));
-    r.fish -= fish; capacity -= fish; stats.income += fish * PRICE_FISH; stats.fishSold += fish;
-    const shellReserve = Math.max(0, reserve - r.fish);
-    const shellfish = Math.max(0, Math.min(r.shellfish - shellReserve, capacity));
-    r.shellfish -= shellfish; stats.income += shellfish * PRICE_SHELLFISH; stats.shellfishSold += shellfish;
-    b.output = fish + shellfish;
+    let keep = reserve;
+    for (const g of FOODS) {
+      const sold = Math.max(0, Math.min(r[g] - keep, capacity));
+      r[g] -= sold; capacity -= sold; stats.income += sold * (FOOD_PRICE[g] ?? 0);
+      if (g === "fish") stats.fishSold += sold; else stats.shellfishSold += sold;
+      keep = Math.max(0, keep - r[g]);
+      b.output += sold;
+    }
   }
   // The commonest "why is nothing selling": every market is off the network or unstaffed at the peak. (A market
   // itself can't be under water — its stilts clear every tide — but the street to it can, at a spring peak.)
@@ -304,7 +314,7 @@ export function settleCycle(state: SimState, grid: Grid): void {
   stats.income += moved.tourism + Math.max(0, moved.trade);
 
   // Immigration: connected housing with room, food on hand, a town worth joining.
-  if (r.fish + r.shellfish > 0 && state.happiness >= IMMIGRATION_HAPPINESS) {
+  if (foodTotal(state) > 0 && state.happiness >= IMMIGRATION_HAPPINESS) {
     let budget = IMMIGRANTS_PER_CYCLE;
     for (const b of buildings) {
       if (budget <= 0) break;

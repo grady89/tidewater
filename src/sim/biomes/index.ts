@@ -15,3 +15,14 @@ export function makesOf(biome: BiomeId): readonly GoodId[] {
   void biome;
   return BASE_MAKES;
 }
+
+/** The luxury an island of this biome makes itself (never "foreign" to it). */
+export function luxuryOf(biome: BiomeId): GoodId {
+  return LUXURY[biome];
+}
+/** The favourite luxury (BIOMES.md §2's ring): in stock, it adds HAPPY.favourite to every home. */
+export function favouriteOf(biome: BiomeId): GoodId {
+  return FAVOURITE[biome];
+}
+const LUXURY: Record<BiomeId, GoodId> = { tidewater: "smoked", atoll: "pearls", delta: "indigo", cinder: "cocoa", fjord: "whaleOil", dunes: "coffee" };
+const FAVOURITE: Record<BiomeId, GoodId> = { tidewater: "coffee", atoll: "smoked", delta: "pearls", cinder: "indigo", fjord: "cocoa", dunes: "whaleOil" };
