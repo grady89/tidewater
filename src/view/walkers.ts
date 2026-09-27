@@ -6,6 +6,7 @@ import { SIZE } from "../config";
 import { BUILDINGS, SWIM_FRACTION } from "../sim/balance";
 import { cellCenter, cellIndex, Grid } from "../sim/grid";
 import { terrainHeight } from "../sim/heightfield";
+import { ferryTerminals } from "../sim/network";
 import { Building, Cell, Phase, population, SimState } from "../sim/state";
 import { flatMaterial, mergeFlat, tint } from "../world/flatMesh";
 
@@ -27,6 +28,10 @@ interface Walker {
 }
 /** Porters per landing, at most. */
 const PORTERS_MAX = 4;
+/** Seconds between going aboard on one side and stepping off on the other. */
+const FERRY_CROSSING_SECONDS = 20;
+
+export interface Rider { pos: Vector3; yaw: number }
 
 /** The figure is 0.63 units tall at scale 1; at 0.4 a person is a quarter of a cell, about Cities: Skylines' ratio. */
 export const PERSON_SCALE = 0.4;
@@ -202,20 +207,39 @@ export class Walkers {
     for (const a of state.assignments) {
       const home = state.buildings[a.home], work = state.buildings[a.work];
       if (!home || !work) continue;
-      const path = toWork ? this.route(home, work) : this.route(work, home);
-      if (!path || path.length < 2) continue;
+      const from = toWork ? home : work, to = toWork ? work : home;
+      // Across the water the walk has two legs: to the terminal on this side (then aboard), and — a crossing
+      // later — from the far terminal on. On land it is one walk.
+      const legs: { path: Vector3[]; delay: number }[] = [];
+      if (this.grid.onIsle(from.cells) !== this.grid.onIsle(to.cells)) {
+        const t = ferryTerminals(this.grid);
+        if (!t) continue;
+        const near = this.grid.onIsle(from.cells) ? t.isle[0] : t.harbor, far = this.grid.onIsle(to.cells) ? t.isle[0] : t.harbor;
+        const leg1 = this.route(from, near), leg2 = this.route(far, to);
+        if (!leg1 || leg1.length < 2 || !leg2 || leg2.length < 2) continue;
+        legs.push({ path: leg1, delay: 0 }, { path: leg2, delay: leg1.length / SPEED + FERRY_CROSSING_SECONDS });
+      } else {
+        const path = this.route(from, to);
+        if (!path || path.length < 2) continue;
+        legs.push({ path, delay: 0 });
+      }
       for (let k = 0; k < a.n; k++) {
         if (this.rand() > keep) continue;
         if (this.walkers.length >= MAX_WALKERS) return;
         const jitter = new Vector3((this.rand() - 0.5) * 0.4, 0, (this.rand() - 0.5) * 0.4);
-        this.walkers.push({
-          path: path.map(p => p.add(jitter)),
-          t0: now + this.rand() * 2,
-          duration: path.length / SPEED,
-          color: Color4.FromHexString(COLORS[Math.floor(this.rand() * COLORS.length)]),
-          stay: toWork,
-          seed: this.rand() * 6.28,
-          carry: false,
+        const color = Color4.FromHexString(COLORS[Math.floor(this.rand() * COLORS.length)]);
+        const start = now + this.rand() * 2;
+        legs.forEach((leg, li) => {
+          const last = li === legs.length - 1;
+          this.walkers.push({
+            path: leg.path.map(p => p.add(jitter)),
+            t0: start + leg.delay,
+            duration: leg.path.length / SPEED,
+            color,
+            stay: toWork && last,
+            seed: this.rand() * 6.28,
+            carry: false,
+          });
         });
       }
     }
@@ -284,7 +308,7 @@ export class Walkers {
     return out;
   }
 
-  sync(state: SimState, viewTime: number): void {
+  sync(state: SimState, viewTime: number, riders: Rider[] = []): void {
     if (this.lastPhase !== state.phase) {
       const prev = this.lastPhase;
       this.lastPhase = state.phase;
@@ -300,7 +324,7 @@ export class Walkers {
     this.walkers = this.walkers.filter(w => w.stay || viewTime < w.t0 + w.duration + FADE);
     const swimmers = this.swimmerPoses(state, viewTime);
 
-    const n = this.walkers.length + this.loiterers.length + swimmers.length;
+    const n = this.walkers.length + this.loiterers.length + swimmers.length + riders.length;
     if (this.matrices.length !== n * 16) { this.matrices = new Float32Array(n * 16); this.colors = new Float32Array(n * 4); }
     const scale = new Vector3(1, 1, 1);
     let k = 0;
@@ -350,6 +374,7 @@ export class Walkers {
       put(pos, Math.atan2(to.x - from.x, to.z - from.z), l.color, l.scale);
     }
     for (const s of swimmers) put(s.pos, s.yaw, s.color);
+    riders.forEach((r, k) => put(r.pos, r.yaw, Color4.FromHexString(COLORS[(k + 5) % COLORS.length])));
     if (n === 0) { this.mesh.setEnabled(false); this.detail.setEnabled(false); return; }
     this.mesh.setEnabled(true); this.detail.setEnabled(true);
     this.mesh.thinInstanceSetBuffer("matrix", this.matrices, 16, false);

@@ -1,9 +1,11 @@
 // Connectivity: flood-fill from network roots (piers) through links (walkways, markets). Everything else is a leaf
 // that is reached when a reached link or root is orthogonally adjacent. Anything whose floor is under water is cut
-// and blocks the fill.
+// and blocks the fill. The ferry is the one edge that isn't a walkway: it joins the mainland harbor to every pier
+// or dock on the isle, FERRY_COST cells of walking apart, so the distance field (and with it job assignment)
+// crosses the water.
 import { SIZE } from "../config";
-import { BUILDINGS } from "./balance";
-import { cellIndex, Grid } from "./grid";
+import { BUILDINGS, FERRY_COST } from "./balance";
+import { cellIndex, Grid, HALF } from "./grid";
 import { Building, SimState } from "./state";
 
 export interface NetworkStats {
@@ -35,25 +37,59 @@ export function updateNetwork(state: SimState, grid: Grid, waterLevel: number): 
   return stats;
 }
 
+/** The ferry's two ends: the mainland harbor and every pier or dock standing on the isle. Null without both. */
+export function ferryTerminals(grid: Grid): { harbor: Building; isle: Building[] } | null {
+  const bs = Object.values(grid.state.buildings);
+  const harbor = bs.find(b => b.kind === "harbor" && !b.cut && !grid.onIsle(b.cells)) ?? null;
+  if (!harbor) return null;
+  const isle = bs.filter(b => b.kind !== "harbor" && (BUILDINGS[b.kind].slots ?? 0) > 0 && !b.cut && grid.onIsle(b.cells)).sort((a, b) => a.id - b.id);
+  return isle.length ? { harbor, isle } : null;
+}
+
+/** Workers whose home and workplace are on different sides of the water: they take the ferry. */
+export function crossCommuters(state: SimState, grid: Grid): number {
+  let n = 0;
+  for (const a of state.assignments) {
+    const home = state.buildings[a.home], work = state.buildings[a.work];
+    if (home && work && grid.onIsle(home.cells) !== grid.onIsle(work.cells)) n += a.n;
+  }
+  return n;
+}
+
 /**
- * Walk distance (in cells) from a building to every cell, through reached, un-cut links. Cells of the building
- * itself are 0; cells of leaf buildings adjacent to the path get the path length + 1. Unreachable = -1.
+ * Walk distance (in cells) from a building to every cell, through reached, un-cut links, and across the ferry
+ * for FERRY_COST. Cells of the building itself are 0; cells of leaf buildings adjacent to the path get the path
+ * length + 1. Unreachable = -1. A bucket queue keeps distances minimal with the one weighted edge.
  */
 export function distanceField(grid: Grid, from: Building, out: Int32Array = new Int32Array(SIZE * SIZE)): Int32Array {
   out.fill(-1);
-  const queue: number[] = [];
-  for (const c of from.cells) { out[cellIndex(c.i, c.j)] = 0; queue.push(c.i, c.j); }
-  let head = 0;
-  while (head < queue.length) {
-    const i = queue[head++], j = queue[head++];
-    const d = out[cellIndex(i, j)];
-    for (const n of grid.neighbors({ i, j })) {
-      const k = cellIndex(n.i, n.j);
-      if (out[k] !== -1) continue;
-      const q = grid.buildingAt(n);
-      if (!q || q.cut || !q.reached) continue;
-      out[k] = d + 1;
-      if (BUILDINGS[q.kind].network !== "leaf") queue.push(n.i, n.j);
+  const ferry = ferryTerminals(grid);
+  const across = new Map<number, Building[]>();
+  if (ferry) { across.set(ferry.harbor.id, ferry.isle); for (const p of ferry.isle) across.set(p.id, [ferry.harbor]); }
+  const fromCells = new Set(from.cells.map(c => cellIndex(c.i, c.j)));
+  const buckets: number[][] = [];
+  const push = (k: number, d: number) => {
+    if (out[k] !== -1 && out[k] <= d) return;
+    out[k] = d;
+    (buckets[d] ??= []).push(k);
+  };
+  for (const k of fromCells) push(k, 0);
+  for (let d = 0; d < buckets.length; d++) {
+    const q = buckets[d];
+    if (!q) continue;
+    for (const k of q) {
+      if (out[k] !== d) continue; // superseded by a shorter way in
+      const i = Math.floor(k / SIZE) - HALF, j = (k % SIZE) - HALF;
+      const here = grid.buildingAt({ i, j });
+      // Only the origin and the network's links and roots carry the walk on; a leaf cell is an end.
+      if (here && BUILDINGS[here.kind].network === "leaf" && !fromCells.has(k)) continue;
+      const far = here ? across.get(here.id) : undefined;
+      if (far) for (const t of far) for (const c of t.cells) push(cellIndex(c.i, c.j), d + FERRY_COST);
+      for (const n of grid.neighbors({ i, j })) {
+        const b = grid.buildingAt(n);
+        if (!b || b.cut || !b.reached) continue;
+        push(cellIndex(n.i, n.j), d + 1);
+      }
     }
   }
   return out;

@@ -593,11 +593,17 @@ try {
     const lockedFerry = api.view.ferry();
     api.grant(5000, 300, 100);
     const harbor = sc.placeHarbor(s, grid, t.pier.cells[0]);
+    // Task 3: the harbor bridged to the street becomes the ferry's terminal; a smokehouse leaves mainland jobs
+    // open, so full isle huts send commuters across, and they ride the deck.
+    const bridge = harbor ? sc.bridgeTo(s, grid, harbor).length : 0;
+    sc.growStreet(s, grid, 6);
+    const smokehouse = sc.placeByWalkway(s, grid, "smokehouse").length;
     const isle = sc.settleIsle(s, grid);
+    for (const h of [...t.huts, ...isle.huts]) h.residents = 2;
     api.advance(2);
     api.tickSeconds(20);
     api.frameAt(22.5, 21, 16);
-    return { lockedBlocker, lockedFerry, harbor: !!harbor, open: api.view.isleOpen(), pier: !!isle.pier, walkways: isle.walkways.length, huts: isle.huts.length, ferry: api.view.ferry(), reached: isle.huts.filter((h: any) => h.reached).length, log: s.log.slice(-4) };
+    return { lockedBlocker, lockedFerry, harbor: !!harbor, open: api.view.isleOpen(), pier: !!isle.pier, walkways: isle.walkways.length, huts: isle.huts.length, ferry: api.view.ferry(), reached: isle.huts.filter((h: any) => h.reached).length, bridge, smokehouse, terminals: api.view.ferryTerminals(), commuters: api.view.commuters(), riders: api.view.riders(), log: s.log.slice(-4) };
   });
   await page.waitForTimeout(300);
   await page.screenshot({ path: "shots/b6-isle.png" });
@@ -606,6 +612,8 @@ try {
   assert(b6.harbor && b6.open, "a harbor opens the isle");
   assert(b6.pier && b6.walkways > 0 && b6.huts > 0, "pier, walkways and huts on the isle");
   assert(b6.ferry && ["out", "landed", "back", "berthed"].includes(b6.ferry.leg), "the ferry is running");
+  assert(b6.bridge > 0 && b6.smokehouse === 1 && b6.terminals && b6.terminals.isle.length > 0, "harbor bridged and the isle pier is a terminal");
+  assert(b6.commuters > 0 && b6.riders === Math.min(8, b6.commuters), "isle residents commute by ferry and ride its deck");
 
   // M10: a smokehouse catches fire — flames and smoke — burns out damaged, and the repair fund fixes it.
   await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.newTown());

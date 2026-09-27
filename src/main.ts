@@ -8,6 +8,7 @@ import { districtOf } from "./sim/districts";
 import { startStorm, startTsunami } from "./sim/events";
 import { ignite } from "./sim/fire";
 import { Grid } from "./sim/grid";
+import { crossCommuters, ferryTerminals } from "./sim/network";
 import { AUTOSAVE_KEY, deserialize, serialize } from "./sim/save";
 import { newGame } from "./sim/start";
 import { notify, SimState } from "./sim/state";
@@ -191,11 +192,11 @@ function syncView(): void {
   trees.sync(state);
   overlays.sync(state);
   boats.sync(state, viewTime);
-  walkers.sync(state, viewTime);
+  ferry.sync(state, viewTime, crossCommuters(state, grid));
+  walkers.sync(state, viewTime, ferry.riders());
   effects.sync(state, viewTime);
   ship.sync(state, viewTime);
   wildlife.sync(state, viewTime);
-  ferry.sync(state, viewTime);
   pierMarker.sync(state, viewTime);
   cameraControl.setWaterLevel(state.tide.level);
   terrain.update(camera.position, state.tide.level, state.tide.wetLevel);
@@ -338,6 +339,9 @@ const api = {
     gulls: () => wildlife.gullCount,
     crabs: () => wildlife.crabCount,
     ferry: () => ferry.pose,
+    ferryTerminals: () => { const t = ferryTerminals(grid); return t ? { harbor: t.harbor.id, isle: t.isle.map(b => b.id) } : null; },
+    commuters: () => crossCommuters(state, grid),
+    riders: () => ferry.riders().length,
     isleOpen: () => grid.isleOpen(),
     achievementsShown: () => achievements.shown.slice(),
     camera: () => cameraControl.pose,

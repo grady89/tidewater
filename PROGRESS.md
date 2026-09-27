@@ -32,8 +32,8 @@ Live status. Update after every milestone (and mid-milestone if you compact). On
 | Task | Status | Notes |
 |---|---|---|
 | 1 Replace the stilt rule | DONE | db146ad · floor = max(terrain + 0.5, tide + 0.1): walkways clear TIDE_HI, buildings SPRING_HI; only walkways under terrain 0.35 flood, at spring; cost 6$/unit of stilt on the ghost; `street` class spans flats + beach, paths dry ground; tsunami warned a tide ahead, walkways rebuild first; 65 tests, smoke 165 fps; starter town 650 → +52 over 4 cycles |
-| 2 Known-broken hour | IN PROGRESS | sub-task: PERSON_SCALE 0.4 done, night bell done, sea wall shore class done; net floats → per-frame layer |
-| 3 Ferry carries workers | TODO | harbor ↔ isle pier edge in the distance field, crossing cost, passengers on deck; else remove ferry + isle unlock |
+| 2 Known-broken hour | DONE | 841095e · PERSON_SCALE 0.4 (swimmer waterline follows); shark-net floats + buoys in the effects layer on the water each frame (smoke: 0.95 lower at low water); shift bell gated by `isSunUp` (smoke: rang on exactly the 4 daytime shifts of 8); sea wall on the brief's `shore` class |
+| 3 Ferry carries workers | IN PROGRESS | attempt 1: `distanceField` is a bucket queue with one weighted edge — a bridged harbor ↔ every isle pier/dock at `FERRY_COST` (10 cells); `assignWorkers` unchanged, so isle homes staff mainland jobs and mainland homes crew isle boats (sim test: 4 cross each way, distance = market→harbor + 10 + pier→hut; an unlinked or cut harbor carries nobody); view: cross commuters walk to their terminal, ride 20 s, walk on from the far one; up to 8 riders sit on the ferry's deck (smoke: 4 commuters, 4 riders). 66 tests, build, smoke 165 fps green; docs + commit pending |
 | 4 Seeded islands | TODO | only if 1–3 DONE |
 
 Not touched tonight (another session owns them): `test/fuzz*`, `.github/`, `src/ui/settings*`.

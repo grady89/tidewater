@@ -100,6 +100,9 @@ export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
   seaWall: { name: "Sea wall", category: "Sea", w: 1, d: 1, cls: "shore", cost: { money: 25, timber: 3 }, workers: 0, residents: 0, upkeep: 0.1, floor: "ground", network: "leaf", desc: "Per cell on the shore (flats against the hill); shields what stands behind it from the wave" },
 };
 
+/** The ferry crossing between the harbor and the isle's piers, as walking distance for job assignment. */
+export const FERRY_COST = 10;
+
 // Loans (one at a time): the lump sum, the interest on it, and how many settlements repay it.
 export const LOAN_AMOUNT = 300;
 export const LOAN_INTEREST = 0.2;

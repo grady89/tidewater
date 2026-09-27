@@ -4,6 +4,7 @@ import { Mesh, MeshBuilder, Scene, Vector3 } from "@babylonjs/core";
 import { SIZE } from "../config";
 import { cellCenter, cellIndex, Grid, HALF } from "../sim/grid";
 import { ISLE } from "../sim/isle";
+import { ferryTerminals } from "../sim/network";
 import { seaPath } from "../sim/sea";
 import { Building, Cell, SimState } from "../sim/state";
 import { mergeFlat, tint } from "../world/flatMesh";
@@ -15,6 +16,8 @@ export interface FerryPose { x: number; z: number; leg: FerryLeg }
 
 const PERIOD = 70;
 const OUT_END = 0.42, LANDED_END = 0.5, BACK_END = 0.92;
+/** Where passengers stand, in hull space (bow +x): three pairs on the foredeck, one pair either side of the stern lamp. */
+const SEATS: [number, number][] = [[0.3, -0.15], [0.3, 0.15], [0.5, -0.15], [0.5, 0.15], [0.68, -0.13], [0.68, 0.13], [-0.62, -0.16], [-0.62, 0.16]];
 
 export class Ferry {
   private readonly mesh: Mesh;
@@ -58,10 +61,21 @@ export class Ferry {
     this.mesh.setEnabled(false);
   }
 
-  /** The isle's landing: the water cell on its rim nearest the harbor that the sea route can reach. */
-  private landing(harbor: Building): Cell | null {
+  /**
+   * The isle's landing: a free water cell beside the isle's pier (the ferry's far terminal) when one stands,
+   * otherwise the rim cell nearest the harbor that the sea route can reach.
+   */
+  private landing(harbor: Building, pier: Building | null): Cell | null {
     const hc = cellCenter(harbor.cells[0]);
     let best: Cell | null = null, bd = Infinity;
+    if (pier) {
+      for (const c of pier.cells) for (const n of this.grid.neighbors(c)) {
+        if (this.grid.classAt(n) !== "deep" || this.grid.buildingAt(n)) continue;
+        const d = Math.hypot(n.i + 0.5 - hc.x, n.j + 0.5 - hc.z);
+        if (d < bd) { bd = d; best = n; }
+      }
+      if (best) return best;
+    }
     for (let i = -HALF; i < HALF; i++) for (let j = -HALF; j < HALF; j++) {
       const k = cellIndex(i, j);
       if (!this.grid.isle[k] || this.grid.classAt({ i, j }) !== "deep") continue;
@@ -73,18 +87,38 @@ export class Ferry {
     return best;
   }
 
-  private path(harbor: Building): Vector3[] {
-    if (this.route?.id === harbor.id) return this.route.path;
-    const to = this.landing(harbor);
+  private path(harbor: Building, pier: Building | null): Vector3[] {
+    const key = harbor.id * 100000 + (pier?.id ?? 0);
+    if (this.route?.id === key) return this.route.path;
+    const to = this.landing(harbor, pier);
     const cells = to ? seaPath(this.grid, harbor, to, SIZE * 2) : [];
     const path = cells.map(c => { const { x, z } = cellCenter(c); return new Vector3(x, 0, z); });
-    this.route = { id: harbor.id, path };
+    this.route = { id: key, path };
     return path;
   }
 
-  sync(state: SimState, viewTime: number): void {
-    const harbor = Object.values(state.buildings).find(b => b.kind === "harbor");
-    const path = harbor ? this.path(harbor) : [];
+  /** Passengers on the deck this frame: the open foredeck and the stern seats, filled by the commuters (at most 8). */
+  riders(): { pos: Vector3; yaw: number }[] {
+    const out: { pos: Vector3; yaw: number }[] = [];
+    if (!this.pose || this.commuters <= 0 || !this.mesh.isEnabled()) return out;
+    const n = Math.min(SEATS.length, this.commuters);
+    const rot = this.mesh.rotation.y;
+    const cos = Math.cos(rot), sin = Math.sin(rot);
+    for (let k = 0; k < n; k++) {
+      const [lx, lz] = SEATS[k];
+      const x = this.mesh.position.x + lx * cos + lz * sin, z = this.mesh.position.z - lx * sin + lz * cos;
+      out.push({ pos: new Vector3(x, this.mesh.position.y + 0.35, z), yaw: rot + Math.PI / 2 });
+    }
+    return out;
+  }
+
+  private commuters = 0;
+
+  sync(state: SimState, viewTime: number, commuters = 0): void {
+    this.commuters = commuters;
+    const terminals = ferryTerminals(this.grid);
+    const harbor = terminals?.harbor ?? Object.values(state.buildings).find(b => b.kind === "harbor");
+    const path = harbor ? this.path(harbor, terminals?.isle[0] ?? null) : [];
     if (!harbor || path.length < 3) { this.pose = null; this.mesh.setEnabled(false); return; }
     const u = (viewTime / PERIOD) % 1;
     const berth = 1, last = path.length - 1;

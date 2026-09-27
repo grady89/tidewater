@@ -256,6 +256,39 @@ export function placeHarbor(state: SimState, grid: Grid, near: Cell): Building |
   return best ? tryPlace(state, grid, "harbor", best) : null;
 }
 
+/**
+ * Raised walkways from a sea piece (harbor, dock) over open water to the nearest mainland street or pier, so the
+ * piece joins the walk network. Empty when nothing is within `max` cells.
+ */
+export function bridgeTo(state: SimState, grid: Grid, from: Building, max = 16): Building[] {
+  const key = (c: Cell) => c.i + "," + c.j;
+  const own = new Set(from.cells.map(key));
+  const isLink = (c: Cell) => { const b = grid.buildingAt(c); return !!b && b.id !== from.id && BUILDINGS[b.kind].network !== "leaf" && !grid.onIsle(b.cells); };
+  const open = (c: Cell) => !own.has(key(c)) && !grid.buildingAt(c) && !grid.onIsle([c]) && grid.canPlace("raisedWalkway", [c]);
+  const prev = new Map<string, Cell | null>();
+  const queue: Cell[] = [];
+  for (const c of from.cells) for (const n of grid.neighbors(c)) {
+    if (prev.has(key(n)) || !open(n)) continue;
+    prev.set(key(n), null); queue.push(n);
+  }
+  let end: Cell | null = null;
+  for (let head = 0; head < queue.length && !end; head++) {
+    const c = queue[head];
+    if (grid.neighbors(c).some(isLink)) { end = c; break; }
+    for (const n of grid.neighbors(c)) {
+      if (prev.has(key(n)) || !open(n)) continue;
+      prev.set(key(n), c); queue.push(n);
+    }
+  }
+  if (!end) return [];
+  const path: Cell[] = [];
+  for (let c: Cell | null = end; c; c = prev.get(key(c)) ?? null) path.push(c);
+  if (path.length > max) return [];
+  const laid: Building[] = [];
+  for (const c of path.reverse()) { const b = tryPlace(state, grid, "raisedWalkway", c); if (!b) break; laid.push(b); }
+  return laid;
+}
+
 /** A first settlement on the isle (needs the harbor's ferry): a pier on its shore, a raised walkway inland, huts. */
 export function settleIsle(state: SimState, grid: Grid): { pier: Building | null; walkways: Building[]; huts: Building[] } {
   const centre = { i: 22, j: 22 };

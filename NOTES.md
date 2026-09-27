@@ -614,6 +614,19 @@ What other builders do and what was taken from each:
 - Seed money 500 → 650$: the scripted starter town ended with ~4$ from 500, which is exact for a script and
   cruel for a first player. 650 leaves ~150$ of slack for a wrong walkway or two; the tests use the constant.
 
+### Chunk merge (the M12 perf pass, done for the mirror)
+- `view/buildingViews.ts` now merges every building in an 8×8-cell chunk into one mesh (`chunk:i,j`), rebuilt
+  when any building in the chunk appears, leaves or changes its mesh signature. 300 buildings → 15 chunk meshes;
+  the whole scene is ~31 meshes. A rebuild re-creates each building's primitives and merges twice (building, then
+  chunk) — tens of milliseconds for a full chunk, once per placement, not per frame.
+- To merge, everything must share the one flat material, so damage is now baked into the vertex colours (× 0.45,
+  0.42, 0.40 — the old damaged material's diffuse) instead of a material swap; the lean is still a pivot rotation,
+  baked by the merge. `damagedMaterial()` is left in place but unused.
+- Lanterns became two thin-instanced spheres, lit and dark, whose instance buffers are rebuilt only when the set
+  of lit lanterns changes (a per-frame signature string over ≤ a few hundred ids). Lantern positions are read off
+  the per-building lantern mesh at chunk build and the mesh is disposed.
+- Smoke M1 now asserts one mesh per chunk (1–64) instead of one per building; `__tidewater.view.chunks()`.
+
 ## Session A (overnight, branch `rules`)
 
 ### Task 1: the stilt rule replaced
@@ -676,18 +689,29 @@ What other builders do and what was taken from each:
   wave axis (hill homes, the landward street), and the flats rely on breakwaters and lifted decks. The tsunami
   test now guards a hut on the hill behind a shore wall instead of a house on the open flats.
 
-### Chunk merge (the M12 perf pass, done for the mirror)
-- `view/buildingViews.ts` now merges every building in an 8×8-cell chunk into one mesh (`chunk:i,j`), rebuilt
-  when any building in the chunk appears, leaves or changes its mesh signature. 300 buildings → 15 chunk meshes;
-  the whole scene is ~31 meshes. A rebuild re-creates each building's primitives and merges twice (building, then
-  chunk) — tens of milliseconds for a full chunk, once per placement, not per frame.
-- To merge, everything must share the one flat material, so damage is now baked into the vertex colours (× 0.45,
-  0.42, 0.40 — the old damaged material's diffuse) instead of a material swap; the lean is still a pivot rotation,
-  baked by the merge. `damagedMaterial()` is left in place but unused.
-- Lanterns became two thin-instanced spheres, lit and dark, whose instance buffers are rebuilt only when the set
-  of lit lanterns changes (a per-frame signature string over ≤ a few hundred ids). Lantern positions are read off
-  the per-building lantern mesh at chunk build and the mesh is disposed.
-- Smoke M1 now asserts one mesh per chunk (1–64) instead of one per building; `__tidewater.view.chunks()`.
+### Task 3: the ferry carries workers (attempt 1 worked)
+- The edge lives in `sim/network.ts › distanceField`, which is now a bucket queue (Dial's algorithm) so one
+  weighted edge keeps distances minimal: when the walk reaches a cell of the ferry's mainland terminal it also
+  pushes every cell of each isle terminal at `d + FERRY_COST`, and vice versa. Everything else is the old BFS.
+  `assignWorkers` did not change at all — it already ranks home/work pairs by that field, so the crossing simply
+  costs `FERRY_COST` = 10 cells of walking (about the width of the channel) and nearer jobs still win.
+- "An edge harbor": the mainland terminal is the harbor, and it counts only when the walk can reach it — a raised
+  walkway (`flatOrDeep`, "bridges deep water out to a dock") from the street to the harbor, the same link the
+  harbor's own six boat slots need for crew. An unlinked harbor still runs the visual ferry and opens the isle,
+  but nobody crosses. The isle terminals are every pier or dock standing on the isle (any `slots` kind but the
+  harbor), lowest id first; a cut terminal (spring tide over its deck) drops the edge for that phase.
+- `crossCommuters(state, grid)` sums the assignments whose home and work sit on different sides of the water; the
+  view reads it every frame. The ferry itself is still pure view: it now lands beside the isle's pier (a free deep
+  cell next to it, nearest the harbor) instead of the bare rim, and seats `min(8, commuters)` figures on its deck
+  in two rows, facing the bow, whatever leg it is on. The walkers' two-leg commute is the simplest reading of
+  "passengers visible": a cross commuter walks home → terminal on their side, vanishes for
+  `FERRY_CROSSING_SECONDS` (20 s), and reappears at the far terminal walking on to work. It is not synchronised
+  with the ferry's 70 s timetable — the deck riders stand for the crossing, the walkers for the legs.
+- Scenario helper `bridgeTo(state, grid, piece)` lays raised walkways from a sea piece to the nearest mainland
+  link; the sim test builds harbor + bridge + smokehouse + two empty houses, then the isle, and checks both
+  directions: with 6 residents and 10 jobs on the mainland the isle's 6 residents fill the 4 left over; with two
+  boats at the isle pier, empty isle huts and the houses filled, 4 mainland hands crew the isle boats. The isle
+  hut's distance from the market is exactly market→harbor + 10 + pier→hut. Smoke B6: 4 commuters, 4 riders.
 
 ## Findings on the v1 questions
 

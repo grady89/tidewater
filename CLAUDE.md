@@ -104,7 +104,8 @@ Infrastructure
 - Lantern post 1×1 on any walkway, 8$. Night coverage field (safety + happiness).
 - Pier (edge, 1×2 extending seaward), 60$. 2 boat slots. Boats can only depart/return in high water; at low water they sit on the mud.
 - Deep dock (deep, 2×2, must touch a walkway via raised walkway or pier), 150$ + 20 planks. 4 slots, works all tide.
-- Harbor (deep, 3×3, needs depth < −1.5), 600$ + 60 planks. Trade ship berth + 6 slots. Only one needed.
+- Harbor (deep, 3×3, needs depth < −1.5), 600$ + 60 planks. Trade ship berth + 6 slots. Only one needed. Its ferry opens
+  the isle; once a raised walkway bridges the harbor to the street, the ferry also carries workers to and from the isle's piers.
 - Breakwater (deep, per cell, line), 60$ + 4 planks/cell. Shields cells shoreward of it from storm and wave damage.
 - Sea wall (shore, per cell), 25$ + 3 timber/cell. Shields flats behind it from tsunami.
 
@@ -148,7 +149,9 @@ Leisure & tourism
 - Population lives in houses. New residents move in at the start of each cycle when: connected housing is free, town
   happiness ≥ `IMMIGRATION_HAPPINESS`, and food stock > 0. Arrive by trade ship if a harbor exists, otherwise walk in from the largest pier.
 - Jobs: each production/service building has a worker count. Workers are assigned each cycle by nearest-first over the
-  walkway graph (BFS distance from home). Unfilled jobs scale output by the filled fraction.
+  walkway graph (BFS distance from home). A harbor the street reaches and the isle's piers and docks are one edge apart
+  in that graph, `FERRY_COST` (10) cells long: isle homes staff mainland jobs and mainland homes crew isle boats; in the
+  view those workers walk to their terminal and ride the ferry's deck. Unfilled jobs scale output by the filled fraction.
 - Happiness (per house, averaged for town): food, water coverage, job within reach, pollution at home, lantern/night
   coverage, leisure coverage, injuries and fires nearby, damaged buildings nearby. Formula in `balance.ts`.
 - Injuries: shark incidents and fires injure residents; clinic heals over cycles; uninjured residents work.

@@ -1,7 +1,7 @@
 // Sim-only unit checks. Nothing here may pull in Babylon; the hygiene test enforces that for src/sim/**.
 import { describe, expect, it } from "vitest";
 import { CLEARANCE, DRY_TERRAIN, HIGH_WATER_MARK, LOW_WATER_MARK, SPRING_FLOOD_TERRAIN, SPRING_HI, SPRING_LO, STILT_MIN, TIDE_HI, TIDE_LO, TIDE_PERIOD, WALKWAY_SNAP } from "../src/config";
-import { BEACH_MAX_HEIGHT, BOAT_COST, BOAT_MIN_RANGE, BOAT_RANGE, BUILDINGS, CAP_BASE, DRAWDOWN_LEVEL, DRAWDOWN_SECONDS, FIRE_BURN_SECONDS, FIRE_IGNITE_THRESHOLD, FISH_CAP, HAPPY, INJURY_NATURAL_CYCLES, LEVEL_UP_HAPPINESS, MAX_LEVEL, OYSTER_POLLUTION_KILL, CLEAR_TIMBER, LANDFILL_COST, LANDFILL_HEIGHT, LIFT_MAX, LIFT_STEP, LOAN_AMOUNT, LOAN_INTEREST, LOAN_REPAY_CYCLES, PLANK_ORDER_SIZE, REMOVE_REFUND, STARTING_MONEY, STILT_COST_PER_UNIT, WAVE_HEIGHT, TRADE_EVERY, TRADE_EVERY_LIGHTHOUSE, TREATMENT_RADIUS, TREE_REGROW_CYCLES, WAREHOUSE_CAP } from "../src/sim/balance";
+import { BEACH_MAX_HEIGHT, BOAT_COST, BOAT_MIN_RANGE, BOAT_RANGE, BUILDINGS, CAP_BASE, DRAWDOWN_LEVEL, DRAWDOWN_SECONDS, FIRE_BURN_SECONDS, FIRE_IGNITE_THRESHOLD, FISH_CAP, HAPPY, INJURY_NATURAL_CYCLES, LEVEL_UP_HAPPINESS, MAX_LEVEL, OYSTER_POLLUTION_KILL, CLEAR_TIMBER, FERRY_COST, LANDFILL_COST, LANDFILL_HEIGHT, LIFT_MAX, LIFT_STEP, LOAN_AMOUNT, LOAN_INTEREST, LOAN_REPAY_CYCLES, PLANK_ORDER_SIZE, REMOVE_REFUND, STARTING_MONEY, STILT_COST_PER_UNIT, WAVE_HEIGHT, TRADE_EVERY, TRADE_EVERY_LIGHTHOUSE, TREATMENT_RADIUS, TREE_REGROW_CYCLES, WAREHOUSE_CAP } from "../src/sim/balance";
 import { ACHIEVEMENTS, checkAchievements } from "../src/sim/achievements";
 import { deserialize, serialize } from "../src/sim/save";
 import { DISTRICT_MIN, districtName, districtOf, districts } from "../src/sim/districts";
@@ -20,7 +20,7 @@ import { orderPlanks } from "../src/sim/trade";
 import { addCapped, boatPurchaseBlocker, buyBoat, capFor, placeCost, removeBuilding, totalBoats, tryPlace } from "../src/sim/economy";
 import { buildFlow, maxOf, meanHeight, stepDrift, zeros } from "../src/sim/fields";
 import { cellIndex, Grid } from "../src/sim/grid";
-import { updateNetwork } from "../src/sim/network";
+import { crossCommuters, distanceField, updateNetwork } from "../src/sim/network";
 import { stateHash } from "../src/sim/save";
 import { chooseGround, seaEntry, seaPath } from "../src/sim/sea";
 import { newGame } from "../src/sim/start";
@@ -28,9 +28,9 @@ import { Building, buildingList, Cell, createState, population, SimState } from 
 import { advanceCycles, tick } from "../src/sim/tick";
 import { floodFate, isRising, phaseProgress, tickTide, tideNormalized } from "../src/sim/tide";
 import { grownTreesNear } from "../src/sim/trees";
-import { assignWorkers } from "../src/sim/workers";
+import { assignWorkers, employed } from "../src/sim/workers";
 import { STEPS } from "../src/ui/tutorial";
-import { beachesNear, bigTown, growStreet, pierByBeach, placeByWalkway, placeEdge, placeHarbor, placeLumberCamp, placeSecondPier, placeShipyard, reachHill, settleIsle, shelterHarbours, starterTown } from "./scenario";
+import { beachesNear, bigTown, bridgeTo, growStreet, pierByBeach, placeByWalkway, placeEdge, placeHarbor, placeLumberCamp, placeSecondPier, placeShipyard, reachHill, settleIsle, shelterHarbours, starterTown } from "./scenario";
 
 const simSources = import.meta.glob("../src/sim/**/*.ts", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
 
@@ -852,6 +852,53 @@ describe("second island (backlog 6)", () => {
     expect(isle.huts.every(h => h.reached)).toBe(true);
     const round = new Grid(JSON.parse(JSON.stringify(state)) as SimState);
     expect(round.isleOpen()).toBe(true);
+  });
+  it("the ferry carries workers: isle homes staff mainland jobs and mainland homes staff isle boats, a crossing apart", () => {
+    const { state, grid, town: t } = town();
+    state.resources.money += 5000; state.resources.planks += 200;
+    const harbor = placeHarbor(state, grid, t.pier.cells[0])!;
+    growStreet(state, grid, 6);
+    const smokehouse = placeByWalkway(state, grid, "smokehouse")[0];
+    expect(smokehouse).toBeDefined();
+    const houses = placeByWalkway(state, grid, "house", 2); // empty until the second half
+    expect(houses.length).toBe(2);
+    const isle = settleIsle(state, grid);
+    for (const h of [...t.huts, ...isle.huts]) h.residents = BUILDINGS.hut.residents;
+    state.tide.override = TIDE_HI;
+    tick(state, grid);
+    // An unlinked harbor is no terminal: nobody can walk to it, so nobody crosses.
+    const isleHome = isle.huts[0];
+    const at = (field: Int32Array, b: Building) => Math.min(...b.cells.map(c => field[cellIndex(c.i, c.j)]));
+    expect(at(distanceField(grid, t.market!), isleHome)).toBe(-1);
+    assignWorkers(state, grid);
+    expect(crossCommuters(state, grid)).toBe(0);
+    // Bridged to the street, the harbor joins the isle's pier to the walk: market → harbor, the crossing, pier → hut.
+    expect(bridgeTo(state, grid, harbor).length).toBeGreaterThan(0);
+    tick(state, grid);
+    const field = distanceField(grid, t.market!);
+    const toHarbor = at(field, harbor), pierToHome = at(distanceField(grid, isle.pier!), isleHome);
+    expect(toHarbor).toBeGreaterThan(0);
+    expect(pierToHome).toBeGreaterThan(0);
+    expect(at(field, isleHome)).toBe(toHarbor + FERRY_COST + pierToHome);
+    // Mainland: 6 residents, 10 jobs (crew 4, market 3, smokehouse 3). The isle's 6 residents take the 4 left over.
+    assignWorkers(state, grid);
+    expect(crossCommuters(state, grid)).toBe(4);
+    expect(state.assignments.filter(a => grid.onIsle(state.buildings[a.home].cells)).every(a => !grid.onIsle(state.buildings[a.work].cells))).toBe(true);
+    expect(t.huts.every(h => employed(state, h) === h.residents)).toBe(true);
+    // The other way: boats at the isle pier, empty isle huts, two more mainland houses — mainland spare hands crew them.
+    isle.pier!.boats = 2;
+    for (const h of isle.huts) h.residents = 0;
+    for (const h of houses) h.residents = BUILDINGS.house.residents;
+    tick(state, grid);
+    assignWorkers(state, grid);
+    expect(isle.pier!.workers).toBe(4);
+    expect(crossCommuters(state, grid)).toBe(4);
+    expect(state.assignments.filter(a => a.work === isle.pier!.id).every(a => !grid.onIsle(state.buildings[a.home].cells))).toBe(true);
+    // A cut terminal breaks the crossing: at a spring peak nothing is cut here, but under the harbor's deck it is.
+    state.tide.override = 1.05;
+    tick(state, grid);
+    assignWorkers(state, grid);
+    expect(crossCommuters(state, grid)).toBe(0);
   });
 });
 
