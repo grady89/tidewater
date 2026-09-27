@@ -73,8 +73,6 @@ export function emptyStock(): Record<GoodId, number> {
   return out;
 }
 
-/** The goods the base game makes; the biomes (Stage 2) replace this with their own lists. */
-export const BASE_MAKES: readonly GoodId[] = ["fish", "shellfish", "smoked", "timber", "planks"];
 
 /**
  * Which goods the resource bar shows, in registry order: everything the island makes, plus anything it holds.

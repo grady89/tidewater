@@ -6,7 +6,9 @@ import { ArcRotateCamera, Color3, Color4, DefaultRenderingPipeline, Engine, Free
 import { SIZE } from "../config";
 import { DUSK_MIN } from "../sim/daylight";
 import { HeightFn } from "../sim/heightfield";
+import { biomeOf } from "../sim/biomes";
 import { island } from "../sim/island";
+import { tidesFor } from "../sim/tides";
 import { SectorRecord } from "../sim/sectors";
 import { terrainFS, terrainVS } from "../../shaders/terrain";
 import { waterFS, waterVS } from "../../shaders/water";
@@ -364,12 +366,13 @@ export class World {
       fv.waterMat.setFloat("caustics", 0);
       return;
     }
-    const isl = island(record.state.world.seed);
+    const isl = island(record.state.world.seed, record.state.world.biome);
     const filled = new Set(record.state.landfill);
+    const landfillHeight = tidesFor(biomeOf(record.state.world.biome).tide).landfillHeight;
     const height: HeightFn = (x, z) => {
       const i = Math.floor(x), j = Math.floor(z);
       const h = isl.height(x, z);
-      return filled.has((i + SIZE / 2) * SIZE + (j + SIZE / 2)) ? Math.max(h, 1.0) : h;
+      return filled.has((i + SIZE / 2) * SIZE + (j + SIZE / 2)) ? Math.max(h, landfillHeight) : h;
     };
     for (let row = 0; row < HEIGHT_TEX; row++) for (let col = 0; col < HEIGHT_TEX; col++) {
       const x = (col / (HEIGHT_TEX - 1) - 0.5) * SIZE, z = (row / (HEIGHT_TEX - 1) - 0.5) * SIZE;
@@ -383,7 +386,7 @@ export class World {
     // same way) and nothing pokes out of the solid. Flat-shaded. CreateGround's row 0 is z = +extent.
     const ext = FACE_CIRCUMRADIUS + 1;
     const n = Math.round(ext * MINI_CELLS / (SIZE / 2));
-    const heights = miniatureHeights(isl.height, record.state.landfill, n, ext);
+    const heights = miniatureHeights(isl.height, record.state.landfill, n, ext, landfillHeight);
     const terrain = MeshBuilder.CreateGround(`mini${index}`, { width: 2 * ext, height: 2 * ext, subdivisions: n }, this.scene);
     const pos = terrain.getVerticesData(VertexBuffer.PositionKind)!;
     const half = SIZE / 2, clampHalf = (v: number) => Math.max(-half, Math.min(half, v));

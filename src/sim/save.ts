@@ -25,6 +25,7 @@ export function deserialize(json: string): SimState {
     t.orders ??= {};
     if (t.plankOrder !== undefined) { if (t.plankOrder > 0) t.orders.planks = (t.orders.planks ?? 0) + t.plankOrder; delete t.plankOrder; }
   }
+  if (s.tide && (s.tide as { scale?: number }).scale === undefined) (s.tide as { scale?: number }).scale = 1;
   s.version = 3;
   s.achievements ??= []; // saves from before backlog 7
   s.extraTrees ??= []; s.landfill ??= []; // saves from before the land tools

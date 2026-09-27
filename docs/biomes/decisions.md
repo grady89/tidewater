@@ -40,3 +40,15 @@ Calls made where BIOMES.md is silent, or where the code's balance and BIOMES.md 
    the registry price, the next `COMPANY_PRICE_SLOPE_UNITS` (120) slide linearly to `COMPANY_PRICE_FLOOR` (0.5).
    Surplus fish is flat. 60 is the base smoked cap, so a Tidewater town without warehouses earns exactly what it
    did; a cumulative (across visits) decay would have changed every trade cycle and is left for the lanes.
+10. **The tide multiplier scales everything that was a tide constant** (`sim/tides.ts`): the four levels, the
+    high/low water marks, the dry line, the spring-flood line, the wave height, the beach band, the landfill
+    height, the fixed deck heights (pier 1.0, raised walkway 1.2) and every `terrain` window in the catalog are
+    Tidewater's numbers × the biome's `tide`, about mean sea level. The Grid carries the active `Tides`; the clock
+    keeps `TideState.scale` (saved, backfilled to 1). Scaling only the water would have flooded every standard
+    building at a Fjord spring (CLAUDE.md §6 says buildings clear the spring peak), so the rule itself scales.
+11. **Biome registry:** `sim/biomes/registry.ts` holds the interface and the map; `index.ts` re-exports it and
+    imports every biome file (they register themselves), which keeps the import graph acyclic. `biomeOf` falls
+    back to Tidewater for an id that is not charted, so an old sector never breaks.
+12. **Island cache keyed by `${biome}:${seed}`;** a biome's validation is the base thresholds (overridable per
+    biome) plus its own `validate(stats)`; stats now count cells per material, deep-enough cells and cells above
+    4.0 for the biomes' rules. Seed 0 only bypasses validation for Tidewater.

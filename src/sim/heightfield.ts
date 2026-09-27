@@ -1,7 +1,8 @@
 // Seeded value noise and the analytic terrain height. Pure functions; the sim and the view both read them.
 // `islandHeight(seed)` is the main island for one noise seed — seed TERRAIN_SEED (0) is the original island,
 // byte for byte — and the second island (backlog 6) is blended in at the end of every one of them.
-import { TERRAIN_SEED, TIDE_HI, TIDE_LO } from "../config";
+import { TERRAIN_SEED } from "../config";
+import { BASE_TIDES, classFor, Tides } from "./tides";
 import { isleHeight, isleWeight } from "./isle";
 
 export type HeightFn = (x: number, z: number) => number;
@@ -47,7 +48,7 @@ export function islandHeight(seed: number): HeightFn {
 /** Terrain height in world Y at world (x, z) on the original island (seed TERRAIN_SEED). */
 export const terrainHeight: HeightFn = islandHeight(TERRAIN_SEED);
 
-/** deep: always underwater. flat: the tidal flats, buildable. high: dry land above the tide. */
-export function cellClass(h: number): "deep" | "flat" | "high" {
-  return h < TIDE_LO ? "deep" : h <= TIDE_HI ? "flat" : "high";
+/** deep: always underwater. flat: the tidal flats, buildable. high: dry land above the tide (per the biome's tides). */
+export function cellClass(h: number, tides: Tides = BASE_TIDES): "deep" | "flat" | "high" {
+  return classFor(h, tides);
 }

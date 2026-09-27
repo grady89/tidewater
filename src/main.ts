@@ -3,7 +3,7 @@ import { ArcRotateCamera, Color4, DefaultRenderingPipeline, Engine, Matrix, Scen
 import { CameraControl } from "./build/cameraControl";
 import { Placement, Tool } from "./build/placement";
 import { SIM_TICK, SIZE, TIDE_PERIOD } from "./config";
-import { BUILDINGS, LANDFILL_HEIGHT, STORM_WAVE_AMP, WAVE_HEIGHT, WAVE_WIDTH } from "./sim/balance";
+import { BUILDINGS, STORM_WAVE_AMP, WAVE_WIDTH } from "./sim/balance";
 import { districtOf } from "./sim/districts";
 import { startStorm, startTsunami } from "./sim/events";
 import { ignite } from "./sim/fire";
@@ -121,7 +121,7 @@ const achievements = new AchievementPopup(document.getElementById("achievement")
 const markerLabel = new MarkerLabel(document.getElementById("markerLabel")!, "Pier goes here");
 achievements.adopt(state);
 placement.onSelect = b => info.select(b);
-placement.onLandfill = c => { terrain.raise([c], LANDFILL_HEIGHT); trees.groundKey++; views.clear(); };
+placement.onLandfill = c => { terrain.raise([c], grid.tides.landfillHeight); trees.groundKey++; views.clear(); };
 if (state.landfill.length || state.world.seed !== 0) syncGround();
 cameraControl.onHome = () => api.frameTown(30);
 
@@ -129,7 +129,7 @@ cameraControl.onHome = () => api.frameTown(30);
 /** The ground as the ledger has it: the heightfield plus every landfill cell. */
 function syncGround(): void {
   terrain.reset(grid.island.height);
-  terrain.raise(state.landfill.map(k => ({ i: Math.floor(k / SIZE) - SIZE / 2, j: (k % SIZE) - SIZE / 2 })), LANDFILL_HEIGHT);
+  terrain.raise(state.landfill.map(k => ({ i: Math.floor(k / SIZE) - SIZE / 2, j: (k % SIZE) - SIZE / 2 })), grid.tides.landfillHeight);
   trees.groundKey++;
   views.clear();
 }
@@ -473,7 +473,7 @@ function syncView(): void {
   sky.setLighting(light);
   water.setSwell(1 + (STORM_WAVE_AMP - 1) * stormMix);
   const ts = state.tsunami;
-  water.setCrest(ts.dir, ts.stage === "wave" ? ts.front : -999, ts.stage === "wave" ? WAVE_HEIGHT : 0, WAVE_WIDTH);
+  water.setCrest(ts.dir, ts.stage === "wave" ? ts.front : -999, ts.stage === "wave" ? grid.tides.waveHeight : 0, WAVE_WIDTH);
   views.sync(state, light.lamp);
   trees.sync(state);
   overlays.sync(state);

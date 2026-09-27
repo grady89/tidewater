@@ -2,14 +2,15 @@
 // luxury rule, Toolworks, and the Trade Company as carrier. Sim only.
 import { describe, expect, it } from "vitest";
 import { BUILDINGS, CAP_BASE, COMPANY_FULL_PRICE_UNITS, COMPANY_PRICE_FLOOR, COMPANY_PRICE_SLOPE_UNITS, HAPPY, LUXURY_PER_RESIDENT, ORDER_SIZE, TOOLWORKS_BONUS, TOOLWORKS_IRON_PER_CYCLE, TOOLWORKS_RADIUS, WAREHOUSE_CAP } from "../src/sim/balance";
-import { BIOME_IDS, favouriteOf, luxuryOf } from "../src/sim/biomes";
+import { BIOME_IDS, chartedBiomes, favouriteOf, luxuryOf, makesOf } from "../src/sim/biomes";
 import { consumeLuxury, eat, favouriteInStock, foodsInStock, foodTotal, foreignLuxuriesInStock, levelAllowed } from "../src/sim/food";
 import { advanceCycles } from "../src/sim/tick";
 import { cellIndex } from "../src/sim/grid";
 import { Material, materialCode, materialOf, MATERIALS } from "../src/sim/materials";
 import { addCapped, capFor, toolBonus } from "../src/sim/economy";
 import { staffing } from "../src/sim/workers";
-import { BASE_MAKES, emptyStock, GOOD_IDS, GOOD_ROLES, goodsOfRole, GOODS, shownGoods } from "../src/sim/goods";
+import { emptyStock, GOOD_IDS, GOOD_ROLES, goodsOfRole, GOODS, shownGoods } from "../src/sim/goods";
+const BASE_MAKES = makesOf("tidewater");
 import { deserialize, serialize } from "../src/sim/save";
 import { newGame } from "../src/sim/start";
 import { buildingList, Cell, SimState } from "../src/sim/state";
@@ -153,11 +154,10 @@ describe("food variety and the luxury rule", () => {
     expect(favouriteInStock(state)).toBe(true);
     advanceCycles(state, grid, 1);
     expect(state.happiness).toBeGreaterThan(before + HAPPY.favourite * 0.5);
-    // Each luxury is exactly one biome's favourite, and never the favourite of the biome that makes it.
-    const favourites = BIOME_IDS.map(favouriteOf);
-    expect(new Set(favourites).size).toBe(BIOME_IDS.length);
-    for (const b of BIOME_IDS) expect(favouriteOf(b)).not.toBe(luxuryOf(b));
-    expect(new Set(BIOME_IDS.map(luxuryOf))).toEqual(new Set(favourites));
+    // Each charted biome's favourite is a luxury it does not make; the ring closes once every biome is charted.
+    for (const b of chartedBiomes()) expect(favouriteOf(b)).not.toBe(luxuryOf(b));
+    expect(chartedBiomes()).toContain("tidewater");
+    void BIOME_IDS;
   });
 
   it("the market sells every food above the town's reserve, first kinds first", () => {

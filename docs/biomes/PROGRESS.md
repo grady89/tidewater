@@ -19,7 +19,7 @@ never push `main`. Where BIOMES.md is silent, choose the simplest option and log
 - [DONE] 1g tests: registry, variety, luxury, favourite, leveling, Toolworks, company purchases; existing scenarios + smoke pass for Tidewater (level 3 needs a company purchase).
 
 ## Stage 2 — biome framework
-- [TODO] 2a `src/sim/biomes/index.ts` Biome interface + `tidewater.ts` identity biome (seed 0 byte for byte).
+- [DONE] 2a `src/sim/biomes/index.ts` Biome interface + `tidewater.ts` identity biome (seed 0 byte for byte).
 - [TODO] 2b `src/view/biomes/index.ts` BiomeLook read through one accessor.
 - [TODO] 2c `island(seed, biome)`; validation per biome; catalog = base ∪ unique − excluded; `start.ts` places a valid starter town for any biome/seed.
 - [TODO] 2d snow line, aurora, lagoon tint as new uniforms on existing shaders (additive only).
@@ -46,4 +46,4 @@ never push `main`. Where BIOMES.md is silent, choose the simplest option and log
 - [TODO] behind `LANES_ENABLED=false`.
 
 ## Last thing that worked
-- Stage 1 complete: 1f company carrier (companyCarries/companyBuys/companyPays/orderGood, harbor panel order buttons, api.orderGood, fuzzer orders any carried good); 1g tests in test/goods.test.ts (99 checks green), smoke green. Pushed.
+- 2a: Biome interface + registry, tides.ts (tide multiplier through grid/tide/tick/placement/events/view), island(seed, biome), biome tick/settle hooks, test/biomes.test.ts; build+test+smoke green.

@@ -3,13 +3,13 @@
 // live under "tidewater.sector.N" (the state, LZW-packed) and "tidewater.sector.N.meta" (a small metadata
 // object read at every launch). The autosave and the three old save slots migrate here once.
 import { BAND_GATING } from "../config";
-import { BIOME_LABEL, BiomeId } from "./biomes";
+import { Band, BIOME_LABEL, BiomeId } from "./biomes";
 import { compress, decompress, isPacked } from "./compress";
 import { deserialize, serialize } from "./save";
 import { population, SimState } from "./state";
 
 export const FACES = 12;
-export type Band = "polar" | "temperate" | "tropical";
+export type { Band };
 /** Face 0 is the top polar face, 1–5 the upper ring, 6–10 the lower ring, 11 the bottom polar face. */
 export function bandOf(face: number): Band {
   return face === 0 || face === 11 ? "polar" : face <= 5 ? "temperate" : "tropical";

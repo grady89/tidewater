@@ -1,12 +1,14 @@
 // Cell model over the terrain, occupancy index, and placement rules. Buildings live in SimState; the Grid is the
 // spatial index over them (rebuilt from state on load) plus the fixed terrain classification.
-import { CLEARANCE, DRY_TERRAIN, SIZE, SPRING_HI, STILT_MIN, TIDE_HI, TIDE_LO, WALKWAY_SNAP } from "../config";
-import { BEACH_MAX_HEIGHT, BuildingKind, BUILDINGS, LANDFILL_HEIGHT, LIFT_MAX, LIFT_STEP, PlacementClass } from "./balance";
+import { CLEARANCE, SIZE, STILT_MIN, WALKWAY_SNAP } from "../config";
+import { BuildingKind, BUILDINGS, LIFT_MAX, LIFT_STEP, PlacementClass } from "./balance";
+import { biomeFor } from "./biomes";
 import { cellIndex, DIRS, HALF, inBounds } from "./cells";
 import { cellClass } from "./heightfield";
 import { Island, island } from "./island";
 import { isleCell } from "./isle";
 import { Material, materialOf, UNBUILDABLE } from "./materials";
+import { BASE_TIDES, Tides, tidesFor } from "./tides";
 import { Building, Cell, SimState } from "./state";
 
 /** deep: always underwater. flat: the tidal flats, buildable. high: dry land above the tide. */
@@ -32,6 +34,8 @@ export class Grid {
   readonly materials = new Uint8Array(SIZE * SIZE);
   /** Bumped whenever the heights change (attach, landfill), so caches keyed on the terrain (the field flows) refresh. */
   terrainVersion = 0;
+  /** The biome's tide numbers (tides.ts): class thresholds, clearances, marks, flood lines. Set at attach. */
+  tides: Tides = BASE_TIDES;
 
   constructor(public state: SimState) {
     this.attach(state);
@@ -55,6 +59,7 @@ export class Grid {
   /** Point the index at a (loaded) state and rebuild occupancy from its buildings. */
   attach(state: SimState): void {
     this.state = state;
+    this.tides = tidesFor(biomeFor(state).tide);
     this.resetTerrain();
     this.terrainVersion++;
     for (const k of state.landfill) this.applyLandfill({ i: Math.floor(k / SIZE) - HALF, j: (k % SIZE) - HALF });
@@ -62,7 +67,7 @@ export class Grid {
   }
 
   /** The ledger's island: its heightfield and tree sites, from `state.world.seed`. */
-  get island(): Island { return island(this.state.world.seed); }
+  get island(): Island { return island(this.state.world.seed, this.state.world.biome); }
 
   /** Classify every cell from the island's heightfield (landfill is applied on top afterwards). */
   private resetTerrain(): void {
@@ -73,14 +78,14 @@ export class Grid {
       const k = cellIndex(i, j);
       this.heights[k] = h;
       this.isle[k] = isleCell({ i, j }) ? 1 : 0;
-      this.classes[k] = cellClass(h);
-      this.deep[k] = h < TIDE_LO ? 1 : 0;
-      this.water[k] = h <= TIDE_HI ? 1 : 0;
+      this.classes[k] = cellClass(h, this.tides);
+      this.deep[k] = h < this.tides.lo ? 1 : 0;
+      this.water[k] = h <= this.tides.hi ? 1 : 0;
     }
     this.beach.fill(0);
     for (let i = -HALF; i < HALF; i++) for (let j = -HALF; j < HALF; j++) {
       const k = cellIndex(i, j);
-      if (this.classes[k] !== "high" || this.heights[k] > BEACH_MAX_HEIGHT) continue;
+      if (this.classes[k] !== "high" || this.heights[k] > this.tides.beachMax) continue;
       if (this.neighbors({ i, j }).some(n => this.water[cellIndex(n.i, n.j)])) this.beach[k] = 1;
     }
   }
@@ -89,7 +94,7 @@ export class Grid {
   applyLandfill(c: Cell): void {
     const k = cellIndex(c.i, c.j);
     this.terrainVersion++;
-    this.heights[k] = LANDFILL_HEIGHT;
+    this.heights[k] = this.tides.landfillHeight;
     this.classes[k] = "high";
     this.deep[k] = 0;
     this.water[k] = 0;
@@ -126,15 +131,16 @@ export class Grid {
       case "edge": return cells.every(c => base(c) === "deep") && cells.some(c => this.touches(c, "flat"));
       case "beach": return cells.every(c => this.isBeach(c));
       case "highOrEdge": return cells.every(c => base(c) === "high") || this.classOk("edge", cells);
-      case "street": return cells.every(c => base(c) === "flat" || (base(c) === "high" && this.heightAt(c) < DRY_TERRAIN));
+      case "street": return cells.every(c => base(c) === "flat" || (base(c) === "high" && this.heightAt(c) < this.tides.dryTerrain));
     }
   }
 
-  /** Terrain window check for kinds that have one (oyster beds). */
+  /** Terrain window check for kinds that have one (oyster beds, paths, the harbor). Windows are Tidewater's; they scale with the tide. */
   terrainOk(kind: BuildingKind, cells: Cell[]): boolean {
     const t = BUILDINGS[kind].terrain;
     if (!t) return true;
-    return cells.every(c => { const h = this.heightAt(c); return h >= t.min && h <= t.max; });
+    const s = this.tides.scale;
+    return cells.every(c => { const h = this.heightAt(c); return h >= t.min * s && h <= t.max * s; });
   }
   materialAt(c: Cell): Material {
     return inBounds(c.i, c.j) ? materialOf(this.materials[cellIndex(c.i, c.j)]) : "plain";
@@ -243,13 +249,13 @@ export class Grid {
   floorFor(kind: BuildingKind, cells: Cell[], lift = 0): number {
     const f = BUILDINGS[kind].floor;
     const h = this.groundUnder(cells);
-    if (typeof f === "number") return Math.max(f, h + 0.05); // a fixed floor never sinks into a hill
+    if (typeof f === "number") return Math.max(f * this.tides.scale, h + 0.05); // a fixed floor (scaled with the tide) never sinks into a hill
     if (f === "terrain") return h + 0.05;
-    if (f === "ground") return Math.max(1.0, h + 0.05);
+    if (f === "ground") return Math.max(this.tides.groundFloor, h + 0.05);
     // Auto-sized stilts: at least STILT_MIN over the cell and CLEARANCE over the tide the piece must clear — the
     // ordinary high tide for a street, the spring tide for a building. Then a lift (never below), then the snap:
     // rise to the highest neighbouring deck within WALKWAY_SNAP of the safe height so streets run level.
-    const safe = Math.max(h + STILT_MIN, (f === "street" ? TIDE_HI : SPRING_HI) + CLEARANCE);
+    const safe = Math.max(h + STILT_MIN, (f === "street" ? this.tides.hi : this.tides.springHi) + CLEARANCE);
     let floor = safe + Math.max(0, Math.min(LIFT_MAX, lift)) * LIFT_STEP;
     for (const c of cells) for (const n of this.neighbors(c)) {
       const b = this.buildingAt(n);

@@ -1,7 +1,6 @@
 // Money and goods. Per-cycle settlement runs at the high-tide peak. High-water producers (boats) work the high
 // phase and land on leaving it; low-water producers (oyster beds, clam camps) work the low phase the same way.
 // Boats at a deep dock work both. Land production (wood, planks, smoking, boat building) settles once a cycle.
-import { SPRING_LO } from "../config";
 import {
   BOAT_BASE_FISH, BOAT_COST, BUILDINGS, BuildingKind, CAP_BASE, CLAM_PER_CELL, CLAM_RADIUS, Cost, FOOD_PER_CYCLE,
   FOOD_RESERVE_CYCLES, GoodKind, HAPPY, IMMIGRANTS_PER_CYCLE, IMMIGRATION_HAPPINESS, LEVEL_UP_CYCLES, LEVEL_UP_HAPPINESS,
@@ -162,7 +161,7 @@ export function shiftStart(state: SimState, grid: Grid, phase: Phase): void {
 
 /** Shift end: boats land a catch scaled by the ground's fish density and thin it; shellfish comes in from the flats. */
 export function shiftEnd(state: SimState, grid: Grid, phase: Phase): void {
-  const springLow = phase === "low" && state.tide.level <= SPRING_LO + 0.05;
+  const springLow = phase === "low" && state.tide.level <= grid.tides.springLo + 0.05;
   for (const b of buildingList(state)) {
     if (isHarbour(b) && b.atSea) {
       b.atSea = false;

@@ -6,7 +6,7 @@
 import { SIZE } from "../config";
 import {
   BUILDINGS, DRAWDOWN_LEVEL, DRAWDOWN_SECONDS, SHELTER_RADIUS, SHIELD_RANGE, STORM_CHANCE, STORM_FIRST_CYCLE,
-  STORM_LOSS_CHANCE, TSUNAMI_CHANCE, TSUNAMI_COOLDOWN, TSUNAMI_FIRST_CYCLE, WAVE_HEIGHT, WAVE_SETTLE_SECONDS,
+  STORM_LOSS_CHANCE, TSUNAMI_CHANCE, TSUNAMI_COOLDOWN, TSUNAMI_FIRST_CYCLE, WAVE_SETTLE_SECONDS,
   WAVE_SPEED,
 } from "./balance";
 import { cellIndex, Grid, HALF, inBounds } from "./grid";
@@ -167,7 +167,7 @@ function strike(state: SimState, grid: Grid): void {
       trimCrew(state, b);
     }
     if (b.kind === "seaWall" || b.kind === "breakwater") continue;
-    if (b.floorY >= WAVE_HEIGHT || b.damaged) continue;
+    if (b.floorY >= grid.tides.waveHeight || b.damaged) continue;
     if (b.cells.some(c => shielded(grid, t.dir, c))) continue;
     b.damaged = true;
     b.fire = 0;

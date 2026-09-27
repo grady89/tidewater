@@ -4,8 +4,8 @@
 import { ArcRotateCamera, Color3, Matrix, Mesh, MeshBuilder, Quaternion, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
 import { BuildingKind, BUILDINGS, PlacementClass } from "../sim/balance";
 import { autoStilts, boatPurchaseBlocker, buyBoat, canAfford, placeCost, removeBuilding, tryPlace } from "../sim/economy";
-import { BOAT_COST, LANDFILL_COST, LANDFILL_HEIGHT, LANTERN_COST, LIFT_MAX, PLANT_COST } from "../sim/balance";
-import { CLEARANCE, SPRING_HI, TIDE_HI } from "../config";
+import { BOAT_COST, LANDFILL_COST, LANTERN_COST, LIFT_MAX, PLANT_COST } from "../sim/balance";
+import { CLEARANCE } from "../config";
 import { Grid, HALF, worldToCell } from "../sim/grid";
 import { ground as groundHeight } from "../view/ground";
 import { addLandfill, clearBlocker, clearTree, landfillBlocker, plantBlocker, plantTree } from "../sim/land";
@@ -174,14 +174,15 @@ export class Placement {
 
   /** Height of the plane the pointer is picked against: the deck the tool would build. */
   private pickY(): number {
-    if (this.tool === "boat" || this.tool === "lanternPost") return BUILDINGS.pier.floor as number;
-    if (this.tool === "landfill") return 0.6;
-    if (!isBuildingTool(this.tool)) return 1.0;
+    const t = this.grid.tides;
+    if (this.tool === "boat" || this.tool === "lanternPost") return t.pierFloor;
+    if (this.tool === "landfill") return t.hi;
+    if (!isBuildingTool(this.tool)) return t.groundFloor;
     const f = BUILDINGS[this.tool].floor;
-    if (typeof f === "number") return f;
-    if (f === "street") return TIDE_HI + CLEARANCE;
-    if (f === "stilts") return SPRING_HI + CLEARANCE;
-    return 0.6;
+    if (typeof f === "number") return f * t.scale;
+    if (f === "street") return t.hi + CLEARANCE;
+    if (f === "stilts") return t.springHi + CLEARANCE;
+    return t.hi;
   }
 
   /** Tools that can go on the hill are picked against the terrain itself. */
@@ -236,7 +237,7 @@ export class Placement {
       const b = this.grid.buildingAt(anchor);
       return { cells: [anchor], blocker: lanternBlocker(state, this.grid, anchor), warn: null, fate: "safe", y: b?.floorY ?? 1, stilt: 0, cost: LANTERN_COST, rot: 0 };
     }
-    if (this.tool === "landfill") return { cells: [anchor], blocker: landfillBlocker(state, this.grid, anchor), warn: null, fate: "safe", y: LANDFILL_HEIGHT + 0.03, stilt: 0, cost: LANDFILL_COST.money, rot: 0 };
+    if (this.tool === "landfill") return { cells: [anchor], blocker: landfillBlocker(state, this.grid, anchor), warn: null, fate: "safe", y: this.grid.tides.landfillHeight + 0.03, stilt: 0, cost: LANDFILL_COST.money, rot: 0 };
     if (this.tool === "plantTree") return { cells: [anchor], blocker: plantBlocker(state, this.grid, anchor), warn: null, fate: "safe", y: this.grid.heightAt(anchor) + 0.05, stilt: 0, cost: PLANT_COST, rot: 0 };
     if (this.tool === "clearTree") return { cells: [anchor], blocker: clearBlocker(state, this.grid, anchor), warn: null, fate: "safe", y: this.grid.heightAt(anchor) + 0.05, stilt: 0, cost: 0, rot: 0 };
     const kind = this.tool;
@@ -263,7 +264,7 @@ export class Placement {
     if (def.network !== "root" && !cells.some(c => this.grid.neighbors(c).some(n => { const b = this.grid.buildingAt(n); return !!b && (b.reached || BUILDINGS[b.kind].network === "root"); }))) {
       warn = def.network === "link" ? "Not joined to the town yet: streets need a pier at one end" : "No street touches it: nobody can reach it";
     }
-    return { cells, blocker: null, warn, fate: floodFate(y), y, stilt, cost, rot };
+    return { cells, blocker: null, warn, fate: floodFate(y, this.grid.tides), y, stilt, cost, rot };
   }
 
   /** The blue door tab on the side the building will face. */

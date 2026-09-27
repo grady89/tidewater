@@ -2,7 +2,6 @@
 // own. Gulls circle every harbour that has boats; crabs scuttle on flat cells near the town while the tide leaves
 // them exposed. View only.
 import { Matrix, Mesh, MeshBuilder, Quaternion, Scene, Vector3 } from "@babylonjs/core";
-import { TIDE_HI, TIDE_LO } from "../config";
 import { BUILDINGS } from "../sim/balance";
 import { cellIndex, Grid, HALF, inBounds } from "../sim/grid";
 import { ground as groundHeight } from "./ground";
@@ -112,7 +111,7 @@ export class Wildlife {
         if (!inBounds(i, j)) continue;
         const k = cellIndex(i, j);
         const h = this.grid.heights[k];
-        if (h < TIDE_LO || h > TIDE_HI || this.grid.buildingAt({ i, j })) continue;
+        if (h < this.grid.tides.lo || h > this.grid.tides.hi || this.grid.buildingAt({ i, j })) continue;
         candidates.add(k);
       }
     }

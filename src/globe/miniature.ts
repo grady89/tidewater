@@ -2,7 +2,8 @@
 // go, coloured from the real buildings. Pure functions over the ledger and the island generator — no Babylon —
 // so the tests can check them; src/globe/world.ts turns them into meshes.
 import { SIZE } from "../config";
-import { BUILDINGS, LANDFILL_HEIGHT } from "../sim/balance";
+import { BUILDINGS } from "../sim/balance";
+import { LANDFILL_HEIGHT } from "../sim/balance";
 import { HeightFn } from "../sim/heightfield";
 import { SimState } from "../sim/state";
 import { hasRoof, roofFor, roofShape, RoofShape } from "../view/roofs";
@@ -14,7 +15,7 @@ export const MINI_CELLS = 32;
  * Vertex heights of the miniature on an (n+1)² grid over the 64-unit square, row-major with z growing down the
  * rows (row 0 = z = −32). Landfill cells stand at LANDFILL_HEIGHT.
  */
-export function miniatureHeights(height: HeightFn, landfill: number[], n = MINI_CELLS, extent = SIZE / 2): Float32Array {
+export function miniatureHeights(height: HeightFn, landfill: number[], n = MINI_CELLS, extent = SIZE / 2, landfillHeight = LANDFILL_HEIGHT): Float32Array {
   const out = new Float32Array((n + 1) * (n + 1));
   const filled = new Set(landfill);
   const half = SIZE / 2;
@@ -30,7 +31,7 @@ export function miniatureHeights(height: HeightFn, landfill: number[], n = MINI_
       for (const [di, dj] of [[0, 0], [-1, 0], [0, -1], [-1, -1]]) {
         const ci = i + di, cj = j + dj;
         if (ci < -half || ci >= half || cj < -half || cj >= half) continue;
-        if (filled.has((ci + half) * SIZE + (cj + half)) && x >= ci && x <= ci + 1 && z >= cj && z <= cj + 1) h = Math.max(h, LANDFILL_HEIGHT);
+        if (filled.has((ci + half) * SIZE + (cj + half)) && x >= ci && x <= ci + 1 && z >= cj && z <= cj + 1) h = Math.max(h, landfillHeight);
       }
     }
     out[row * (n + 1) + col] = h;

@@ -2,7 +2,6 @@
 // function of sim state and view time: moored at their harbour, heeled on the mud when the water is gone, or
 // along the deep-water path to the harbour's ground while the sim says they're at sea. View only.
 import { Color4, Matrix, Mesh, MeshBuilder, Quaternion, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
-import { HIGH_WATER_MARK, LOW_WATER_MARK } from "../config";
 import { BUILDINGS } from "../sim/balance";
 import { cellCenter, Grid, worldToCell } from "../sim/grid";
 import { ground as groundHeight } from "./ground";
@@ -170,7 +169,7 @@ export class Boats {
       if ((BUILDINGS[h.kind].slots ?? 0) === 0 || h.boats === 0) continue;
       const moorings = this.moorings(h);
       const route = h.atSea && h.ground ? this.pathFor(h, h.ground) : null;
-      const u = h.atSea ? phaseProgress(state.tide, HIGH_WATER_MARK, LOW_WATER_MARK) : 0;
+      const u = h.atSea ? phaseProgress(state.tide, this.grid.tides.highMark, this.grid.tides.lowMark) : 0;
       for (let k = 0; k < h.boats; k++) {
         const color = Color4.FromHexString(PALETTE.hulls[(colorIndex++) % PALETTE.hulls.length]);
         // A trip starts from the boat's own mooring and joins the sea route outside the harbour, so it never

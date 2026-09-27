@@ -3,7 +3,7 @@ import { TIDE_HI } from "../config";
 import { BuildingKind, FISH_CAP, ResourceKind, SERVICE_KINDS, ServiceKind, STARTING_FISH, STARTING_MONEY } from "./balance";
 import { filled, zeros } from "./fields";
 import { emptyStock, GoodId } from "./goods";
-import { BiomeId } from "./biomes";
+import { BiomeId, tideScaleOf } from "./biomes";
 import { initialTrees, TreeSite } from "./trees";
 
 export function emptyCoverage(): Record<ServiceKind, number[]> {
@@ -94,6 +94,8 @@ export interface TideState {
   peaked: boolean;
   /** Debug/test hook: when set, the water is held at this level while the clock keeps running. */
   override: number | null;
+  /** The biome's multiplier on every level (tides.ts); 1 for Tidewater. */
+  scale: number;
 }
 
 export interface Assignment { home: number; work: number; n: number }
@@ -214,7 +216,7 @@ export function createState(seed = 1, islandSeed = 0, biome: BiomeId = "tidewate
     rng: seed | 0,
     time: 0,
     tick: 0,
-    tide: { phase: Math.PI * 0.5, level: TIDE_HI, wetLevel: 0, cycle: 0, peaked: false, override: null },
+    tide: { phase: Math.PI * 0.5, level: TIDE_HI * tideScaleOf(biome), wetLevel: 0, cycle: 0, peaked: false, override: null, scale: tideScaleOf(biome) },
     phase: "high",
     resources: { money: STARTING_MONEY, ...emptyStock(), fish: STARTING_FISH },
     buildings: {},

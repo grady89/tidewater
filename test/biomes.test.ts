@@ -1,0 +1,85 @@
+// The biome framework: the identity biome reproduces Tidewater exactly; a biome's tide multiplier scales the
+// classes, the clearances, the marks and the fixed floors; islands are cached per (biome, seed). Sim only.
+import { describe, expect, it } from "vitest";
+import { CLEARANCE, SPRING_HI, STILT_MIN, TIDE_HI, TIDE_LO, TIDE_PERIOD } from "../src/config";
+import { BUILDINGS, LANDFILL_HEIGHT, WAVE_HEIGHT } from "../src/sim/balance";
+import { Biome, biomeOf, catalogOf, chartedBiomes, makesOf, registerBiome, tideScaleOf } from "../src/sim/biomes";
+import { islandHeight } from "../src/sim/heightfield";
+import { candidate, island } from "../src/sim/island";
+import { deserialize, serialize } from "../src/sim/save";
+import { newGame } from "../src/sim/start";
+import { advanceCycles } from "../src/sim/tick";
+import { floodFate, tickTide } from "../src/sim/tide";
+import { BASE_TIDES, classFor, tidesFor } from "../src/sim/tides";
+import { starterTown } from "./scenario";
+
+/** A test-only biome: Tidewater's ground with the Fjord's tide, so the scaling is measured on a known island. */
+const HIGH_TIDE: Biome = registerBiome({
+  ...biomeOf("tidewater"),
+  id: "fjord", label: "Test fjord", bands: ["polar"], tide: 1.6, foods: ["fish", "stockfish"], luxury: "whaleOil", industrials: ["iron", "timber"],
+  favourite: "cocoa", unique: ["toolworks"], excluded: ["oysterBed", "clamCamp"],
+  shape: seed => ({ height: islandHeight(seed) }),
+  thresholds: { treed: 0 },
+});
+
+describe("biome framework", () => {
+  it("Tidewater is the identity: base tides, the base catalog, the original island at seed 0", () => {
+    expect(tideScaleOf("tidewater")).toBe(1);
+    expect(tidesFor(1)).toEqual(BASE_TIDES);
+    expect(BASE_TIDES).toMatchObject({ lo: TIDE_LO, hi: TIDE_HI, springHi: SPRING_HI, dryTerrain: SPRING_HI + CLEARANCE, springFloodTerrain: SPRING_HI - STILT_MIN, waveHeight: WAVE_HEIGHT, landfillHeight: LANDFILL_HEIGHT, pierFloor: 1, raisedFloor: 1.2 });
+    const all = Object.keys(BUILDINGS) as (keyof typeof BUILDINGS)[];
+    const base = new Set(all.filter(k => k !== "toolworks"));
+    expect(catalogOf("tidewater", all, base)).toEqual(all.filter(k => k !== "toolworks"));
+    expect(island(0, "tidewater")).toBe(island(0));
+    expect(makesOf("tidewater")).toEqual(["fish", "shellfish", "smoked", "timber", "planks"]);
+    expect(chartedBiomes()).toContain("tidewater");
+  });
+
+  it("a ×1.6 tide scales every level, the class thresholds, the clearances and the fixed floors", () => {
+    const t = tidesFor(1.6);
+    expect(t.hi).toBeCloseTo(0.96, 9); expect(t.springHi).toBeCloseTo(1.36, 9); expect(t.lo).toBeCloseTo(-0.56, 9);
+    expect(t.highMark).toBeCloseTo(0.4, 9); expect(t.dryTerrain).toBeCloseTo(1.46, 9); expect(t.waveHeight).toBeCloseTo(1.36 + CLEARANCE + 0.45, 9);
+    expect(classFor(0.8, BASE_TIDES)).toBe("high"); expect(classFor(0.8, t)).toBe("flat");
+    expect(classFor(-0.5, BASE_TIDES)).toBe("deep"); expect(classFor(-0.5, t)).toBe("flat");
+    const { state, grid } = newGame(1, 7, "fjord");
+    expect(grid.tides.scale).toBe(1.6);
+    expect(state.tide.scale).toBe(1.6);
+    expect(state.tide.level).toBeCloseTo(TIDE_HI * 1.6, 9);
+    // Flats run wider: more cells are flat than on the same ground at Tidewater's tide.
+    const wide = island(7, "fjord").stats.flats, base = island(7).stats.flats;
+    expect(island(7, "fjord").noiseSeed).toBe(island(7).noiseSeed === 7 ? 7 : island(7, "fjord").noiseSeed);
+    expect(wide).not.toBe(base);
+    // The clock peaks at the scaled levels and the spring is scaled too.
+    const clock = state.tide;
+    let max = -Infinity, min = Infinity;
+    for (let s = 0; s < TIDE_PERIOD * 4; s += 1 / 20) { tickTide(clock, 1 / 20); max = Math.max(max, clock.level); min = Math.min(min, clock.level); }
+    expect(max).toBeCloseTo(SPRING_HI * 1.6, 2);
+    expect(min).toBeLessThan(TIDE_LO * 1.6 + 0.01);
+    // Floors: a hut clears the scaled spring peak; a pier's fixed deck is scaled; the flood fate reads the scaled lines.
+    const town = starterTown(state, grid);
+    expect(town.pier.floorY).toBeCloseTo(1.6, 6);
+    for (const h of town.huts) expect(h.floorY).toBeGreaterThanOrEqual(1.36 + CLEARANCE - 1e-9);
+    expect(floodFate(1.0, grid.tides)).toBe("spring");
+    expect(floodFate(1.5, grid.tides)).toBe("safe");
+    expect(floodFate(1.0)).toBe("safe");
+    // And the town still runs a few cycles and saves.
+    advanceCycles(state, grid, 2);
+    const back = deserialize(serialize(state));
+    expect(back.tide.scale).toBe(1.6);
+    expect(back.world.biome).toBe("fjord");
+  });
+
+  it("caches islands per biome and seed, applies the biome's thresholds, and the catalog is base ∪ unique − excluded", () => {
+    expect(island(3, "fjord")).toBe(island(3, "fjord"));
+    expect(island(3, "fjord")).not.toBe(island(3));
+    expect(candidate(3, 0, "fjord").stats.materials.length).toBeGreaterThan(0);
+    const all = Object.keys(BUILDINGS) as (keyof typeof BUILDINGS)[];
+    const base = new Set(all.filter(k => k !== "toolworks"));
+    const cat = catalogOf("fjord", all, base);
+    expect(cat).toContain("toolworks");
+    expect(cat).not.toContain("oysterBed");
+    expect(cat).toContain("hut");
+    expect(makesOf("fjord")).toEqual(["fish", "stockfish", "whaleOil", "iron", "timber"]);
+    void HIGH_TIDE;
+  });
+});

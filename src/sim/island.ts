@@ -3,7 +3,10 @@
 import { SIZE } from "../config";
 import { BUILDINGS, ISLAND_MAX_REROLLS, ISLAND_MIN_FLATS, ISLAND_MIN_HARBOR_SITES, ISLAND_MIN_PIER_SITES, ISLAND_MIN_REGION, ISLAND_MIN_TREED } from "./balance";
 import { cellIndex as at, DIRS, HALF, inBounds } from "./cells";
-import { cellClass, HeightFn, islandHeight } from "./heightfield";
+import { biomeOf, BiomeId } from "./biomes";
+import { cellClass, HeightFn } from "./heightfield";
+import { materialCode, MATERIALS } from "./materials";
+import { BASE_TIDES, Tides, tidesFor } from "./tides";
 import { isleCell } from "./isle";
 import type { TreeSite } from "./trees";
 
@@ -19,6 +22,12 @@ export interface IslandStats {
   harbors: number;
   /** Tree sites standing on high cells. */
   treed: number;
+  /** Cells per material code (materials.ts), for the biomes' own rules (a lagoon, a channel, an oasis). */
+  materials: number[];
+  /** Deep cells whose height is under the harbor depth (a channel, a pass). */
+  deepCells: number;
+  /** High cells above 4.0: the snow line and the ridges. */
+  highCells: number;
 }
 
 export interface Island {
@@ -58,20 +67,28 @@ function makeSites(height: HeightFn): TreeSite[] {
 }
 
 /** Cell classes and heights of a candidate, indexed like the grid; isle cells are flagged so counts skip them. */
-function classify(height: HeightFn): { cls: Uint8Array; h: Float32Array; isle: Uint8Array } {
+function classify(height: HeightFn, tides: Tides = BASE_TIDES): { cls: Uint8Array; h: Float32Array; isle: Uint8Array } {
   const cls = new Uint8Array(SIZE * SIZE), h = new Float32Array(SIZE * SIZE), isle = new Uint8Array(SIZE * SIZE);
   for (let i = -HALF; i < HALF; i++) for (let j = -HALF; j < HALF; j++) {
     const k = (i + HALF) * SIZE + (j + HALF);
     h[k] = height(i + 0.5, j + 0.5);
-    const c = cellClass(h[k]);
+    const c = cellClass(h[k], tides);
     cls[k] = c === "deep" ? DEEP : c === "flat" ? FLAT : HIGH;
     isle[k] = isleCell({ i, j }) ? 1 : 0;
   }
   return { cls, h, isle };
 }
 
-export function islandStats(height: HeightFn, trees: readonly TreeSite[]): IslandStats {
-  const { cls, h, isle } = classify(height);
+export function islandStats(height: HeightFn, trees: readonly TreeSite[], tides: Tides = BASE_TIDES, materials: Uint8Array | null = null): IslandStats {
+  const { cls, h, isle } = classify(height, tides);
+  const matCounts = new Array<number>(MATERIALS.length).fill(0);
+  let deepCells = 0, highCells = 0;
+  for (let k = 0; k < cls.length; k++) {
+    if (isle[k]) continue;
+    if (materials) matCounts[materials[k]]++;
+    if (cls[k] === DEEP && h[k] < (BUILDINGS.harbor.terrain?.max ?? -1.5) * tides.scale) deepCells++;
+    if (h[k] > 4.0) highCells++;
+  }
   const main = (k: number) => isle[k] === 0;
   let flats = 0;
   for (let k = 0; k < cls.length; k++) if (cls[k] === FLAT && main(k)) flats++;
@@ -119,7 +136,7 @@ export function islandStats(height: HeightFn, trees: readonly TreeSite[]): Islan
 
   // Harbor sites: a w×d block of deep cells all below the harbor's depth.
   const harbor = BUILDINGS.harbor;
-  const deepEnough = harbor.terrain?.max ?? -1.5;
+  const deepEnough = (harbor.terrain?.max ?? -1.5) * tides.scale;
   let harbors = 0;
   for (let i = -HALF; i < HALF; i++) for (let j = -HALF; j < HALF; j++) {
     let ok = true;
@@ -135,17 +152,20 @@ export function islandStats(height: HeightFn, trees: readonly TreeSite[]): Islan
   // Trees on high cells (sites, not distinct cells: the original island's 70 sites share 45 cells).
   let treed = 0;
   for (const t of trees) if (inBounds(t.cell.i, t.cell.j) && cls[at(t.cell.i, t.cell.j)] === HIGH) treed++;
-  return { flats, region, piers, harbors, treed };
+  return { flats, region, piers, harbors, treed, materials: matCounts, deepCells, highCells };
 }
 
-/** Why a candidate fails, one reason per rule, or [] when it is playable. */
-export function islandFailures(s: IslandStats): string[] {
+/** Why a candidate fails, one reason per rule, or [] when it is playable. A biome may move the thresholds and add rules. */
+export function islandFailures(s: IslandStats, biome: BiomeId = "tidewater"): string[] {
+  const b = biomeOf(biome);
+  const th = { flats: ISLAND_MIN_FLATS, region: ISLAND_MIN_REGION, piers: ISLAND_MIN_PIER_SITES, harbors: ISLAND_MIN_HARBOR_SITES, treed: ISLAND_MIN_TREED, ...b.thresholds };
   const out: string[] = [];
-  if (s.flats < ISLAND_MIN_FLATS) out.push(`flats ${s.flats} < ${ISLAND_MIN_FLATS}`);
-  if (s.region < ISLAND_MIN_REGION) out.push(`largest flats region ${s.region} < ${ISLAND_MIN_REGION}`);
-  if (s.piers < ISLAND_MIN_PIER_SITES) out.push(`pier sites ${s.piers} < ${ISLAND_MIN_PIER_SITES}`);
-  if (s.harbors < ISLAND_MIN_HARBOR_SITES) out.push(`harbor sites ${s.harbors} < ${ISLAND_MIN_HARBOR_SITES}`);
-  if (s.treed < ISLAND_MIN_TREED) out.push(`treed high cells ${s.treed} < ${ISLAND_MIN_TREED}`);
+  if (s.flats < th.flats) out.push(`flats ${s.flats} < ${th.flats}`);
+  if (s.region < th.region) out.push(`largest flats region ${s.region} < ${th.region}`);
+  if (s.piers < th.piers) out.push(`pier sites ${s.piers} < ${th.piers}`);
+  if (s.harbors < th.harbors) out.push(`harbor sites ${s.harbors} < ${th.harbors}`);
+  if (s.treed < th.treed) out.push(`treed high cells ${s.treed} < ${th.treed}`);
+  out.push(...b.validate(s));
   return out;
 }
 
@@ -157,15 +177,20 @@ export function candidateSeed(seed: number, k: number): number {
   return (n ^ (n >>> 13)) | 0;
 }
 
-/** The k-th candidate for a seed, generated and measured but not judged. */
-export function candidate(seed: number, k: number): { noiseSeed: number; height: HeightFn; trees: TreeSite[]; materials: Uint8Array; stats: IslandStats } {
+/** The k-th candidate for a seed, shaped by the biome, generated and measured but not judged. */
+export function candidate(seed: number, k: number, biome: BiomeId = "tidewater"): { noiseSeed: number; height: HeightFn; trees: TreeSite[]; materials: Uint8Array; stats: IslandStats } {
+  const b = biomeOf(biome);
+  const tides = tidesFor(b.tide);
   const noiseSeed = candidateSeed(seed, k);
-  const height = islandHeight(noiseSeed);
-  const trees = makeSites(height);
-  return { noiseSeed, height, trees, materials: new Uint8Array(SIZE * SIZE), stats: islandStats(height, trees) };
+  const shape = b.shape(noiseSeed);
+  const height = shape.height;
+  const trees = shape.trees ? shape.trees(height) : makeSites(height);
+  const materials = new Uint8Array(SIZE * SIZE);
+  if (shape.material) for (let i = -HALF; i < HALF; i++) for (let j = -HALF; j < HALF; j++) materials[at(i, j)] = materialCode(shape.material(i, j, height(i + 0.5, j + 0.5)));
+  return { noiseSeed, height, trees, materials, stats: islandStats(height, trees, tides, materials) };
 }
 
-const cache = new Map<number, Island>();
+const cache = new Map<string, Island>();
 
 /**
  * The island for a seed: the first candidate that passes validation, rerolling through `candidateSeed` until
@@ -173,28 +198,31 @@ const cache = new Map<number, Island>();
  * all fail, the original island stands in (recorded as one reroll past the cap) rather than a town with nowhere
  * to build.
  */
-export function island(seed: number): Island {
+export function island(seed: number, biome: BiomeId = "tidewater"): Island {
   seed = seed | 0;
-  const hit = cache.get(seed);
+  const key = `${biome}:${seed}`;
+  const hit = cache.get(key);
   if (hit) return hit;
   let made: Island | null = null;
   for (let k = 0; k <= ISLAND_MAX_REROLLS && !made; k++) {
-    const c = candidate(seed, k);
-    if (islandFailures(c.stats).length === 0 || seed === 0) made = { seed, rerolls: k, ...c };
+    const c = candidate(seed, k, biome);
+    if (islandFailures(c.stats, biome).length === 0 || (seed === 0 && biome === "tidewater")) made = { seed, rerolls: k, ...c };
   }
   if (!made) {
-    const base = island(0);
+    // Nothing passed: the biome's seed-0 island stands in (for Tidewater that is the original island; for another
+    // biome, seed 0 itself may reroll, and if even that fails the original island is the last resort).
+    const base = seed === 0 ? island(0) : island(0, biome);
     made = { ...base, seed, rerolls: ISLAND_MAX_REROLLS + 1 };
   }
-  cache.set(seed, made);
+  cache.set(key, made);
   return made;
 }
 
 /** How often seeds in [from, to) needed a reroll, and how many rerolls they took in all. */
-export function rerollRate(from: number, to: number): { islands: number; rerolled: number; rerolls: number; fallbacks: number } {
+export function rerollRate(from: number, to: number, biome: BiomeId = "tidewater"): { islands: number; rerolled: number; rerolls: number; fallbacks: number } {
   let rerolled = 0, rerolls = 0, fallbacks = 0;
   for (let s = from; s < to; s++) {
-    const r = island(s).rerolls;
+    const r = island(s, biome).rerolls;
     if (r > 0) rerolled++;
     if (r > ISLAND_MAX_REROLLS) fallbacks++;
     rerolls += Math.min(r, ISLAND_MAX_REROLLS);

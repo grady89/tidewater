@@ -3,7 +3,7 @@ import { BiomeId } from "./biomes";
 import { Cell, createState, notify, SimState } from "./state";
 import { Grid } from "./grid";
 
-/** Flats high enough that ordinary and spring tides leave a standard walkway dry, but not the dry hill. */
+/** Flats high enough that ordinary and spring tides leave a standard walkway dry, but not the dry hill (Tidewater's window, scaled with the tide). */
 const START_TERRAIN = { min: 0.36, max: 0.58 };
 
 /** The starting hut goes on a comfortable flat cell nearest the island centre with the sea within reach. */
@@ -13,7 +13,7 @@ export function startCell(grid: Grid): Cell {
     const c = { i, j };
     if (grid.classAt(c) !== "flat" || grid.onIsle([c])) continue;
     const h = grid.heightAt(c);
-    if (h < START_TERRAIN.min || h > START_TERRAIN.max) continue;
+    if (h < START_TERRAIN.min * grid.tides.scale || h > START_TERRAIN.max * grid.tides.scale) continue;
     const d = Math.hypot(i, j);
     if (d < bd) { bd = d; best = c; }
   }
