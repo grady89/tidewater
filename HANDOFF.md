@@ -4,8 +4,8 @@ Where things stand after the overnight build (ROADMAP M0–M14 + backlog 1–7, 
 daytime playtest session that followed it on 2026-09-26 — nine rounds of Grady's feedback, an art pass from
 their Midjourney reference sheets, and the systems those turned up. Read CLAUDE.md first; NOTES.md has every
 decision the brief didn't make, section by section (the playtest sections are at the end, before "Chunk merge");
-PROGRESS.md has the per-milestone status and run log. This file is the summary. The 41 commits from `85f44e9`
-(brief v2) to `c149d07` are local — nothing from either session has been pushed.
+PROGRESS.md has the per-milestone status and run log. This file is the summary. Everything through this commit
+is pushed to `origin/main` (github.com/grady89/tidewater).
 
 ## Run it
 
