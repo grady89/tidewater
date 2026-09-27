@@ -65,6 +65,13 @@ export class Placement {
 
   /** Line tools draw with the left button, so the camera must not grab the ground with it. */
   get dragsLine(): boolean { return LINE_TOOLS.has(this.tool); }
+  /** Off while the World is shown (the canvas is shared); the ghost hides and clicks are ignored. */
+  private _enabled = true;
+  get enabled(): boolean { return this._enabled; }
+  set enabled(on: boolean) {
+    this._enabled = on;
+    if (!on) { this.hover = null; this.down = null; this.lineStart = null; this.linePath = []; this.ghost.setEnabled(false); this.ghostStilts.setEnabled(false); this.ghostDoor.setEnabled(false); this.lineGhosts.ok.setEnabled(false); this.lineGhosts.bad.setEnabled(false); }
+  }
 
   /** Extra deck height for auto-sized pieces, in LIFT_STEP steps ([ and ] keys); never below the safe height. */
   lift = 0;
@@ -126,9 +133,10 @@ export class Placement {
     this.ghostDoor.material = doorMat;
     this.ghostDoor.setEnabled(false);
 
-    canvas.addEventListener("pointermove", () => this.refresh());
+    canvas.addEventListener("pointermove", () => { if (this.enabled) this.refresh(); });
     canvas.addEventListener("pointerleave", () => { this.hover = null; this.ghost.setEnabled(false); this.ghostStilts.setEnabled(false); this.ghostDoor.setEnabled(false); });
     canvas.addEventListener("pointerdown", e => {
+      if (!this.enabled) return;
       this.down = { x: e.clientX, y: e.clientY, button: e.button };
       if (e.button === 0 && this.dragsLine && this.hover) this.lineStart = this.hover;
     });

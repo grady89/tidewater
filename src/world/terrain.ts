@@ -1,21 +1,28 @@
 // The heightfield mesh and the baked heightmap texture the water shader reads. Heights come from the sim's
 // analytic heightfield so the view and the ledger always agree.
-import { Mesh, MeshBuilder, RawTexture, Scene, ShaderMaterial, Texture, Vector3, VertexBuffer } from "@babylonjs/core";
+import { Matrix, Mesh, MeshBuilder, RawTexture, Scene, ShaderMaterial, Texture, Vector3, VertexBuffer } from "@babylonjs/core";
 import { SIZE } from "../config";
 import { HeightFn, terrainHeight } from "../sim/heightfield";
 import { Cell } from "../sim/state";
 import { terrainFS, terrainVS } from "../../shaders/terrain";
 import { Lighting, MORNING } from "./lighting";
+import { FOG_FAR, FOG_NEAR } from "./water";
+
+/** Every uniform the terrain shader takes (the World builds its own materials from the same list). */
+export const TERRAIN_UNIFORMS = ["world", "worldViewProjection", "sunDir", "sunColor", "skyAmb", "groundAmb", "fogColor", "camPos", "waterLevel", "wetLevel", "clipY", "frame", "fogNear", "fogFar"];
+/** The 16-bit height encoding the water shader decodes: (h + 5) / 12 across r, g. */
+export const HEIGHT_TEX_SIZE = 256;
+export function encodeHeightInto(hdata: Uint8Array, size: number, row: number, col: number, h: number): void {
+  const v = Math.min(1, Math.max(0, (h + 5) / 12));
+  const q = Math.round(v * 65535);
+  const i = (row * size + col) * 4;
+  hdata[i] = q >> 8; hdata[i + 1] = q & 255; hdata[i + 2] = 0; hdata[i + 3] = 255;
+}
 
 // ---------- heightmap texture ----------
 // 16-bit height split across r,g. Encodes (H + 5) / 12; the water shader decodes with the same constants.
-const HEIGHT_TEX_SIZE = 256;
-
 function encodeHeight(hdata: Uint8Array, row: number, col: number, h: number): void {
-  const v = Math.min(1, Math.max(0, (h + 5) / 12));
-  const q = Math.round(v * 65535);
-  const i = (row * HEIGHT_TEX_SIZE + col) * 4;
-  hdata[i] = q >> 8; hdata[i + 1] = q & 255; hdata[i + 2] = 0; hdata[i + 3] = 255;
+  encodeHeightInto(hdata, HEIGHT_TEX_SIZE, row, col, h);
 }
 
 function bakeHeightData(hdata: Uint8Array, sample: HeightFn): void {
@@ -93,9 +100,10 @@ export function createTerrain(scene: Scene, height: HeightFn = terrainHeight): T
 
   const material = new ShaderMaterial("terrain", scene, { vertexSource: terrainVS, fragmentSource: terrainFS }, {
     attributes: ["position", "normal"],
-    uniforms: ["world", "worldViewProjection", "sunDir", "sunColor", "skyAmb", "groundAmb", "fogColor", "camPos", "waterLevel", "wetLevel", "clipY"],
+    uniforms: TERRAIN_UNIFORMS,
   });
   material.setFloat("clipY", -999);
+  material.setMatrix("frame", Matrix.Identity()).setFloat("fogNear", FOG_NEAR).setFloat("fogFar", FOG_FAR);
   mesh.material = material;
 
   const terrain: Terrain = {

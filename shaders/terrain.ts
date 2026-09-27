@@ -1,5 +1,8 @@
-// Ported from reference/tidewater-study.html (terrainVS / terrainFS). The only addition is the `clipY` uniform
-// and its discard at the top of the fragment shader (the water's reflection pass); the colour math is verbatim.
+// Ported from reference/tidewater-study.html (terrainVS / terrainFS). The additions are uniforms: `clipY` and
+// its discard at the top of the fragment shader (the water's reflection pass); `frame` (mat4, identity for the
+// island), which maps the world position and normal into a face's own frame before the study's height and slope
+// bands so the World's tilted miniatures are coloured as if flat; and `fogNear`/`fogFar` in place of the fog
+// literals (45, 140), with the same defaults. The colour math is verbatim.
 import { COMMON } from "./common";
 
 export const terrainVS = `
@@ -15,9 +18,12 @@ export const terrainFS = COMMON + `
     uniform vec3 sunDir, sunColor, skyAmb, groundAmb, fogColor, camPos;
     uniform float waterLevel, wetLevel;
     uniform float clipY; // added: the reflection pass discards everything under the water plane
+    uniform mat4 frame; uniform float fogNear, fogFar;
     void main(){
       if (vW.y < clipY) discard;
-      float y = vW.y;
+      vec3 L = (frame * vec4(vW, 1.0)).xyz;
+      vec3 LN = normalize((frame * vec4(vN, 0.0)).xyz);
+      float y = L.y;
       vec3 sandDeep = vec3(0.62,0.55,0.40);
       vec3 sand     = vec3(0.90,0.83,0.63);
       vec3 grassLo  = vec3(0.66,0.78,0.47);
@@ -27,17 +33,17 @@ export const terrainFS = COMMON + `
       col = mix(col, grassLo, smoothstep(0.55, 0.95, y));
       col = mix(col, grassHi, smoothstep(1.4, 3.2, y));
       col = mix(col, rock, smoothstep(4.2, 5.6, y));
-      col = mix(col, rock, smoothstep(0.80, 0.62, vN.y) * step(0.5, y));
+      col = mix(col, rock, smoothstep(0.80, 0.62, LN.y) * step(0.5, y));
       // submerged and wet sand
       col *= mix(1.0, 0.72, smoothstep(waterLevel + 0.02, waterLevel - 0.02, y));
       float wet = smoothstep(waterLevel - 0.01, waterLevel + 0.03, y) * (1.0 - smoothstep(wetLevel - 0.05, wetLevel + 0.08, y));
       col *= mix(1.0, 0.70, wet);
       // lighting
       float nd = max(dot(vN, sunDir), 0.0);
-      vec3 amb = mix(groundAmb, skyAmb, vN.y*0.5+0.5);
+      vec3 amb = mix(groundAmb, skyAmb, LN.y*0.5+0.5);
       vec3 lit = col * (sunColor * nd * 1.05 + amb);
       float d = distance(camPos, vW);
-      lit = mix(lit, fogColor, smoothstep(45.0, 140.0, d));
+      lit = mix(lit, fogColor, smoothstep(fogNear, fogFar, d));
       gl_FragColor = vec4(lit, 1.0);
     }
   `;

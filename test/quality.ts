@@ -25,7 +25,9 @@ try {
     const api = (window as unknown as { __tidewater: Api }).__tidewater;
     const url = "/test/scenario.ts"; // served by the Vite dev server; typed loosely so Node's tsc doesn't resolve it
     const sc = (await import(url)) as typeof import("./scenario");
-    api.newTown();
+    // The game launches into the World: a sector to hold the town, entered without the flight.
+    api.newSector(1, 0, "Quality");
+    await api.enterSector(1, { instant: true });
     api.grant(100000, 5000, 5000);
     const b = sc.bigTown(api.sim, api.grid);
     api.advance(2);
@@ -51,6 +53,29 @@ try {
     console.log(`[quality] ${q}: ${fps.toFixed(1)} fps`);
   }
   console.log(`[quality] ${JSON.stringify(results)}`);
+  // The World at each preset: the big town's miniature on one face, eleven uncharted seas, the clouds by preset.
+  await page.evaluate(async () => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    api.world.setClock(11);
+    await api.returnToWorld({ instant: true });
+  });
+  const worldResults: Record<string, number> = {};
+  for (const q of ["high", "medium", "low"] as const) {
+    const r = await page.evaluate(async (quality: Quality) => {
+      const api = (window as unknown as { __tidewater: Api }).__tidewater;
+      api.setQuality(quality);
+      await new Promise(r => setTimeout(r, 1000));
+      let frames = 0;
+      const obs = api.world.scene.onAfterRenderObservable.add(() => frames++);
+      const t0 = performance.now();
+      await new Promise(r => setTimeout(r, 5000));
+      api.world.scene.onAfterRenderObservable.remove(obs);
+      return { fps: frames / ((performance.now() - t0) / 1000), draws: api.world.drawCalls() };
+    }, q);
+    worldResults[q] = r.fps;
+    console.log(`[quality] World ${q}: ${r.fps.toFixed(1)} fps · ${r.draws} draw calls`);
+  }
+  console.log(`[quality] World ${JSON.stringify(worldResults)}`);
 } finally {
   await browser.close();
   await server.close();

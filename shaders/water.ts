@@ -7,6 +7,10 @@
 // normal) into the sky it already reflects, by `reflectMix`. With reflectMix = 0 the colour is exactly the study's.
 // Backlog 2 adds caustics: two drifting noise layers sharpened into a web, added to the colour in the shallow
 // band only, scaled by the `caustics` uniform (0 = nothing added). Additive; nothing else in the fragment moved.
+// The World (docs/globe) adds three uniforms: `frame` (mat4, identity for the island) maps the fragment's world
+// position and facet normal into a face's own frame before the study's height/depth/uv math, so a tilted face of
+// the globe is shaded as if it lay flat; `fogNear`/`fogFar` replace the study's fog literals (45, 140) with the
+// same defaults. With identity and the defaults every line computes what it did.
 // The only substitution is ${SIZE}, which the reference also interpolated from its SIZE constant.
 import { COMMON } from "./common";
 import { SIZE } from "../src/config";
@@ -36,14 +40,16 @@ export const waterFS = `
     uniform sampler2D heightTex; uniform sampler2D reflectTex;
     uniform vec3 sunDir, sunColor, skyColor, fogColor, camPos;
     uniform float time, dusk, reflectMix, caustics;
+    uniform mat4 frame; uniform float fogNear, fogFar;
     void main(){
-      vec2 uv = vW.xz / ${SIZE}.0 + 0.5;
+      vec3 L = (frame * vec4(vW, 1.0)).xyz;
+      vec2 uv = L.xz / ${SIZE}.0 + 0.5;
       vec4 t = texture2D(heightTex, uv);
       float terrainH = (t.r*255.0*256.0 + t.g*255.0)/65535.0 * 12.0 - 5.0;
-      float depth = vW.y - terrainH;
+      float depth = L.y - terrainH;
       if (depth < 0.0) discard;
       vec3 n = normalize(cross(dFdx(vW), dFdy(vW)));
-      if (n.y < 0.0) n = -n;
+      if ((frame * vec4(n, 0.0)).y < 0.0) n = -n;
       vec3 V = normalize(camPos - vW);
       vec3 shallow = vec3(0.58,0.86,0.82), mid = vec3(0.22,0.63,0.70), deep = vec3(0.09,0.34,0.52);
       vec3 col = mix(shallow, mid, smoothstep(0.0, 0.9, depth));
@@ -69,7 +75,7 @@ export const waterFS = `
       col = mix(col, vec3(0.97,0.99,0.99), foam) + glint;
       alpha = mix(alpha, 0.98, foam);
       // caustics: a bright web in the shallows, gone at the shoreline and by ~1.2 deep
-      float cw = vnoise(vW.xz*2.6 + vec2(time*0.35, time*0.2))*0.5 + vnoise(vW.xz*4.3 - vec2(time*0.28, -time*0.33))*0.5;
+      float cw = vnoise(L.xz*2.6 + vec2(time*0.35, time*0.2))*0.5 + vnoise(L.xz*4.3 - vec2(time*0.28, -time*0.33))*0.5;
       cw = pow(smoothstep(0.5, 0.85, cw), 2.0);
       float cmask = smoothstep(0.03, 0.2, depth) * (1.0 - smoothstep(0.6, 1.6, depth));
       col += vec3(0.85, 0.95, 0.9) * cw * cmask * caustics * 1.1;
@@ -80,7 +86,7 @@ export const waterFS = `
       float lambert = 0.75 + 0.25*max(dot(n, sunDir), 0.0);
       col *= lambert;
       float d = distance(camPos, vW);
-      col = mix(col, fogColor, smoothstep(45.0, 140.0, d));
+      col = mix(col, fogColor, smoothstep(fogNear, fogFar, d));
       gl_FragColor = vec4(col, alpha);
     }
   `;

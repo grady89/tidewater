@@ -30,3 +30,15 @@ One line each, in the order they were made. The reasoning is "most consistent wi
    flies back to the orbit; the World remembers its last orbit pose per session.
 10. **The active sector is the autosave.** The old "tidewater.autosave" key is migrated once and then left
     alone; the island scene saves into `tidewater.sector.<active>` at every tide peak and on return.
+11. **Sector states are LZW-packed** (src/sim/compress.ts, ~90 lines, no dependency). Measured: a 300-building
+    town is 337 k JSON characters, twelve are 4.04 M (8 MB of UTF-16 — over the 5 MB Firefox/Safari quota);
+    packed they are under 2.6 M code units. `isPacked` keeps plain JSON readable, so nothing else changes.
+12. **The ocean disc is five subdivided triangles** (ring k carries 5k points), not concentric rings with a fixed
+    point count: the water's facet normals come from screen-space derivatives, and the sliver fan a fixed count
+    makes at the centre showed as dark spokes. 48 rings ≈ the island's own water grid density.
+13. **The heap check lives in the smoke** (Chrome launched with `--js-flags=--expose-gc`), not a separate script:
+    it needs the same dev server, the same API and the same GPU flags, and CI runs the smoke anyway.
+14. **Escape at the island's top level returns to the World** (experience.md's keyboard section); before, it
+    opened the Town menu. The menu still opens from the speed bar and has the "World" button.
+15. **The World's frame-rate probe.** The first-launch quality probe now measures the World (that is what a first
+    launch shows); the preset it picks applies to both scenes.

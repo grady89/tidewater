@@ -9,8 +9,12 @@ import { startStorm, startTsunami } from "./sim/events";
 import { ignite } from "./sim/fire";
 import { Grid } from "./sim/grid";
 import { crossCommuters, ferryTerminals } from "./sim/network";
-import { AUTOSAVE_KEY, deserialize, serialize } from "./sim/save";
+import { deserialize, serialize } from "./sim/save";
+import { Biome, defaultName, deleteSector, exportSector, FACES, importSector, listMetas, migrateLegacy, readActive, readMeta, readSector, renameSector, SectorMeta, Store, writeActive, writeSector } from "./sim/sectors";
 import { newGame } from "./sim/start";
+import { WorldUi } from "./globe/ui";
+import { Framing, World } from "./globe/world";
+import { confirmDialog, dialogOpen, noticeDialog, promptDialog } from "./ui/dialog";
 import { notify, onNotify, population, SimState } from "./sim/state";
 import { playtestFileName, PlaytestLog, readPlaytestEnabled, readPlaytestNotes, writePlaytestEnabled, writePlaytestNotes } from "./ui/playtest";
 import { advanceCycles, tick } from "./sim/tick";
@@ -70,23 +74,31 @@ const pipe = new DefaultRenderingPipeline("pp", false, scene, [camera]);
 pipe.fxaaEnabled = true;
 pipe.bloomEnabled = true; pipe.bloomThreshold = 0.9; pipe.bloomWeight = 0.15; pipe.bloomKernel = 48; pipe.bloomScale = 0.5;
 
-// ---------- the ledger ----------
-function loadAutosave(): SimState | null {
-  try {
-    const json = localStorage.getItem(AUTOSAVE_KEY);
-    return json ? deserialize(json) : null;
-  } catch {
-    return null;
-  }
+// ---------- the ledger and the World's sectors ----------
+// Towns live in the World's twelve sectors (sim/sectors.ts, docs/globe). The active sector is the autosave:
+// the island writes into it at every tide peak and when it returns to the World.
+const store: Store = {
+  getItem: k => { try { return localStorage.getItem(k); } catch { return null; } },
+  setItem: (k, v) => { try { localStorage.setItem(k, v); } catch { /* full or unavailable: play on */ } },
+  removeItem: k => { try { localStorage.removeItem(k); } catch { /* ignore */ } },
+};
+const migrated = migrateLegacy(store);
+let activeFace: number | null = readActive(store);
+if (activeFace !== null && !readMeta(store, activeFace)) activeFace = null;
+if (activeFace === null) { const first = listMetas(store).findIndex(m => !!m); activeFace = first >= 0 ? first : null; }
+function sectorBase(face: number): { name: string; biome: Biome; created: number } {
+  const m = readMeta(store, face);
+  return m ? { name: m.name, biome: m.biome, created: m.created } : { name: defaultName(store), biome: "tidewater", created: Date.now() };
 }
 function save(): void {
-  try { localStorage.setItem(AUTOSAVE_KEY, serialize(state)); } catch { /* storage unavailable: play on without autosave */ }
+  if (activeFace === null) return;
+  writeSector(store, activeFace, state, sectorBase(activeFace));
 }
 
-const loaded = loadAutosave();
+const loadedRecord = activeFace !== null ? readSector(store, activeFace) : null;
 let state: SimState;
 let grid: Grid;
-if (loaded) { state = loaded; grid = new Grid(state); }
+if (loadedRecord) { state = loadedRecord.state; grid = new Grid(state); }
 else ({ state, grid } = newGame(SEED));
 
 // ---------- the view ----------
@@ -130,11 +142,11 @@ function adopt(next: SimState): void {
   achievements.adopt(state);
   syncView();
 }
-/** A fresh town on island `seed` (0 = the original island). */
+/** A fresh town on island `seed` (0 = the original island), replacing the active sector's town. */
 function newTown(seed = 0): void {
-  try { localStorage.removeItem(AUTOSAVE_KEY); } catch { /* ignore */ }
   tutorial.reset();
   adopt(newGame(SEED, seed).state);
+  save();
 }
 function load(json: string): void {
   let next: SimState;
@@ -155,7 +167,9 @@ onNotify(msg => playtest.record("warning", state.tide.cycle, state.resources.mon
 placement.onPlace = (tool, b, cost) => playtest.record("place", state.tide.cycle, state.resources.money, `${tool} at ${b.cells[0].i},${b.cells[0].j}${cost ? ` · ${Math.round(cost)}$` : ""}`);
 placement.onRemove = (b, refund) => playtest.record("remove", state.tide.cycle, state.resources.money, `${b.kind} at ${b.cells[0].i},${b.cells[0].j} · refund ${refund}$`);
 const menu = new SaveMenu(document.getElementById("menu")!, {
-  serialize: () => serialize(state), cycle: () => state.tide.cycle, islandSeed: () => state.world.seed, load, newTown,
+  cycle: () => state.tide.cycle, islandSeed: () => state.world.seed, newTown,
+  sectorName: () => (activeFace !== null ? readMeta(store, activeFace)?.name ?? "An unnamed sea" : "No sea"),
+  returnToWorld: () => { void returnToWorld(); },
   playtest: {
     enabled: () => playtest.enabled,
     setEnabled: setPlaytest,
@@ -171,6 +185,179 @@ const audio = new Audio();
 function setReflections(on: boolean): void {
   water.setReflections(on);
 }
+// ---------- the World (docs/globe) ----------
+// A second scene on the same engine: the globe of twelve seas. main.ts owns which scene renders and which DOM
+// is shown; the island's loop, tick and autosave pause while the World is up. The island scene stays resident.
+let mode: "world" | "island" = "world";
+let reducedOverride: boolean | null = null;
+const reducedQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+const reducedMotion = (): boolean => reducedOverride ?? reducedQuery.matches;
+const world = new World(engine, canvas, { reducedMotion });
+const worldRoot = document.getElementById("world")!;
+function faceMeta(face: number): SectorMeta | null { return readMeta(store, face); }
+function refreshFace(face: number): void { world.setSector(face, readSector(store, face)); }
+for (let f = 0; f < FACES; f++) refreshFace(f);
+function download(name: string, text: string): void {
+  const blob = new Blob([text], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+/** A fresh town on a face (not entered): island `seed`, named, Tidewater. */
+function newSector(face: number, seed: number, name: string, biome: Biome = "tidewater"): SectorMeta {
+  const meta = writeSector(store, face, newGame(SEED, seed).state, { name: name.trim() || defaultName(store), biome });
+  refreshFace(face);
+  return meta;
+}
+async function importSectorFile(file: File, face: number | null): Promise<void> {
+  const text = await file.text();
+  let target = face !== null && !faceMeta(face) ? face : listMetas(store).findIndex(m => !m);
+  if (face !== null && faceMeta(face)) {
+    const ok = await confirmDialog(`Replace ${faceMeta(face)!.name} with the imported sea?`, { ok: "Replace", danger: true });
+    if (!ok) return;
+    target = face;
+  }
+  if (target < 0) { await noticeDialog("Every sea has a town; clear one first."); return; }
+  try {
+    const meta = importSector(store, target, text);
+    refreshFace(target);
+    worldUi.showCard(target, meta);
+    worldUi.setNotice(`${meta.name} imported.`);
+  } catch (e) {
+    await noticeDialog(`That file isn't a Tiny Tides sea (${(e as Error).message}).`);
+  }
+}
+const worldUi = new WorldUi(worldRoot, {
+  enter: face => { void enterSector(face); },
+  begin: (face, seed, biome, name) => { newSector(face, seed, name, biome); void enterSector(face); },
+  rename: async face => {
+    const m = faceMeta(face);
+    if (!m) return;
+    const name = await promptDialog("Name this sea", m.name, { ok: "Rename" });
+    if (name === null) return;
+    renameSector(store, face, name);
+    worldUi.showCard(face, faceMeta(face));
+  },
+  remove: async face => {
+    const m = faceMeta(face);
+    if (!m) return;
+    const ok = await confirmDialog(`Clear ${m.name}? The town on it is gone for good.`, { ok: "Clear the sea", danger: true });
+    if (!ok) return;
+    deleteSector(store, face);
+    if (activeFace === face) activeFace = readActive(store);
+    refreshFace(face);
+    worldUi.showCard(face, null);
+  },
+  exportSector: face => {
+    const json = exportSector(store, face);
+    const m = faceMeta(face);
+    if (json && m) download(`tinytides-${m.name.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.json`, json);
+  },
+  importFile: (file, face) => { void importSectorFile(file, face); },
+  defaultName: () => defaultName(store),
+});
+/** The framing the island shows first: the town's centroid at frameTown's distance (docs/globe/hero.md). */
+function townFraming(): Framing {
+  let x = 0, z = 0, n = 0;
+  for (const b of Object.values(state.buildings)) for (const c of b.cells) { x += c.i + 0.5; z += c.j + 0.5; n++; }
+  return { cx: n ? x / n : 0, cz: n ? z / n : 0, targetY: 0.6, radius: 22, alpha: -0.8, beta: 0.95 };
+}
+function islandFraming(): Framing {
+  const p = cameraControl.pose;
+  return { cx: p.x, cz: p.z, targetY: 0.6, radius: p.dist, alpha: p.yaw, beta: p.beta };
+}
+function showWorld(): void {
+  mode = "world";
+  document.body.dataset.mode = "world";
+  worldRoot.hidden = false;
+  cameraControl.enabled = false;
+  placement.enabled = false;
+  menu.toggle(false);
+  settings.toggle(false);
+  info.select(null);
+}
+function showIsland(): void {
+  mode = "island";
+  document.body.dataset.mode = "island";
+  worldRoot.hidden = true;
+  cameraControl.enabled = true;
+  placement.enabled = true;
+}
+let transition: Promise<void> | null = null;
+/** The dive: adopt the sector's town in the resident island, fly the World camera into its face, cut, settle. */
+async function enterSector(face: number, opts: { instant?: boolean } = {}): Promise<boolean> {
+  if (transition || mode !== "world") return false;
+  const rec = readSector(store, face);
+  if (!rec) return false;
+  const run = async () => {
+    activeFace = face;
+    writeActive(store, face);
+    adopt(rec.state);
+    const framing = townFraming();
+    const instant = !!opts.instant || reducedMotion();
+    worldRoot.classList.add("fading");
+    await world.flyTo(face, framing, instant ? 0 : 1.4);
+    cameraControl.jumpTo(framing.cx, framing.cz, framing.radius, framing.alpha, framing.beta);
+    showIsland();
+    worldRoot.classList.remove("fading");
+    syncView();
+    if (!instant) cameraControl.settle(30);
+    save();
+  };
+  transition = run();
+  try { await transition; } finally { transition = null; }
+  return true;
+}
+/** The return: save the town into its sector, refresh its miniature, cut to the World at the same framing, fly out. */
+async function returnToWorld(opts: { instant?: boolean } = {}): Promise<boolean> {
+  if (transition || mode !== "island" || activeFace === null) return false;
+  const face = activeFace;
+  const run = async () => {
+    save();
+    refreshFace(face);
+    const framing = islandFraming();
+    showWorld();
+    worldUi.hideCard();
+    await world.flyBack(face, framing, opts.instant || reducedMotion() ? 0 : 1.2);
+    worldUi.showCard(face, faceMeta(face));
+  };
+  transition = run();
+  try { await transition; } finally { transition = null; }
+  return true;
+}
+// Pointer on the globe: hover lifts a face and opens its card after a short intent delay; a still click dives
+// into a built face (or opens the new-sector card on an empty one). Drags belong to the camera.
+let hoverTimer = 0, hoverCandidate: number | null = null;
+let worldDown: { x: number; y: number } | null = null;
+canvas.addEventListener("pointermove", e => {
+  if (mode !== "world" || transition) return;
+  const f = world.pickFace(e.clientX, e.clientY);
+  canvas.classList.toggle("hovering", f !== null);
+  if (f !== world.hover) world.setHover(f);
+  if (f !== null && f !== hoverCandidate) {
+    hoverCandidate = f;
+    clearTimeout(hoverTimer);
+    hoverTimer = window.setTimeout(() => { if (mode === "world" && hoverCandidate === f && !worldDown) worldUi.showCard(f, faceMeta(f)); }, 120);
+  }
+  if (f === null) hoverCandidate = null;
+});
+canvas.addEventListener("pointerdown", e => { if (mode === "world") { worldDown = { x: e.clientX, y: e.clientY }; canvas.classList.add("dragging"); } });
+canvas.addEventListener("pointerup", e => {
+  canvas.classList.remove("dragging");
+  if (mode !== "world" || !worldDown) return;
+  const moved = Math.hypot(e.clientX - worldDown.x, e.clientY - worldDown.y) > 5;
+  worldDown = null;
+  if (moved || transition) return;
+  const f = world.pickFace(e.clientX, e.clientY);
+  if (f === null) return;
+  const m = faceMeta(f);
+  if (m && worldUi.shownFace === f) { void enterSector(f); return; }
+  worldUi.showCard(f, m);
+});
+canvas.addEventListener("pointerleave", () => { if (mode === "world") { world.setHover(null); canvas.classList.remove("hovering"); hoverCandidate = null; } });
+
 // ---------- quality presets ----------
 // Remembered in localStorage; on the first launch a PROBE_SECONDS frame-rate probe at High picks one.
 let quality: Quality = readQuality() ?? "high";
@@ -185,6 +372,7 @@ function applyQuality(q: Quality): void {
   water.setCaustics(c.caustics);
   walkers.cap = c.walkers;
   wildlife.showGulls = c.gulls;
+  world.setQuality(c.bloom, q);
   writeQuality(q);
   settings.render();
 }
@@ -210,8 +398,25 @@ const speedControls = new SpeedControls(document.getElementById("speed")!, {
 });
 
 window.addEventListener("keydown", e => {
-  if (e.target instanceof HTMLInputElement) return;
-  if (e.key === "Escape") { if (settings.open) settings.toggle(false); else if (menu.open) menu.toggle(false); else if (info.selectedId !== null) info.select(null); else menu.toggle(true); return; }
+  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || dialogOpen()) return;
+  if (mode === "world") {
+    if (transition) return;
+    if (e.key === "ArrowLeft") world.step(-1, 0);
+    else if (e.key === "ArrowRight") world.step(1, 0);
+    else if (e.key === "ArrowUp") world.step(0, -1);
+    else if (e.key === "ArrowDown") world.step(0, 1);
+    else if (e.key === "Enter") {
+      const f = worldUi.shownFace ?? world.frontFace;
+      if (worldUi.shownFace !== f) worldUi.showCard(f, faceMeta(f));
+      else if (faceMeta(f)) void enterSector(f);
+      else worldUi.begin(f);
+    } else if (e.key === "Escape") worldUi.hideCard();
+    else return;
+    e.preventDefault();
+    return;
+  }
+  // Escape closes what is open, top down; at the island's top level it returns to the World (docs/globe/experience.md).
+  if (e.key === "Escape") { if (settings.open) settings.toggle(false); else if (menu.open) menu.toggle(false); else if (info.selectedId !== null) info.select(null); else void returnToWorld(); return; }
   if (e.key === " ") { speed = speed === 0 ? 1 : 0; e.preventDefault(); return; }
   if (e.key === "]" || e.key === "[") { placement.adjustLift(e.key === "]" ? 1 : -1); e.preventDefault(); return; }
   if ((e.key === "r" || e.key === "R") && placement.rotatable) { placement.rotate(); e.preventDefault(); return; }
@@ -273,6 +478,11 @@ function syncView(): void {
 
 engine.runRenderLoop(() => {
   const realDt = Math.min(engine.getDeltaTime() / 1000, 0.1);
+  if (mode === "world") {
+    world.render(realDt);
+    if (probe) probeFrame();
+    return;
+  }
   cameraControl.update(realDt);
   const frameDt = realDt * speed;
   viewTime += frameDt;
@@ -469,6 +679,49 @@ const api = {
   save,
   load,
   newTown,
+  // ---- the World ----
+  /** Which scene is up. */
+  get mode() { return mode; },
+  /** A fresh town on face `n` (island `seed`, named), not entered. */
+  newSector,
+  /** Dive into face `n` (the sector must exist); `instant` skips the flight. Resolves true once the island is up. */
+  enterSector,
+  /** Back to the World from the island; `instant` skips the flight. */
+  returnToWorld,
+  world: {
+    faces: () => listMetas(store),
+    active: () => activeFace,
+    hover: () => world.hover,
+    front: () => world.frontFace,
+    shownCard: () => worldUi.shownFace,
+    pose: () => world.pose,
+    drawCalls: () => world.drawCalls,
+    entranceDone: () => world.entranceDone,
+    reducedMotion: () => reducedMotion(),
+    /** Force reduced motion on or off for a test (null = follow the media query). */
+    setReducedMotion: (on: boolean | null) => { reducedOverride = on; },
+    /** Faces that show a miniature, with how many roof instances each carries. */
+    miniatures: () => world.faces.map(f => ({ face: f.face.index, built: !!f.record, roofs: f.roofs.reduce((n, m) => n + m.thinInstanceCount, 0), level: f.water.position.y })),
+    lookAt: (face: number) => world.lookAt(face, true),
+    hoverFace: (face: number | null) => { world.setHover(face); if (face !== null) worldUi.showCard(face, faceMeta(face)); },
+    migrated: () => migrated.map(m => m.name),
+    /** Light the World as if it were this hour (null = the real clock), for screenshots and the probe. */
+    setClock: (hours: number | null) => { world.clockOverride = hours; },
+    clock: () => world.clockOverride,
+    /** The pointer-independent way to open a face's card (touch's first tap). */
+    showCard: (face: number) => worldUi.showCard(face, faceMeta(face)),
+    setNotice: (text: string) => worldUi.setNotice(text),
+    /** The screen position (client pixels) of a face's centre, for pointer-driven checks. */
+    screenOf: (face: number) => {
+      const p = world.faces[face].node.getAbsolutePosition();
+      const s = Vector3.Project(p, Matrix.Identity(), world.scene.getTransformMatrix(), world.scene.activeCamera!.viewport.toGlobal(engine.getRenderWidth(), engine.getRenderHeight()));
+      const k = engine.getHardwareScalingLevel();
+      const r = canvas.getBoundingClientRect();
+      return { x: s.x * k + r.left, y: s.y * k + r.top };
+    },
+    /** The World's own Babylon scene (frame counting; nothing in the ledger touches it). */
+    scene: world.scene,
+  },
   /** The ledger as JSON (what a save slot would hold). */
   saveJson: () => serialize(state),
   /** Open or close the town menu. */
@@ -484,4 +737,12 @@ const api = {
 (window as unknown as { __tidewater: typeof api }).__tidewater = api;
 /** The console/test API's shape, for the headless scripts under test/ (a type-only import: they never load this module). */
 export type TidewaterApi = typeof api;
-scene.executeWhenReady(() => { api.ready = true; api.bootMs = performance.now() - bootStart; });
+
+// ---------- boot: into the World ----------
+showWorld();
+world.enter();
+const startFace = activeFace ?? 1;
+world.lookAt(startFace, true);
+worldUi.showCard(startFace, faceMeta(startFace));
+if (migrated.length) worldUi.setNotice(`${migrated.length === 1 ? "Your town" : `${migrated.length} towns`} moved onto the World: ${migrated.map(m => m.name).join(", ")}.`);
+world.scene.executeWhenReady(() => { api.ready = true; api.bootMs = performance.now() - bootStart; });

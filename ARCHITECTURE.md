@@ -16,7 +16,8 @@ never writes a number into the ledger except through the placement layer, which 
 test would (`tryPlace`, `removeBuilding`, `buyBoat`, …). Killing the view changes nothing in the sim.
 
 `main.ts` wires the two: it owns the render loop, the console/test API (`window.__tidewater`), autosave, the
-quality presets and the playtest log.
+quality presets and the playtest log — and, since the World (docs/globe), which of the two Babylon scenes on the
+one engine renders: the globe of twelve seas the game launches into, or the island. See "The World" below.
 
 ## Module map
 
@@ -56,13 +57,24 @@ src/sim/
   tick.ts                tick(): the order below; advanceCycles for tests
   save.ts                serialize/deserialize (fills fields added since), stateHash
   start.ts               newGame(seed, islandSeed), startCell, suggestPier
-src/world/               the study's terrain / water / sky shaders and lighting (uniforms only are new)
+  sectors.ts             the World's twelve sectors: metadata, read/write/rename/delete/export/import over an
+                         injected Store (localStorage in the game), the active sector, legacy migration, band/biome lists
+  compress.ts            the LZW packer sector states are stored with (twelve big towns overflow 5 MB as plain JSON)
+src/world/               the study's terrain / water / sky shaders and lighting (uniforms only are new; the World
+                         adds `frame` and `fogNear/fogFar`, identity and the study's literals by default)
+src/globe/
+  geometry.ts            the dodecahedron (pure math): faces, frames, corners, edges, bands, the pentagon disc mesh
+  miniature.ts           a sector's island on a 32-cell grid and its roof placements, from the SimState (Babylon-free)
+  world.ts               World: the second Scene — per-face oceans, miniatures, roof instances, edges, clouds, the
+                         sun by the clock, hover/idle/keyboard motion, the entrance, the dive and return flights
+  ui.ts                  WorldUi: title, sector card (built / new-sector flow), notice, hint, import control
 src/view/
   buildings.ts           one factory per kind → merged flat mesh; rotation baked about the footprint; damage tint
   buildingViews.ts       chunk merge (8×8 cells → one mesh), lantern thin instances
   walkers.ts / boats.ts / ship.ts / ferry.ts / wildlife.ts / trees.ts / effects.ts / overlays.ts / marker.ts
                          thin-instanced or pooled meshes driven by the ledger + view time; walkers ride the ferry
   ground.ts              the ground sampler every prop stands on (the rendered terrain, landfill included)
+  roofs.ts               roof shape and colour per building (shared by the island's meshes and the World's miniatures)
   audio.ts               procedural Web Audio (surf, bell, thrum, pad, gulls, hammering)
 src/build/
   placement.ts           pointer → cell, ghost (fate tint, stilts, door tab), drag-to-paint, lift, turn, place/remove
@@ -70,15 +82,54 @@ src/build/
 src/ui/
   hud.ts                 resource bar, build palette, hint line, tide clock, ledger line, notifications
   infoPanel.ts / tutorial.ts / achievements.ts / markerLabel.ts / speed.ts
-  saveMenu.ts            Town menu: slots, island seed, new town, the playtest log switch/notes/export
+  saveMenu.ts            Town menu: the sea's name and the "World" button, island seed, new town, the playtest log
   settings.ts            quality presets and the first-launch probe thresholds
   playtest.ts            PlaytestLog: the opt-in local session log and its export shape
+  dialog.ts              in-page confirm / prompt / notice (promise-based, focus-trapped) — no window.confirm anywhere
 test/
   sim.test.ts            sim-only checks (no Babylon) — helpers in scenario.ts (scripted towns)
+  sectors.test.ts / globe.test.ts   the sector model (budget, migration, export/import) and the World's pure parts
   fuzzCore.ts / fuzzWorker.ts / fuzz.ts   the sim fuzzer (invariants every cycle; worker threads)
-  smoke.ts               headless Chrome plays every milestone through the console API
-  monkey.ts / quality.ts / deploycheck.ts   random real input; preset fps; the built site under /tidewater/
+  smoke.ts               headless Chrome launches into the World, dives into a sea, plays every milestone, comes back
+  monkey.ts / quality.ts / deploycheck.ts   random real input; preset fps (island and World); the built site under /tidewater/
 ```
+
+## The World
+
+The game launches into the World: a dodecahedron of twelve seas, one town per face (`docs/globe/` has the
+design notes, decisions and the build ledger). Two things make it cheap to keep next to the island:
+
+- **Two scenes, one engine, one canvas.** `World` (src/globe/world.ts) is a second Babylon `Scene`. The island
+  scene is built at module scope as it always was and stays resident. `main.ts` holds `mode` (`"world" |
+  `"island"`): the render loop calls `world.render(dt)` and returns while the World is up, so the island's camera
+  control, tick accumulator, autosave and view sync are simply not run; `body[data-mode]` hides the island's DOM
+  and shows `#world`; `CameraControl.enabled` and `Placement.enabled` gate the island's pointer handlers because
+  both scenes share the canvas. Nothing is created or disposed on a switch.
+- **The dive is `adopt(state)`.** Entering a sea reads its record, `adopt`s the state into the resident island
+  (the same path a load takes), flies the World's camera to the pose that equals the island's `frameTown`
+  framing expressed in the face's frame, cuts, and puts the island camera at that framing. The return saves the
+  town into its sector, refreshes the face's miniature, cuts to the World at the island camera's pose and flies
+  back to the orbit. With `prefers-reduced-motion` both are cuts.
+
+**Rendering.** Each face is the game's water `ShaderMaterial` on a pentagon disc in the face's own frame with its
+own 128² heightmap; the shaders take a `frame` matrix (the inverse of the mesh's world matrix) so their
+height/depth/uv/slope math runs in face-local coordinates, and `fogNear/fogFar` so the World can push the fog out
+(the island passes identity and the study's literals). A built face carries a miniature: `island(seed).height`
+sampled on a 32-cell grid (landfill raised), the terrain shader, roofs as thin instances of three primitives
+coloured by `view/roofs.ts` from the real buildings, the water at the sector's tide level. Empty faces are the
+same water fogged close. One sun follows the player's clock; each face's sun/sky uniforms scale with how far it
+turns toward it, which is the night side. Clouds are thin instances on seeded orbits; their count follows the
+quality preset, as does bloom. Draw calls: 12 seas + edges + clouds + sky, plus a miniature and up to three roof
+meshes per built face (`world.drawCalls()` in the console API).
+
+**Sectors** (`sim/sectors.ts`, sim-only, tested without Babylon). Face N's town lives in localStorage under
+`tidewater.sector.N` (the SimState, LZW-packed by `sim/compress.ts`) and `tidewater.sector.N.meta` (name, seed,
+biome, band, population, cycles, buildings, money, created, lastPlayed — what the card shows without reading the
+state). `tidewater.sector.active` is the sea the island scene autosaves into (every peak and on return). The
+first launch with the old layout moves `tidewater.autosave` to face 1 and `tidewater.slot.1–3` to faces 2–4,
+marks `tidewater.sectors.migrated` and leaves the old keys. Export is the record as JSON; import validates it
+through `deserialize`. Faces 0 and 11 are polar, 1–5 temperate, 6–10 tropical; only the Tidewater biome exists
+(`BAND_GATING` in config.ts, off, would restrict it to the temperate band).
 
 ## The tick
 
@@ -130,8 +181,9 @@ occupancy and the building's assignments) → the chunk's signature changes → 
   fills the ones that have safe defaults (`achievements`, `extraTrees`, `landfill`, `loan`, `tsunami.due`,
   `world`, `rot`). The Grid is rebuilt from the state (`grid.attach`).
 - Derived per-tick caches keyed on the terrain (the field flows) check `grid.terrainVersion`.
-- localStorage (view/UI only): the autosave, three save slots, tutorial step, quality preset, playtest switch and
-  notes. Nothing the ledger needs.
+- localStorage (view/UI only): the twelve sectors and their metadata, the active sector, the migration mark
+  (the old autosave and slot keys are left in place), tutorial step, quality preset, playtest switch and notes.
+  Nothing the ledger needs.
 - Module-level listeners (test instrumentation, null in the game): `auditMoney` (money.ts), `onNotify` (state.ts).
 
 ## Invariants the fuzzer checks every cycle

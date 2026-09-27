@@ -120,12 +120,10 @@
       .menu-head { display: flex; justify-content: space-between; align-items: center; }
       .menu-head h2 { font: 400 22px/1 "Instrument Serif", Georgia, serif; margin: 0; }
       .menu-head .close { font: 16px/1 system-ui; color: var(--ink-dim); background: transparent; border: 0; cursor: pointer; }
-      .slots { display: grid; gap: 6px; }
-      .slot { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; }
-      .slot-name { color: var(--ink-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .slot-buttons { display: flex; gap: 4px; flex-shrink: 0; }
-      .slot button, .menu-actions button { font: inherit; font-size: 11px; color: var(--ink); background: rgba(255, 255, 255, 0.06); border: 1px solid var(--panel-line); border-radius: 6px; padding: 3px 8px; cursor: pointer; }
-      .slot button:disabled { opacity: 0.4; cursor: default; }
+      .sector-line { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; }
+      .sector-name { color: var(--ink-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .sector-line .world, .menu-actions button { font: inherit; font-size: 11px; color: var(--ink); background: rgba(255, 255, 255, 0.06); border: 1px solid var(--panel-line); border-radius: 6px; padding: 3px 8px; cursor: pointer; }
+      .sector-line .world { color: var(--accent); border-color: rgba(255, 209, 138, 0.4); }
       .menu-actions { display: flex; justify-content: flex-end; align-items: center; gap: 6px; }
       .seed-field { margin-right: auto; display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--ink-dim); }
       .seed-field input { width: 84px; font: inherit; font-size: 11px; color: var(--ink); background: rgba(255, 255, 255, 0.06); border: 1px solid var(--panel-line); border-radius: 6px; padding: 3px 6px; }
@@ -170,6 +168,66 @@
       #achievement p { margin: 2px 0 0; font-size: 11px; color: var(--ink-dim); }
       @keyframes rise { 0% { opacity: 0; transform: translate(-50%, -8px); } 100% { opacity: 1; transform: translate(-50%, 0); } }
       @media (prefers-reduced-motion: reduce) { #achievement { animation: none; } }
+
+      /* ---------- the World (docs/globe) ---------- */
+      body[data-mode="world"] #hud, body[data-mode="world"] #resources, body[data-mode="world"] #notes, body[data-mode="world"] #tutorial,
+      body[data-mode="world"] #achievement, body[data-mode="world"] #markerLabel, body[data-mode="world"] #speed, body[data-mode="world"] #info { display: none; }
+      body[data-mode="world"] #c { cursor: grab; }
+      body[data-mode="world"] #c.hovering { cursor: pointer; }
+      body[data-mode="world"] #c.dragging { cursor: grabbing; }
+      #world[hidden] { display: none; }
+      #world { position: fixed; inset: 0; pointer-events: none; }
+      #world .glass, #world button, #world input { pointer-events: auto; }
+      #world.fading { opacity: 0; transition: opacity 250ms ease-out; }
+      #world { transition: opacity 250ms ease-out; }
+      .world-title { position: absolute; left: 24px; top: 20px; }
+      .world-title h1 { margin: 0; font: 400 44px/1 "Instrument Serif", Georgia, serif; letter-spacing: 0.01em; color: var(--ink); text-shadow: 0 1px 12px rgba(10, 30, 45, 0.35); }
+      .world-sub { margin: 6px 0 0 2px; font-size: 13px; color: var(--ink-dim); text-shadow: 0 1px 8px rgba(10, 30, 45, 0.45); }
+      .world-card { position: absolute; right: 24px; top: 50%; transform: translateY(-50%); width: min(300px, calc(100vw - 48px)); padding: 16px 18px 18px; display: grid; gap: 10px; }
+      .world-card[hidden] { display: none; }
+      .world-card.reveal { animation: cardIn 220ms ease-out; }
+      @keyframes cardIn { 0% { opacity: 0; transform: translateY(calc(-50% + 6px)); } 100% { opacity: 1; transform: translateY(-50%); } }
+      .card-kicker { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-dim); }
+      .card-name { margin: 0; font: 400 26px/1.1 "Instrument Serif", Georgia, serif; }
+      .card-rows { display: grid; gap: 4px; }
+      .card-rows .row { display: flex; justify-content: space-between; font-size: 12px; color: var(--ink-dim); }
+      .card-rows .row span:last-child { color: var(--ink); font-variant-numeric: tabular-nums; }
+      .card-field { display: grid; gap: 4px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-dim); }
+      .card-field input, .seed-row input { font: inherit; font-size: 13px; letter-spacing: 0; text-transform: none; color: var(--ink); background: rgba(255, 255, 255, 0.06); border: 1px solid var(--panel-line); border-radius: 6px; padding: 5px 8px; width: 100%; box-sizing: border-box; }
+      .seed-row { display: flex; gap: 6px; }
+      .seed-row input { flex: 1; min-width: 0; }
+      .biomes { display: flex; flex-wrap: wrap; gap: 4px; }
+      .card-actions { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 4px; }
+      .world-card button, .world-actions button, .biome { font: inherit; font-size: 12px; letter-spacing: 0; text-transform: none; color: var(--ink); background: rgba(255, 255, 255, 0.06); border: 1px solid var(--panel-line); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+      .world-card button:hover, .world-actions button:hover { background: rgba(255, 255, 255, 0.11); }
+      .world-card button.primary { color: #1b2a33; background: var(--accent); border-color: var(--accent); }
+      .world-card button.primary:hover { background: #ffdca4; }
+      .biome.active { color: var(--accent); border-color: rgba(255, 209, 138, 0.5); background: rgba(255, 209, 138, 0.08); }
+      .biome.uncharted { opacity: 0.45; cursor: default; display: grid; gap: 1px; text-align: left; }
+      .biome.uncharted span { font-size: 10px; color: var(--ink-dim); }
+      .world-bottom { position: absolute; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); display: grid; justify-items: center; gap: 8px; }
+      .world-hint { font-size: 12px; color: var(--ink-dim); text-shadow: 0 1px 8px rgba(10, 30, 45, 0.45); white-space: nowrap; }
+      .world-actions { padding: 6px 8px; }
+      .world-notice { position: absolute; left: 50%; top: 20px; transform: translateX(-50%); padding: 8px 14px; font-size: 12px; color: var(--ink); max-width: min(520px, calc(100vw - 48px)); text-align: center; }
+      .world-notice[hidden] { display: none; }
+      @media (max-width: 720px) {
+        .world-title { left: 50%; transform: translateX(-50%); text-align: center; top: 14px; }
+        .world-title h1 { font-size: 34px; }
+        .world-card { left: 12px; right: 12px; top: auto; bottom: calc(104px + env(safe-area-inset-bottom, 0px)); transform: none; width: auto; }
+        @keyframes cardIn { 0% { opacity: 0; transform: translateY(6px); } 100% { opacity: 1; transform: none; } }
+        .world-hint { font-size: 11px; white-space: normal; text-align: center; }
+      }
+      @media (prefers-reduced-motion: reduce) { .world-card.reveal { animation: none; } #world { transition: none; } }
+      /* in-page dialogs */
+      .dialog-host { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; background: rgba(6, 16, 24, 0.35); }
+      .dialog-host[hidden] { display: none; }
+      .dialog { width: min(380px, calc(100vw - 32px)); padding: 16px 18px; display: grid; gap: 12px; }
+      .dialog-message { margin: 0; font-size: 13px; line-height: 1.45; }
+      .dialog-input { font: inherit; font-size: 13px; color: var(--ink); background: rgba(255, 255, 255, 0.06); border: 1px solid var(--panel-line); border-radius: 6px; padding: 6px 8px; }
+      .dialog-actions { display: flex; justify-content: flex-end; gap: 6px; }
+      .dialog-actions button { font: inherit; font-size: 12px; color: var(--ink); background: rgba(255, 255, 255, 0.06); border: 1px solid var(--panel-line); border-radius: 6px; padding: 5px 12px; cursor: pointer; }
+      .dialog-actions .dialog-ok { color: #1b2a33; background: var(--accent); border-color: var(--accent); }
+      .dialog-actions .dialog-ok.danger { color: var(--ink); background: rgba(224, 138, 122, 0.25); border-color: var(--bad); }
     </style>
   </head>
   <body>
@@ -184,6 +242,8 @@
     <div id="settings" class="glass" hidden></div>
     <div id="info" class="glass" hidden></div>
     <div id="hud" class="glass"></div>
+    <div id="world" hidden></div>
+    <div id="dialog" class="dialog-host" hidden></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

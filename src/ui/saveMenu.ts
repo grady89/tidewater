@@ -1,39 +1,18 @@
-// Save slots and "new town": three named slots in localStorage beside the autosave. The menu only calls back into
-// main; it never touches the ledger itself.
-export interface SlotInfo { name: string; savedAt: number; cycle: number }
-
-const SLOT_KEY = (n: number) => `tidewater.slot.${n}`;
-const SLOT_META = (n: number) => `tidewater.slot.${n}.meta`;
-export const SLOT_COUNT = 3;
-
-export function readSlot(n: number): { json: string; meta: SlotInfo } | null {
-  try {
-    const json = localStorage.getItem(SLOT_KEY(n));
-    const meta = localStorage.getItem(SLOT_META(n));
-    if (!json || !meta) return null;
-    return { json, meta: JSON.parse(meta) as SlotInfo };
-  } catch {
-    return null;
-  }
-}
-
-export function writeSlot(n: number, json: string, meta: SlotInfo): boolean {
-  try {
-    localStorage.setItem(SLOT_KEY(n), json);
-    localStorage.setItem(SLOT_META(n), JSON.stringify(meta));
-    return true;
-  } catch {
-    return false;
-  }
-}
+// The Town menu: the sea this town lives on and the way back to the World, a new town on this sea (island seed
+// with Random; an in-page confirm), the opt-in playtest log, and Quality. The three save slots that used to
+// live here are the World's sectors now (docs/globe). The menu only calls back into main; it never touches the
+// ledger itself.
+import { confirmDialog } from "./dialog";
 
 export interface SaveMenuHooks {
-  serialize(): string;
   cycle(): number;
   /** The seed of the island the town stands on (0 = the original island). */
   islandSeed(): number;
-  load(json: string): void;
+  /** The name of the sea (sector) this town lives on. */
+  sectorName(): string;
   newTown(seed: number): void;
+  /** Back to the World (the town is saved first). */
+  returnToWorld(): void;
   /** The opt-in playtest log: its switch, the notes that go into the export, and the export itself. */
   playtest: {
     enabled(): boolean;
@@ -52,14 +31,16 @@ export function parseSeed(text: string): number {
 }
 
 export class SaveMenu {
-  private readonly panel: HTMLElement;
   private readonly seedInput: HTMLInputElement;
+  private readonly sectorLine: HTMLElement;
 
   constructor(private readonly root: HTMLElement, private readonly hooks: SaveMenuHooks) {
-    root.innerHTML = `<div class="menu-head"><h2>Town</h2><button type="button" class="close" aria-label="Close">×</button></div><div class="slots"></div><div class="menu-actions"><label class="seed-field">Island seed <input class="seed" type="number" min="0" step="1" inputmode="numeric" aria-label="Island seed"></label><button type="button" class="random">Random</button><button type="button" class="new">New town</button></div>`
+    root.innerHTML = `<div class="menu-head"><h2>Town</h2><button type="button" class="close" aria-label="Close">×</button></div>`
+      + `<div class="sector-line"><span class="sector-name"></span><button type="button" class="world">World</button></div>`
+      + `<div class="menu-actions"><label class="seed-field">Island seed <input class="seed" type="number" min="0" step="1" inputmode="numeric" aria-label="Island seed"></label><button type="button" class="random">Random</button><button type="button" class="new">New town</button></div>`
       + `<div class="playtest"><label class="playtest-switch"><input type="checkbox" class="playtest-on"> Record a playtest log (the first 30 minutes; it stays on this machine)</label><textarea class="playtest-notes" rows="2" placeholder="Notes to go in the export"></textarea><div class="menu-actions"><button type="button" class="playtest-export">Export playtest log</button></div></div>`;
-    this.panel = root.querySelector<HTMLElement>(".slots")!;
     this.seedInput = root.querySelector<HTMLInputElement>(".seed")!;
+    this.sectorLine = root.querySelector<HTMLElement>(".sector-name")!;
     const playtestOn = root.querySelector<HTMLInputElement>(".playtest-on")!;
     const notes = root.querySelector<HTMLTextAreaElement>(".playtest-notes")!;
     playtestOn.checked = hooks.playtest.enabled();
@@ -75,11 +56,13 @@ export class SaveMenu {
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     });
     root.querySelector(".close")!.addEventListener("click", () => this.toggle(false));
+    root.querySelector(".world")!.addEventListener("click", () => { this.toggle(false); hooks.returnToWorld(); });
     root.querySelector(".random")!.addEventListener("click", () => { this.seedInput.value = String(1 + Math.floor(Math.random() * 999999)); });
     root.querySelector(".new")!.addEventListener("click", () => {
       const seed = parseSeed(this.seedInput.value);
       const where = seed === 0 ? "the original island" : `island ${seed}`;
-      if (window.confirm(`Start a new town on ${where}? The current one is kept only if you saved it to a slot.`)) { hooks.newTown(seed); this.toggle(false); }
+      void confirmDialog(`Start a new town on ${where}? This sea's town is replaced; the World keeps the others.`, { ok: "New town", danger: true })
+        .then(ok => { if (ok) { hooks.newTown(seed); this.toggle(false); } });
     });
     root.hidden = true;
     this.render();
@@ -93,24 +76,6 @@ export class SaveMenu {
   }
 
   private render(): void {
-    this.panel.innerHTML = "";
-    for (let n = 1; n <= SLOT_COUNT; n++) {
-      const slot = readSlot(n);
-      const row = document.createElement("div");
-      row.className = "slot";
-      const label = slot ? `${slot.meta.name} · cycle ${slot.meta.cycle} · ${new Date(slot.meta.savedAt).toLocaleString()}` : "Empty";
-      row.innerHTML = `<span class="slot-name">${n}. ${label}</span><span class="slot-buttons"><button type="button" class="save">Save</button><button type="button" class="load" ${slot ? "" : "disabled"}>Load</button></span>`;
-      row.querySelector(".save")!.addEventListener("click", () => {
-        const name = window.prompt("Name this save", slot?.meta.name ?? `Town ${n}`);
-        if (name === null) return;
-        writeSlot(n, this.hooks.serialize(), { name: name || `Town ${n}`, savedAt: Date.now(), cycle: this.hooks.cycle() });
-        this.render();
-      });
-      row.querySelector(".load")!.addEventListener("click", () => {
-        const s = readSlot(n);
-        if (s) { this.hooks.load(s.json); this.toggle(false); }
-      });
-      this.panel.appendChild(row);
-    }
+    this.sectorLine.textContent = `${this.hooks.sectorName()} · cycle ${this.hooks.cycle()}`;
   }
 }

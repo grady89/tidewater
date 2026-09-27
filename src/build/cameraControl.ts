@@ -49,6 +49,8 @@ export class CameraControl {
   onHome: () => void = () => {};
   /** Whether the left button grabs the ground; off while a tool draws lines with it. */
   leftDrag = true;
+  /** Off while the World is shown: the canvas is shared, the pointer belongs to the globe then. */
+  enabled = true;
 
   constructor(private readonly camera: ArcRotateCamera, canvas: HTMLCanvasElement, private readonly scene: Scene) {
     camera.inputs.clear();
@@ -61,7 +63,7 @@ export class CameraControl {
     this.rect = () => canvas.getBoundingClientRect();
 
     canvas.addEventListener("pointerdown", e => {
-      if (e.button > 2 || (e.button === 0 && !this.leftDrag)) return;
+      if (!this.enabled || e.button > 2 || (e.button === 0 && !this.leftDrag)) return;
       this.drag = { button: e.button, x: e.clientX, y: e.clientY, ground: this.groundAt(e.clientX, e.clientY) };
       canvas.setPointerCapture(e.pointerId);
       if (e.button === 1) e.preventDefault();
@@ -90,6 +92,7 @@ export class CameraControl {
     canvas.addEventListener("pointercancel", () => { this.drag = null; });
     canvas.addEventListener("auxclick", e => { if (e.button === 1) e.preventDefault(); });
     canvas.addEventListener("wheel", e => {
+      if (!this.enabled) return;
       e.preventDefault();
       const units = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaMode === 2 ? e.deltaY * 800 : e.deltaY;
       this.zoomAt(Math.exp(units * WHEEL_ZOOM), e.clientX, e.clientY);
@@ -121,7 +124,7 @@ export class CameraControl {
   }
 
   /** Keys pressed while the canvas has focus; returns true when the key is ours. */
-  keyDown(key: string): boolean {
+  private keyDownInner(key: string): boolean {
     const k = key.length === 1 ? key.toLowerCase() : key;
     if (k === "Home") { this.onHome(); return true; }
     if (!KEYS.has(k)) return false;
@@ -131,6 +134,16 @@ export class CameraControl {
   keyUp(key: string): void { this.keys.delete(key.length === 1 ? key.toLowerCase() : key); }
 
   /** Cut straight to a pose (framing for screenshots, Home). */
+  /** Ease the distance to `dist` from wherever the camera is (the dive's settle after the cut). */
+  settle(dist: number): void {
+    this.goal.dist = clamp(dist, MIN_DIST, MAX_DIST);
+  }
+
+  keyDown(key: string): boolean {
+    if (!this.enabled) return false;
+    return this.keyDownInner(key);
+  }
+
   jumpTo(x: number, z: number, dist: number, yaw: number, beta: number): void {
     this.goal = { x, z, yaw, dist: clamp(dist, MIN_DIST, MAX_DIST) };
     this.clampTarget();

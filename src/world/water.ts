@@ -1,8 +1,14 @@
 // One water plane with the study's shader. Tide is the plane's Y.
-import { AbstractMesh, Mesh, MeshBuilder, MirrorTexture, Plane, RawTexture, Scene, ShaderMaterial, Texture, Vector2, Vector3 } from "@babylonjs/core";
+import { AbstractMesh, Matrix, Mesh, MeshBuilder, MirrorTexture, Plane, RawTexture, Scene, ShaderMaterial, Texture, Vector2, Vector3 } from "@babylonjs/core";
 import { SIZE } from "../config";
 import { waterFS, waterVS } from "../../shaders/water";
 import { Lighting, MORNING } from "./lighting";
+
+/** The study's fog band, in world units from the camera. */
+export const FOG_NEAR = 45, FOG_FAR = 140;
+/** Every uniform the water shader takes (the World builds its own materials from the same list). */
+export const WATER_UNIFORMS = ["world", "worldViewProjection", "time", "sunDir", "sunColor", "skyColor", "fogColor", "camPos", "dusk",
+  "waveAmp", "waveDir", "waveFront", "waveHeight", "waveWidth", "reflectMix", "caustics", "frame", "fogNear", "fogFar"];
 
 export interface Water {
   mesh: Mesh;
@@ -37,13 +43,13 @@ export function createWater(scene: Scene, heightTex: RawTexture): Water {
   const mesh = MeshBuilder.CreateGround("water", { width: SIZE * 3.2, height: SIZE * 3.2, subdivisions: 260 }, scene);
   const material = new ShaderMaterial("water", scene, { vertexSource: waterVS, fragmentSource: waterFS }, {
     attributes: ["position"],
-    uniforms: ["world", "worldViewProjection", "time", "sunDir", "sunColor", "skyColor", "fogColor", "camPos", "dusk",
-      "waveAmp", "waveDir", "waveFront", "waveHeight", "waveWidth", "reflectMix", "caustics"],
+    uniforms: WATER_UNIFORMS,
     samplers: ["heightTex", "reflectTex"],
     needAlphaBlending: true,
   });
   material.setTexture("heightTex", heightTex);
   material.setFloat("waveAmp", 1).setVector2("waveDir", new Vector2(0, 1)).setFloat("waveFront", -999).setFloat("waveHeight", 0).setFloat("waveWidth", 3);
+  material.setMatrix("frame", Matrix.Identity()).setFloat("fogNear", FOG_NEAR).setFloat("fogFar", FOG_FAR);
   material.backFaceCulling = false;
   mesh.material = material;
   mesh.alphaIndex = 10;

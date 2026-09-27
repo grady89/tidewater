@@ -132,8 +132,16 @@ try {
     const before = await frameStats(page);
     worstSlowRun = Math.max(worstSlowRun, before.maxSlowRunMs); fpsSum += before.fps; fpsSamples++;
     note(`force ${event}, save, reload`);
-    await page.evaluate((ev: string) => {
+    await page.evaluate(async (ev: string) => {
       const api = (window as unknown as { __tidewater: Api }).__tidewater;
+      // The monkey may be up in the World: get onto an island (creating a sea if it never began one) so the
+      // save lands in a sector; a flight already under way finishes first.
+      const mode = () => api.mode; // read through a call: TS would otherwise narrow the getter inside the branch
+      if (mode() === "world") {
+        let f = api.world.active();
+        if (f === null) { api.newSector(1, 0, "Monkey"); f = 1; }
+        for (let k = 0; k < 40 && mode() !== "island"; k++) { if (!await api.enterSector(f, { instant: true })) await new Promise(r => setTimeout(r, 100)); }
+      }
       api.setSpeed(1);
       if (ev === "storm") api.forceStorm(); else api.forceTsunami();
       api.tickSeconds(ev === "tsunami" ? 8 : 2);
@@ -141,7 +149,12 @@ try {
     }, event);
     await page.reload();
     await waitReady(page);
-    const state = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { storm: api.sim.storm.active, stage: api.sim.tsunami.stage, n: Object.keys(api.sim.buildings).length }; });
+    const state = await page.evaluate(async () => {
+      const api = (window as unknown as { __tidewater: Api }).__tidewater;
+      const f = api.world.active();
+      if (f !== null) await api.enterSector(f, { instant: true });
+      return { storm: api.sim.storm.active, stage: api.sim.tsunami.stage, n: Object.keys(api.sim.buildings).length, mode: api.mode };
+    });
     counts[`reload-${event}`] = (counts[`reload-${event}`] ?? 0) + 1;
     console.log(`[monkey] ${elapsedLabel} reloaded during a ${event}: ${JSON.stringify(state)}`);
     if (event === "storm" && !state.storm) fail("the storm did not survive the reload");
@@ -191,9 +204,10 @@ try {
     const menu = document.getElementById("menu")!;
     const api = (window as unknown as { __tidewater: Api }).__tidewater;
     api.menu(false);
-    return { menuHidden: menu.hidden, ready: api.ready, buildings: Object.keys(api.sim.buildings).length, cycle: api.sim.tide.cycle };
+    return { menuHidden: menu.hidden, dialogHidden: document.getElementById("dialog")?.hidden ?? true, mode: api.mode, ready: api.ready, buildings: Object.keys(api.sim.buildings).length, cycle: api.sim.tide.cycle };
   });
   if (!stuck.menuHidden) fail("the Town menu stays open");
+  if (!stuck.dialogHidden) fail("a dialog stays open after Escape");
   if (worstSlowRun > SLOW_RUN_LIMIT_MS) fail(`frame rate under 30 fps for ${(worstSlowRun / 1000).toFixed(2)} s`);
   console.log(`[monkey] done: ${n} actions in ${MINUTES} min · ${JSON.stringify(counts)} · mean fps ${(fpsSum / Math.max(1, fpsSamples)).toFixed(0)} · worst slow run ${(worstSlowRun / 1000).toFixed(2)} s · end state ${JSON.stringify(stuck)}`);
   if (failures.length) {

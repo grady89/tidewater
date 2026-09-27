@@ -10,10 +10,29 @@ function assert(cond: unknown, msg: string): asserts cond {
   if (!cond) throw new Error("smoke assertion failed: " + msg);
 }
 
+import { readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { TidewaterApi as Api } from "../src/main";
 import type { Building, Cell } from "../src/sim/state";
 async function waitReady(page: Page): Promise<void> {
   await page.waitForFunction(() => (window as unknown as { __tidewater?: { ready: boolean } }).__tidewater?.ready === true, null, { timeout: 30_000 });
+}
+/** After a reload the game is up in the World (docs/globe): ready, and lit at noon so the shots are deterministic. */
+async function waitReloaded(page: Page): Promise<void> {
+  await waitReady(page);
+  await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.world.setClock(11));
+}
+/** Cut from the World into the active sector's island (what the island checks expect); returns the milliseconds it took. */
+async function enterActive(page: Page): Promise<number> {
+  return page.evaluate(async () => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    const f = api.world.active();
+    if (f === null) throw new Error("no active sector to enter");
+    const t0 = performance.now();
+    if (!await api.enterSector(f, { instant: true })) throw new Error("could not enter sector " + f);
+    return performance.now() - t0;
+  });
 }
 
 const server = await createServer({ server: { port: PORT, strictPort: true }, logLevel: "error" });
@@ -23,7 +42,8 @@ const browser = await chromium.launch({
   channel: "chrome",
   headless: true,
   // Headless Chrome uses the real GPU with the blocklist ignored (verified: ANGLE D3D11 on the RTX 4060).
-  args: ["--ignore-gpu-blocklist"],
+  // gc() is exposed for the World's heap check.
+  args: ["--ignore-gpu-blocklist", "--js-flags=--expose-gc"],
 });
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
@@ -31,10 +51,38 @@ try {
   page.on("pageerror", e => errors.push(e.message));
   page.on("console", m => { if (m.type() === "error" && !m.text().startsWith("Failed to load resource")) errors.push(m.text()); });
   page.on("response", r => { if (r.status() >= 400) errors.push(`${r.status()} ${r.url()}`); });
-  page.on("dialog", d => d.accept()); // the Town menu's "new town?" confirm
+  page.on("dialog", d => { errors.push("native dialog: " + d.message()); void d.dismiss(); }); // every dialog is in-page now
 
   await page.goto(`http://localhost:${PORT}/`);
   await waitReady(page);
+  // The World (docs/globe): a fresh context launches into the globe with no towns, the pre-lit face's card open
+  // in the new-sector state. Create a sea, dive into it, and every island check below runs on that island.
+  const launch = await page.evaluate(() => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    api.world.setClock(11); // noon, so the World's light is the same in every run
+    return { mode: api.mode, built: api.world.faces().filter(m => m).length, active: api.world.active(), card: api.world.shownCard(), cardText: document.querySelector("#world .world-card")?.textContent?.replace(/\s+/g, " ").trim() ?? "", title: document.querySelector("#world h1")?.textContent, worldShown: !document.getElementById("world")!.hidden, hudHidden: getComputedStyle(document.getElementById("hud")!).display === "none", bootMs: api.bootMs, draws: api.world.drawCalls(), reduced: api.world.reducedMotion() };
+  });
+  console.log("World launch:", JSON.stringify(launch));
+  assert(launch.mode === "world" && launch.built === 0 && launch.active === null && launch.worldShown && launch.hudHidden, "a fresh context launches into an empty World with the island's HUD hidden");
+  assert(launch.card === 1 && /Uncharted sea · Temperate/.test(launch.cardText) && /Begin/.test(launch.cardText) && launch.title === "Tiny Tides", "the pre-lit face's new-sector card is open");
+  await page.waitForFunction(() => (window as unknown as { __tidewater: Api }).__tidewater.world.entranceDone(), null, { timeout: 10_000 });
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: "shots/globe/world-first-launch.png" });
+  const dive = await page.evaluate(async () => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    const meta = api.newSector(1, 0, "Smoke");
+    const minis = api.world.miniatures().filter(m => m.built);
+    const t0 = performance.now();
+    const ok = await api.enterSector(1);
+    return { meta: { face: meta.face, name: meta.name, seed: meta.seed, buildings: meta.buildings }, minis, ok, ms: performance.now() - t0, mode: api.mode, active: api.world.active(), pose: api.world.pose(), cam: api.view.camera(), buildings: Object.keys(api.sim.buildings).length, hudShown: getComputedStyle(document.getElementById("hud")!).display !== "none", worldHidden: document.getElementById("world")!.hidden };
+  });
+  console.log("World dive:", JSON.stringify(dive));
+  assert(dive.meta.face === 1 && dive.meta.name === "Smoke" && dive.meta.seed === 0 && dive.meta.buildings === 1, "newSector wrote a fresh town onto face 1");
+  assert(dive.minis.length === 1 && dive.minis[0].face === 1 && dive.minis[0].roofs === 1, "the face's miniature carries the starting hut's roof");
+  assert(dive.ok && dive.mode === "island" && dive.active === 1 && dive.ms >= 1000 && dive.ms < 6000 && dive.pose.phase === "away", "the dive flew for ~1.4 s and landed on the island");
+  assert(Math.abs(dive.cam.dist - 22) < 0.5 && Math.abs(dive.cam.yaw + 0.8) < 0.01 && dive.buildings === 1 && dive.hudShown && dive.worldHidden, "the island is up at the town framing with its HUD");
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: "shots/globe/island-after-dive.png" });
   await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.newTown());
 
   // M2: the starter town, four cycles, positive net money; cutting the market's walkway stops sales.
@@ -773,12 +821,15 @@ try {
   await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.save());
   const t0 = Date.now();
   await page.reload();
-  await waitReady(page);
+  await waitReloaded(page);
   const loadMs = Date.now() - t0;
-  const bigLoaded = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { n: Object.keys(api.sim.buildings).length, bootMs: api.bootMs }; });
-  console.log(`M12 reload: ${loadMs} ms wall (${bigLoaded.bootMs.toFixed(0)} ms boot), ${bigLoaded.n} buildings`);
+  const bigLoaded = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { n: Object.keys(api.sim.buildings).length, bootMs: api.bootMs, mode: api.mode, active: api.world.active(), roofs: api.world.miniatures().filter(m => m.built).map(m => m.roofs) }; });
+  const enterMs = await enterActive(page);
+  console.log(`M12 reload: ${loadMs} ms wall to the World (${bigLoaded.bootMs.toFixed(0)} ms boot, roofs on the face: ${bigLoaded.roofs}), ${enterMs.toFixed(0)} ms into the island, ${bigLoaded.n} buildings`);
   assert(bigLoaded.n === m12.buildings, "big town survived the reload");
   assert(loadMs < 2000, "a 300-building town loads in under 2 s");
+  assert(bigLoaded.mode === "world" && bigLoaded.active === 1 && bigLoaded.roofs.length === 1 && bigLoaded.roofs[0] > 50, "the reload lands in the World with the big town's roofs on its face");
+  assert(enterMs < 2000, "the cut into the big town takes under 2 s");
 
   // M13: no sound until the first gesture; a click starts and resumes the audio context; mute is remembered.
   const audioBefore = await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.view.audio());
@@ -898,7 +949,8 @@ try {
   assert(probing.probing && probing.quality === "high", "with nothing remembered the launch starts at High and probes");
   assert(!probed.probing && probed.quality === "high" && /Chosen at first launch: High \(\d+ fps measured\)/.test(probed.note) && probed.stored === "high", "the probe chose High on this GPU and remembered it");
   assert(probed.log.some((m: string) => m.startsWith("Quality set to High")), "the choice was logged");
-  await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.setQuality("medium"));
+  await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; api.setQuality("medium"); api.world.setClock(11); });
+  await enterActive(page);
 
   // Playtest log (Session B task 5): switched on in the Town menu, it records placements, removals, warnings,
   // hints, walkthrough steps and a sample per cycle; "Export playtest log" downloads JSON with the notes in it.
@@ -930,7 +982,8 @@ try {
   // M1: save, reload the page, every building is back and the clock kept its place.
   const before = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; api.save(); return { n: Object.keys(api.sim.buildings).length, cycle: api.sim.tide.cycle, money: api.sim.resources.money, chunks: api.view.chunks() }; });
   await page.reload();
-  await waitReady(page);
+  await waitReloaded(page);
+  await enterActive(page);
   const after = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { n: Object.keys(api.sim.buildings).length, cycle: api.sim.tide.cycle, money: api.sim.resources.money, chunks: api.view.chunks(), meshes: api.scene.meshes.filter(m => m.name.startsWith("chunk:")).length, quality: api.view.quality().quality }; });
   console.log("M1:", JSON.stringify({ before, after }));
   assert(after.n === before.n && before.n >= 5, "all buildings present after reload");
@@ -947,6 +1000,8 @@ try {
   const randomValue = await page.inputValue("#menu .seed");
   await page.fill("#menu .seed", "7");
   await page.click("#menu .new");
+  const newTownAsk = (await page.textContent("#dialog .dialog-message")) ?? ""; // the in-page confirm (no window.confirm)
+  await page.click("#dialog .dialog-ok");
   await page.waitForTimeout(300);
   const t4 = await page.evaluate(() => {
     const api = (window as unknown as { __tidewater: Api }).__tidewater;
@@ -958,17 +1013,212 @@ try {
   await page.screenshot({ path: "shots/t4-island7.png" });
   await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.save());
   await page.reload();
-  await waitReady(page);
+  await waitReloaded(page);
+  await enterActive(page);
   const t4after = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { seed: api.sim.world.seed, h: api.terrainHeight(0.5, 0.5) }; });
   await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.newTown());
   const t4zero = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { seed: api.sim.world.seed, h: api.terrainHeight(0.5, 0.5) }; });
-  console.log("T4 islands:", JSON.stringify({ t4before, randomValue, t4, t4after, t4zero }));
+  console.log("T4 islands:", JSON.stringify({ t4before, randomValue, newTownAsk, t4, t4after, t4zero }));
   assert(t4before.seedShown === "0" && /^[1-9]\d*$/.test(randomValue), "seed field shows the current island and Random fills a positive seed");
+  assert(/^Start a new town on island 7\?/.test(newTownAsk), "New town asks through the in-page confirm");
   assert(!t4.menuOpen && t4.seed === 7 && t4.island.seed === 7 && t4.island.stats.flats >= 400, "new town on island 7, valid");
   assert(t4.buildings === 1 && t4.hutClass === "flat" && t4.trees > 0, "the starting hut stands on island 7's flats");
   assert(Math.abs(t4.h - t4before.h) > 0.05, "the rendered ground changed with the island");
   assert(t4after.seed === 7 && Math.abs(t4after.h - t4.h) < 1e-6, "the island survives a reload");
   assert(t4zero.seed === 0 && Math.abs(t4zero.h - t4before.h) < 1e-6, "seed 0 is the original island again");
+
+  // ---- The World (docs/globe) ----
+  // Back up to the globe: the town's roofs on its face, the card with its counts, the shots wide and narrow.
+  const back = await page.evaluate(async () => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    const grid = api.grid;
+    let placed = null;
+    for (let i = -30; i < 30 && !placed; i++) for (let j = -30; j < 30 && !placed; j++) { const c = { i, j }; if (grid.classAt(c) === "flat" && !grid.buildingAt(c) && !grid.onIsle([c]) && grid.neighbors(c).every(n => !grid.buildingAt(n))) placed = api.place("hut", i, j); }
+    const t0 = performance.now();
+    const ok = await api.returnToWorld();
+    return { placed: !!placed, ok, ms: performance.now() - t0, mode: api.mode, pose: api.world.pose(), card: api.world.shownCard(), minis: api.world.miniatures().filter(m => m.built), meta: api.world.faces()[1], hudHidden: getComputedStyle(document.getElementById("hud")!).display === "none" };
+  });
+  console.log("World return:", JSON.stringify(back));
+  assert(back.placed && back.ok && back.mode === "world" && back.ms >= 1000 && back.hudHidden, "the return flew back up to the World");
+  assert(back.pose.camera === "orbit" && back.pose.phase === "idle" && back.card === 1, "the orbit camera is back with the sea's card open");
+  assert(back.minis.length === 1 && back.minis[0].face === 1 && back.minis[0].roofs === 2 && back.meta?.buildings === 2 && back.meta?.name === "Smoke", "the miniature shows both roofs and the card counts them");
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: "shots/globe/world-wide.png" });
+  await page.setViewportSize({ width: 400, height: 800 });
+  await page.waitForTimeout(400);
+  const narrow = await page.evaluate(() => {
+    const box = (sel: string) => { const r = document.querySelector(sel)!.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, left: r.left, right: r.right }; };
+    return { card: box("#world .world-card"), hint: box("#world .world-hint"), actions: box("#world .world-actions"), title: box("#world .world-title"), w: innerWidth, h: innerHeight };
+  });
+  console.log("World narrow:", JSON.stringify(narrow));
+  assert(narrow.card.left >= 0 && narrow.card.right <= narrow.w && narrow.card.bottom <= narrow.hint.top && narrow.actions.bottom <= narrow.h && narrow.title.right <= narrow.w, "on a 400 px screen the card is a bottom sheet above the hint and the import button");
+  await page.screenshot({ path: "shots/globe/world-narrow.png" });
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.waitForTimeout(300);
+
+  // The card's actions through the in-page dialogs: rename, export (a download), delete, import the download back.
+  await page.click("#world .world-card .rename");
+  const promptShown = await page.evaluate(() => ({ open: !document.getElementById("dialog")!.hidden, value: (document.querySelector("#dialog .dialog-input") as HTMLInputElement | null)?.value, focused: document.activeElement?.className }));
+  await page.fill("#dialog .dialog-input", "Smoke Renamed");
+  await page.keyboard.press("Enter");
+  const renamed = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { name: api.world.faces()[1]?.name, cardName: document.querySelector("#world .card-name")?.textContent, dialogHidden: document.getElementById("dialog")!.hidden, mode: api.mode }; });
+  console.log("World rename:", JSON.stringify({ promptShown, renamed }));
+  assert(promptShown.open && promptShown.value === "Smoke" && promptShown.focused === "dialog-input", "Rename opens the in-page prompt, pre-filled and focused");
+  assert(renamed.name === "Smoke Renamed" && renamed.cardName === "Smoke Renamed" && renamed.dialogHidden && renamed.mode === "world", "Enter renames the sea and closes the prompt without diving");
+  const [exp] = await Promise.all([page.waitForEvent("download", { timeout: 10_000 }), page.click("#world .world-card .export")]);
+  const expPath = (await exp.path())!;
+  const expJson = JSON.parse(await readFile(expPath, "utf8")) as { version: number; meta: { name: string; buildings: number; seed: number }; state: { buildings: Record<string, unknown> } };
+  console.log("World export:", JSON.stringify({ file: exp.suggestedFilename(), version: expJson.version, meta: expJson.meta }));
+  assert(exp.suggestedFilename() === "tinytides-smoke-renamed.json" && expJson.version === 1 && expJson.meta.name === "Smoke Renamed" && Object.keys(expJson.state.buildings).length === 2, "Export downloads the sector record");
+  await page.click("#world .world-card .delete");
+  const deleteText = (await page.textContent("#dialog .dialog-message")) ?? "";
+  await page.click("#dialog .dialog-cancel");
+  const kept = await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.world.faces()[1]?.name);
+  await page.click("#world .world-card .delete");
+  await page.click("#dialog .dialog-ok");
+  const deleted = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { meta: api.world.faces()[1], active: api.world.active(), minis: api.world.miniatures().filter(m => m.built).length, level: api.world.miniatures()[1].level, card: document.querySelector("#world .world-card")?.textContent?.replace(/\s+/g, " ") ?? "" }; });
+  console.log("World delete:", JSON.stringify({ deleteText, kept, deleted }));
+  assert(/^Clear Smoke Renamed\?/.test(deleteText) && kept === "Smoke Renamed", "Delete asks first; Cancel keeps the sea");
+  assert(deleted.meta === null && deleted.active === null && deleted.minis === 0 && deleted.level === 0 && /Uncharted sea/.test(deleted.card), "confirming clears the face back to uncharted sea");
+  const badFile = join(tmpdir(), "tinytides-bad.json");
+  await writeFile(badFile, JSON.stringify({ hello: "world" }));
+  await page.setInputFiles('#world input[type="file"]', badFile);
+  await page.waitForSelector("#dialog:not([hidden])", { timeout: 5000 });
+  const badText = (await page.textContent("#dialog .dialog-message")) ?? "";
+  await page.click("#dialog .dialog-ok");
+  await page.setInputFiles('#world input[type="file"]', expPath);
+  await page.waitForFunction(() => (window as unknown as { __tidewater: Api }).__tidewater.world.faces()[1] !== null, null, { timeout: 10_000 });
+  const imported = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; const m = api.world.faces()[1]!; return { name: m.name, buildings: m.buildings, seed: m.seed, minis: api.world.miniatures().filter(x => x.built).map(x => ({ face: x.face, roofs: x.roofs })), notice: document.querySelector("#world .world-notice")?.textContent, card: api.world.shownCard(), built: api.world.faces().filter(x => x).length }; });
+  console.log("World import:", JSON.stringify({ badText, imported }));
+  assert(/isn't a Tiny Tides sea/.test(badText) && imported.built === 1, "a foreign file gets a notice and changes nothing");
+  assert(imported.name === "Smoke Renamed" && imported.buildings === 2 && imported.seed === 0 && imported.minis.length === 1 && imported.minis[0].roofs === 2 && /imported/.test(imported.notice ?? "") && imported.card === 1, "Import puts the exported sea back on the shown face with its roofs");
+
+  // Twelve seas: fill every face, dive into each and come back, reload, and all twelve are still there.
+  const twelve = await page.evaluate(async () => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    const t0 = performance.now();
+    for (let f = 0; f < 12; f++) if (!api.world.faces()[f]) api.newSector(f, 100 + f, `Sea ${f}`);
+    const createdMs = performance.now() - t0;
+    const seeds: number[] = [];
+    const t1 = performance.now();
+    for (let f = 0; f < 12; f++) {
+      if (!await api.enterSector(f, { instant: true })) throw new Error("could not enter face " + f);
+      seeds.push(api.sim.world.seed);
+      if (!await api.returnToWorld({ instant: true })) throw new Error("could not leave face " + f);
+    }
+    const keys = Object.keys(localStorage).filter(k => k.startsWith("tidewater.sector."));
+    return { built: api.world.faces().filter(m => m).length, seeds, createdMs, roundTripsMs: performance.now() - t1, keys: keys.length, units: keys.reduce((n, k) => n + (localStorage.getItem(k)?.length ?? 0), 0), active: api.world.active() };
+  });
+  console.log("World twelve:", JSON.stringify(twelve));
+  assert(twelve.built === 12 && twelve.seeds.every((s, f) => s === (f === 1 ? 0 : 100 + f)) && twelve.active === 11, "twelve seas, each entered and left with its own island");
+  assert(twelve.keys === 25 && twelve.units < 2_600_000, "twelve sectors and metas (plus the active key) sit within the storage budget");
+  await page.reload();
+  await waitReloaded(page);
+  await page.waitForFunction(() => (window as unknown as { __tidewater: Api }).__tidewater.world.entranceDone(), null, { timeout: 15_000 });
+  const twelveBack = await page.evaluate(async () => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    let frames = 0;
+    const obs = api.world.scene.onAfterRenderObservable.add(() => frames++);
+    await new Promise(r => setTimeout(r, 3000));
+    api.world.scene.onAfterRenderObservable.remove(obs);
+    return { built: api.world.faces().filter(m => m).length, names: api.world.faces().map(m => m?.name ?? null), active: api.world.active(), card: api.world.shownCard(), minis: api.world.miniatures().filter(m => m.built).length, draws: api.world.drawCalls(), fps: frames / 3, bootMs: api.bootMs };
+  });
+  console.log("World twelve after reload:", JSON.stringify(twelveBack));
+  assert(twelveBack.built === 12 && twelveBack.minis === 12 && twelveBack.names[1] === "Smoke Renamed" && twelveBack.names[7] === "Sea 7", "all twelve seas survived the reload with their miniatures");
+  assert(twelveBack.active === 11 && twelveBack.card === 11, "the launch settled on the last-played sea with its card open");
+  assert(twelveBack.draws <= 70, "draw calls in the World with twelve towns: " + twelveBack.draws);
+  assert(twelveBack.fps >= 60, "60 fps in the World with twelve towns");
+  await page.screenshot({ path: "shots/globe/world-twelve.png" });
+  await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.world.setClock(1.5));
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: "shots/globe/world-night.png" });
+  await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.world.setClock(11));
+
+  // Heap: twenty World → sea → World round trips across three seas leave the JS heap within 10 % after GC.
+  const heap = await page.evaluate(async () => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    const w = window as unknown as { gc?: () => void };
+    const mem = () => (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize ?? -1;
+    const collect = async () => { for (let k = 0; k < 3; k++) { w.gc?.(); await new Promise(r => setTimeout(r, 150)); } };
+    const trip = async (f: number) => { if (!await api.enterSector(f, { instant: true })) throw new Error("enter " + f); if (!await api.returnToWorld({ instant: true })) throw new Error("return " + f); };
+    for (let k = 0; k < 3; k++) await trip(1 + k); // warm every cache first
+    await collect();
+    const before = mem();
+    const t0 = performance.now();
+    for (let k = 0; k < 20; k++) await trip(1 + k % 3);
+    const ms = performance.now() - t0;
+    await collect();
+    const after = mem();
+    return { gc: !!w.gc, before, after, growth: (after - before) / before, ms, mode: api.mode, worldMaterials: api.world.scene.materials.length, worldMeshes: api.world.scene.meshes.length, islandMeshes: api.scene.meshes.length, islandMaterials: api.scene.materials.length };
+  });
+  console.log("World heap:", JSON.stringify(heap));
+  assert(heap.gc && heap.before > 0, "Chrome exposes gc() and performance.memory for the heap check");
+  assert(heap.growth < 0.10, `the heap grew ${(heap.growth * 100).toFixed(1)} % over twenty round trips`);
+
+  // Migration: an old-layout localStorage (autosave + a named slot, no sectors) lands on the World, once.
+  const legacy = await page.evaluate(async () => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    await api.enterSector(2, { instant: true });
+    const json = api.saveJson();
+    const n = Object.keys(api.sim.buildings).length, seed = api.sim.world.seed;
+    await api.returnToWorld({ instant: true });
+    for (const k of Object.keys(localStorage)) if (k.startsWith("tidewater.sector")) localStorage.removeItem(k);
+    localStorage.setItem("tidewater.autosave", json);
+    localStorage.setItem("tidewater.slot.2", json);
+    localStorage.setItem("tidewater.slot.2.meta", JSON.stringify({ name: "Old Harbour", savedAt: Date.now() - 3_600_000 }));
+    return { n, seed };
+  });
+  await page.reload();
+  await waitReloaded(page);
+  const migrated = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; const faces = api.world.faces(); return { moved: api.world.migrated(), names: faces.map(m => m?.name ?? null), active: api.world.active(), card: api.world.shownCard(), notice: document.querySelector("#world .world-notice")?.textContent, buildings: Object.keys(api.sim.buildings).length, seed: api.sim.world.seed, flag: localStorage.getItem("tidewater.sectors.migrated"), autosaveKept: !!localStorage.getItem("tidewater.autosave"), lastPlayed: faces[3]?.lastPlayed ?? 0 }; });
+  console.log("World migration:", JSON.stringify({ legacy, migrated }));
+  assert(migrated.moved.length === 2 && migrated.names[1] === "First Sea" && migrated.names[3] === "Old Harbour" && migrated.names.filter(n => n).length === 2, "the autosave became face 1 and slot 2 face 3, named");
+  assert(migrated.active === 1 && migrated.card === 1 && migrated.buildings === legacy.n && migrated.seed === legacy.seed, "the launch opens on the migrated autosave");
+  assert(/2 towns moved onto the World: First Sea, Old Harbour/.test(migrated.notice ?? "") && migrated.flag === "1" && migrated.autosaveKept && Date.now() - migrated.lastPlayed > 3_000_000, "the notice says so; the old keys stay; the slot's date is kept");
+  await page.reload();
+  await waitReloaded(page);
+  const again = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { moved: api.world.migrated(), noticeHidden: document.querySelector<HTMLElement>("#world .world-notice")!.hidden, built: api.world.faces().filter(m => m).length }; });
+  assert(again.moved.length === 0 && again.noticeHidden && again.built === 2, "the migration runs once");
+
+  // Reduced motion: the dive and the return are cuts.
+  const reduced = await page.evaluate(async () => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    api.world.setReducedMotion(true);
+    const t0 = performance.now();
+    const dived = await api.enterSector(1);
+    const dive = performance.now() - t0;
+    const t1 = performance.now();
+    const returned = await api.returnToWorld();
+    const back = performance.now() - t1;
+    const on = api.world.reducedMotion();
+    api.world.setReducedMotion(null);
+    return { on, dived, returned, dive, back, mode: api.mode, pose: api.world.pose(), off: api.world.reducedMotion() };
+  });
+  console.log("World reduced motion:", JSON.stringify(reduced));
+  assert(reduced.on && reduced.dived && reduced.returned && reduced.dive < 800 && reduced.back < 800 && reduced.mode === "world" && reduced.pose.camera === "orbit" && !reduced.off, "with reduced motion the dive and the return are cuts");
+
+  // Keyboard: Escape closes the card, arrows turn the globe, Enter opens the front face's card then dives, Escape
+  // on the island (nothing open) returns.
+  await page.keyboard.press("Escape");
+  const kb0 = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { card: api.world.shownCard(), alpha: api.world.pose().alpha, front: api.world.front() }; });
+  await page.keyboard.press("ArrowRight");
+  await page.waitForTimeout(500);
+  const kb1 = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { card: api.world.shownCard(), alpha: api.world.pose().alpha, front: api.world.front() }; });
+  await page.keyboard.press("Enter");
+  const kb2 = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { card: api.world.shownCard(), front: api.world.front(), built: !!api.world.faces()[api.world.front()] }; });
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => (window as unknown as { __tidewater: Api }).__tidewater.mode === "island", null, { timeout: 10_000 });
+  const kb3 = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { mode: api.mode, active: api.world.active(), menuOpen: !document.getElementById("menu")!.hidden }; });
+  await page.keyboard.press("Escape");
+  // The mode flips as the return starts; the card comes back when the flight has landed on the orbit.
+  await page.waitForFunction(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return api.mode === "world" && api.world.pose().camera === "orbit"; }, null, { timeout: 10_000 });
+  const kb4 = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { mode: api.mode, card: api.world.shownCard() }; });
+  console.log("World keyboard:", JSON.stringify({ kb0, kb1, kb2, kb3, kb4 }));
+  assert(kb0.card === null && Math.abs(kb1.alpha - kb0.alpha - 0.4) < 0.02 && kb1.card === null, "Escape closes the card; ArrowRight turns the globe 0.4 rad");
+  assert(kb2.card === kb1.front && kb2.built && kb3.mode === "island" && kb3.active === kb2.front && !kb3.menuOpen, "Enter opens the front face's card; Enter again dives into it");
+  assert(kb4.mode === "world" && kb4.card === kb3.active, "Escape on the island returns to the World with the sea's card open");
+  // Back onto the island for the frame-rate check.
+  await enterActive(page);
 
   // Headless fps on the real GPU, averaged over 5 s.
   const fps = await page.evaluate(async () => {

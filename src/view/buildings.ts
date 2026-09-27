@@ -8,6 +8,7 @@ import { STILT_SINK } from "../config";
 import { BUILDINGS } from "../sim/balance";
 import { cellCenter, DIRS, Grid } from "../sim/grid";
 import { ground } from "./ground";
+import { roofFor, roofShape } from "./roofs";
 import { Building, Cell } from "../sim/state";
 import { mergeFlat, tint } from "../world/flatMesh";
 
@@ -249,20 +250,9 @@ function net(scene: Scene, parts: Mesh[], x: number, y: number, z: number, w: nu
 
 // ---------- homes ----------
 
-/** Roof colour by level: any of the palette at level 1, slate at 2, the red at 3. */
-function roofFor(b: Building): string {
-  if (b.level >= 3) return PALETTE.roofs[2];
-  if (b.level === 2) return PALETTE.roofs[1];
-  return PALETTE.roofs[b.id % PALETTE.roofs.length];
-}
-
-export type RoofShape = "pyramid" | "gable" | "hipped";
-const ROOF_SHAPES: RoofShape[] = ["pyramid", "gable", "hipped"];
-
-/** Which of the three roofs a home wears: seeded by its id (one draw per placement) and its level. */
-export function roofShape(b: Building): RoofShape {
-  return ROOF_SHAPES[(Math.imul(b.id * 31 + b.level * 17 + 5, 2654435761) >>> 0) % 3];
-}
+// Roof colour and shape live in view/roofs.ts (Babylon-free) so the World's miniatures can share them.
+export { roofShape } from "./roofs";
+export type { RoofShape } from "./roofs";
 
 function homeRoof(scene: Scene, parts: Mesh[], b: Building, cx: number, cz: number, bodyW: number, bodyD: number, top: number, rise: number): void {
   const hex = roofFor(b);
