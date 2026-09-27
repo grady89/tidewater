@@ -204,17 +204,25 @@ Leisure & tourism
 - Resource bar (money, fish, shellfish, smoked, timber, planks, population/jobs, happiness).
 - Tide clock: dial with current level, high/low markers, next event (spring tide, storm warning, trade ship ETA).
 - Build menu by category (Homes, Streets, Sea, Production, Services, Leisure) with cost, and greyed when unaffordable or unmet prerequisite (with reason).
-- Ghost preview with placement validity and, for tide-sensitive pieces, a fate tint (safe / spring-floods / floods every tide).
+- Ghost preview with placement validity and, for tide-sensitive pieces, a fate tint (safe / spring-floods / floods every tide),
+  plus a door tab: a building faces an adjoining street on its own (`Grid.facing`), and R turns it by quarter turns
+  (`Building.rot`; odd turns swap a footprint's width and depth). Streets and everything in the water don't turn.
 - Click a building: info panel (workers filled/needed, output last cycle, status: working / idle: no workers / cut / damaged / polluted).
 - Overlays toggle: pollution, fish density, shark risk, fire risk, happiness, water coverage.
 - Notifications feed (immigrants arrived, oyster bed died, shark incident, boat lost, storm coming, the sea is pulling back).
 - Speed: pause / 1× / 2× / 4×. Time is game time; the tide period is in game seconds.
+- Quality presets (`ui/settings.ts`): High / Medium (no water reflections) / Low (no bloom, reflections, caustics or
+  gulls; half `MAX_WALKERS`). A 3-second frame-rate probe at High picks one on the first launch (≥ 55 fps High,
+  ≥ 35 Medium, else Low); the choice is remembered in localStorage and changed under "Quality…". View only.
 - Camera: orbit, zoom, pan (drag with middle/right or WASD). Edge scroll off by default.
 - Save/load: autosave to localStorage every cycle; manual save slots (3); load on start if present; "new town" resets,
   on an island chosen by a seed (the Town menu's seed field and "Random" button). Seed 0 is the original island, exactly;
   any other seed's island is generated and validated (`island.ts`: flats, a contiguous flats region, pier and harbor
   sites, trees on the hill) and rerolled until it passes. The seed lives in the ledger (`world.seed`) and in saves.
 - Start: 500$, 2 boats available to buy, a hut, a pier suggestion highlighted. Short 5-step tutorial via notifications.
+- Playtest log (`ui/playtest.ts`): opt-in in the Town menu, off by default, local only. For the first 30 minutes it
+  keeps every placement and removal (cycle, purse), every warning and hint shown, the walkthrough's steps with
+  timestamps, and money and population once per cycle; "Export playtest log" downloads JSON with a notes field.
 
 ## 12. Audio (last)
 Procedural only (Web Audio): filtered noise for surf whose gain follows tide level and storm; a soft bell on shift change; a
@@ -228,11 +236,13 @@ src/
   world/                  terrain, water, sky, lighting, trees (from sessions 1–2)
   sim/                    ledger: state.ts, rng.ts, balance.ts, tide.ts, buildings.ts (catalog + factories of sim entries),
                           grid.ts, network.ts, fields.ts, workers.ts, economy.ts, people.ts, events.ts, trade.ts, save.ts,
-                          heightfield.ts (noise per seed), island.ts (seeded islands: validation, rerolls, tree sites)
+                          heightfield.ts (noise per seed), island.ts (seeded islands: validation, rerolls, tree sites),
+                          cells.ts (the lattice helpers), money.ts (moveMoney: every purse change, with an audit hook)
   view/                   meshes for pieces (pieces/*.ts), walkers.ts, boats.ts, overlays.ts, effects.ts (storm, wave, fire, damage)
   ui/                     hud.ts, buildMenu.ts, infoPanel.ts, notifications.ts, tideClock.ts, overlaysToggle.ts, saveMenu.ts
   build/                  placement.ts (picking, ghost, validation → sim)
 shaders/                  water, sky, terrain (verbatim from reference + new uniforms only)
-test/                     smoke.ts (Playwright headless scenario), sim.test.ts (sim-only unit checks, no Babylon)
+test/                     smoke.ts (Playwright headless scenario), *.test.ts (sim-only unit checks by topic, no Babylon),
+                          fuzzCore.ts + fuzz.ts (the sim fuzzer), monkey.ts (random real input), quality.ts, deploycheck.ts
 reference/                tidewater-study.html
 ```

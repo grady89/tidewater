@@ -33,6 +33,8 @@ export class Wildlife {
   private sites: CrabSite[] = [];
   private siteKey = "";
   gullCount = 0;
+  /** The Low quality preset turns the gulls off. */
+  showGulls = true;
   crabCount = 0;
 
   constructor(scene: Scene, private readonly grid: Grid) {
@@ -128,7 +130,7 @@ export class Wildlife {
     let n = 0;
     const scale = new Vector3(0.7, 0.7, 0.7);
     for (const h of Object.values(state.buildings) as Building[]) {
-      if ((BUILDINGS[h.kind].slots ?? 0) === 0 || h.boats === 0) continue;
+      if (!this.showGulls || (BUILDINGS[h.kind].slots ?? 0) === 0 || h.boats === 0) continue;
       const is = h.cells.map(c => c.i), js = h.cells.map(c => c.j);
       const cx = (Math.min(...is) + Math.max(...is) + 1) / 2, cz = (Math.min(...js) + Math.max(...js) + 1) / 2;
       const flock = Math.min(5, GULLS_PER_HARBOUR + GULLS_PER_BOAT * h.boats);

@@ -3,7 +3,8 @@
 // stand on walkways and light the night layer.
 import { BUILDINGS, LANTERN_COST, LANTERN_RADIUS, SERVICE_KINDS, TAVERN_DRY_FACTOR, TAVERN_SMOKED_PER_CYCLE } from "./balance";
 import { at } from "./fields";
-import { cellIndex, Grid, HALF, inBounds } from "./grid";
+import { cellIndex, Grid, inBounds } from "./grid";
+import { moveMoney } from "./money";
 import { Building, buildingList, Cell, notify, SimState } from "./state";
 import { staffing } from "./workers";
 
@@ -55,25 +56,9 @@ export function lanternBlocker(state: SimState, grid: Grid, c: Cell): string | n
 
 export function addLantern(state: SimState, grid: Grid, c: Cell): boolean {
   if (lanternBlocker(state, grid, c)) return false;
-  state.resources.money -= LANTERN_COST;
+  moveMoney(state, -LANTERN_COST, "lantern");
   grid.buildingAt(c)!.lantern = true;
   return true;
-}
-
-/** Every cell within `radius` of any cell in `cells` is inside the map (helper for tests). */
-export function cellsWithin(cells: Cell[], radius: number): Cell[] {
-  const out: Cell[] = [];
-  for (const c of cells) for (let di = -radius; di <= radius; di++) for (let dj = -radius; dj <= radius; dj++) {
-    const i = c.i + di, j = c.j + dj;
-    if (i >= -HALF && i < HALF && j >= -HALF && j < HALF) out.push({ i, j });
-  }
-  return out;
-}
-
-export function lanternCount(state: SimState): number {
-  let n = 0;
-  for (const b of buildingList(state)) if (b.lantern) n++;
-  return n;
 }
 
 export function announceLevel(state: SimState, b: Building): void {

@@ -44,6 +44,25 @@ export function assignWorkers(state: SimState, grid: Grid): void {
   state.assignments = out;
 }
 
+/**
+ * A workplace lost jobs between settlements (a storm or the wave took its boats): drop the crew it can no longer
+ * employ, newest assignment first, so the ledger never shows more workers than jobs. Nothing is produced or paid
+ * off this; the next settlement reassigns everyone anyway.
+ */
+export function trimCrew(state: SimState, b: Building): void {
+  const jobs = jobsAt(b);
+  if (b.workers <= jobs) return;
+  let excess = b.workers - jobs;
+  for (let k = state.assignments.length - 1; k >= 0 && excess > 0; k--) {
+    const a = state.assignments[k];
+    if (a.work !== b.id) continue;
+    const drop = Math.min(a.n, excess);
+    a.n -= drop; excess -= drop;
+    if (a.n === 0) state.assignments.splice(k, 1);
+  }
+  b.workers = jobs;
+}
+
 /** Fraction of a workplace's jobs filled, 0..1. */
 export function staffing(b: Building): number {
   const jobs = jobsAt(b);

@@ -8,19 +8,12 @@ import {
   NIGHT_RISK, SHARK_ADVECT, SHARK_DECAY, SHARK_DIFFUSE, SHARK_DOCK, SHARK_MARKET, SWIM_FRACTION, SWIM_RADIUS,
 } from "./balance";
 import { isDaytime } from "./daylight";
-import { at, buildFlow, CELLS, Flow, stepDrift } from "./fields";
+import { at, CELLS, flowFor, stepDrift } from "./fields";
 import { cellIndex, Grid, HALF } from "./grid";
 import { rand } from "./rng";
-import { Building, buildingList, Cell, notify, SimState } from "./state";
+import { buildingList, Cell, notify, SimState } from "./state";
 import { isRising } from "./tide";
 import { staffing } from "./workers";
-
-const flows = new WeakMap<Grid, Flow>();
-function flowFor(grid: Grid): Flow {
-  let f = flows.get(grid);
-  if (!f) { f = buildFlow(grid); flows.set(grid, f); }
-  return f;
-}
 
 const TICKS_PER_CYCLE = TIDE_PERIOD / SIM_TICK;
 
@@ -114,6 +107,3 @@ export function injuredCount(state: SimState): number {
   return n;
 }
 
-export function isHome(b: Building): boolean {
-  return BUILDINGS[b.kind].residents > 0;
-}

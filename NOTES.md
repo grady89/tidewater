@@ -746,6 +746,130 @@ What other builders do and what was taken from each:
   the ground, not the dice. `newTown()` in the console API defaults to seed 0, so the smoke's scenarios keep the
   original island; its Task 4 block drives the menu with real clicks, reloads onto island 7, and returns to 0.
 
+## Session B (QA, branch `qa`)
+
+### Rotation (Grady, live: "the door is not facing the pathway")
+- `Building.rot` is 0–3 quarter turns; rot 0 is how every factory was drawn (door toward −z), 1 puts the door
+  toward −x, 2 toward +z, 3 toward +x (Babylon's `RotationY`, baked into the vertices about the footprint centre
+  before the chunk merge, so nothing else in the view changes). Odd turns swap a footprint's width and depth in
+  `Grid.footprint(kind, anchor, rot)`; the factory still builds the piece as designed because `bounds(cells, rot)`
+  hands it the unturned extent. The two factories that read their orientation off the cells themselves (clam camp,
+  lumber camp) turn with the footprint and are not baked.
+- `tryPlace(…, rot = null)`: null means "face the street" — `Grid.facing(cells)` counts walkways, piers and
+  markets against each side and picks the busiest (ties: −z). A footprint that isn't square keeps its shape on its
+  own (0 or 2 only); R still stands it on end. The placement ghost shows a blue door tab on the facing side; R
+  adds a quarter turn from whatever the ghost shows, and changing tools goes back to automatic. R was the camera's
+  keyboard zoom-in; it still is when no turnable building is in hand.
+- Turnable: land classes (flat, high, flatOrHigh, shore, beach) minus the street kinds. Streets, piers, docks,
+  the harbor and the sea pieces keep their one orientation. Old saves read every building as rot 0.
+
+### The isle's outline (Grady, live: "a perfect circle of light around it")
+- The dome was radially symmetric, so the flats shelf, the rim blend and the shallow-water brightening in the
+  water shader all drew concentric circles. `isle.ts` now warps the rim radius with three low harmonics (3θ, 5θ,
+  7θ; ±26 % at the extremes), puts the knob 1.3 west / 1.2 south of the rim's centre, and tilts the shelf with a
+  2θ term, so the beach is wide on one side and the shallows narrow on the other. Same mean radius, still
+  clear of the main island (its nearest land cell is 30.7 from the isle's centre; `mainLand` stays 750), and the
+  isle mask follows the new outline. Isle land 127 cells (was ~110), knob 26.
+- Seed 0's fingerprint moved with it (`19bacd86` → `3fcf3090`); "the current island" for Task 4's guarantee
+  is the island as it is after this change. `settleIsle` now lands two huts instead of three; the ferry test's
+  arithmetic still comes out at four commuters each way.
+
+### Task 1: the sim fuzzer
+- `src/sim/money.ts › moveMoney(state, amount, why)` is now the one way the purse changes (build, refund, boat,
+  shipyard, settlement, trade, tourism, loan, repair, rebuild, landfill, plant, lantern); `auditMoney(fn)` is a
+  module-level listener the fuzzer subscribes to. It is not in the state (saves and hashes are unchanged) and
+  `moveMoney` adds exactly what the old `+=` added, so no number moved.
+- `test/fuzzCore.ts › runSeed(seed, cycles)` plays ~6 random actions a cycle from its own mulberry32 stream (the
+  ledger keeps its RNG) — placements of every kind at cells near the town with random turns and lifts, removals
+  (boats out or not), boats, loans, plank orders, forced storms/tsunamis/fires, land tools, lanterns, save→load
+  (forced often mid-storm and mid-wave), speed changes and the occasional grant — and checks every invariant at
+  every cycle boundary (right after the settlement). Every fifth seed plays a generated island.
+- Reading of the brief's invariants: "no negative stock" is the goods; the purse may go below zero (upkeep is
+  unconditional — see the proposal in QA.md). "Caps respected" means a stock never *grows* past its cap (a grant or
+  a lost warehouse can leave it above, and `addCapped` then holds it there). "No building on an invalid cell" is
+  judged on the building's own cells (a neighbour's landfill can turn a pier's shore high without moving the pier —
+  a rule question, also in QA.md).
+- What the 50 × 2000 runs found (QA.md #1–#3): a stale crew count after a storm at the peak, the stale tide-drift
+  flow (found by reading, not by the fuzzer — it builds a fresh Grid on every load), and the pollution field
+  running past 1.0 in big late towns, first through unbounded emitter adds and then, once those were capped,
+  through the drift itself: advection sends each cell's share to its one uphill/downhill neighbour, so a sink
+  cell with several full neighbours takes in more than it can hold. Pollution is a 0..1 fraction everywhere it is
+  read, so its emitter stops at full and `stepDrift` takes a ceiling (1 for pollution); the mass above full is
+  dropped. It changes nothing in a town that never saturates a cell, which is every town the tests and the smoke
+  play. The first attempt clamped all three fields — and silenced every fire: fire risk is meant to climb past
+  `FIRE_IGNITE_THRESHOLD` (1.0), so the fire field (and, untouched, the shark field) stay unbounded and the fuzzer
+  holds fire to "finite and ≥ 0" instead — a rule question for QA.md, not a fix.
+- `npm run fuzz`: esbuild bundles `test/fuzzWorker.ts` (Node can't import the extensionless TS of `src/` on its
+  own) and worker threads play the seeds in parallel; a cycle costs ~0.2 s on a young town and ~0.6 s on a full
+  one, so 50 seeds × 2000 cycles is about an hour on 25 workers. `test/fuzz.test.ts` runs two short seeds under
+  vitest so the fuzzer itself is exercised on every `npm test`. `--json` writes the per-seed hashes: the
+  determinism baseline for Task 6.
+
+### Task 3: quality presets
+- `ui/settings.ts` holds the three presets and the probe thresholds; `main.ts › applyQuality` flips the bloom
+  pass, the water's reflection and caustics uniforms, `walkers.cap` and `wildlife.gulls`. The old remembered
+  reflections toggle became live-only: the preset decides what a launch starts with, the button flips it for
+  the session (two remembered switches for one thing disagreed on load).
+- First launch: no stored preset → the game starts at High and counts frames for `PROBE_SECONDS` (3); ≥ 55 fps
+  keeps High, ≥ 35 drops to Medium, below that Low; the verdict is written to localStorage, shown in the panel
+  ("Chosen at first launch: …") and logged. The probe runs on the starting town, which is cheaper than a full
+  one — a deliberate lean toward High; the player can always step down.
+
+### Task 4: deploy
+- `vite.config.ts` gets `base: "./"`: relative asset URLs, so one build runs at the root (the dev server, `vite
+  preview`, `check:dist`) and under `/tidewater/` on Pages without knowing its own path. Nothing in `src/` loads by
+  absolute URL (the only `/…` import is the smoke's `/test/scenario.ts`, served by the dev server).
+- `test/deploycheck.ts` serves `dist/` under the repository path with a twelve-line static server and loads it in
+  headless Chrome, failing on any response ≥ 400, failed request, page error or console error. Locally it uses the
+  installed Chrome with the GPU; in CI (`CI` set) Playwright's own Chromium, installed by the workflow.
+- `.github/workflows/ci.yml`: build + `npm test` + `check:dist` on every push and pull request; on `main` the
+  `dist/` artifact is published with `actions/deploy-pages`. Pages must be set to "GitHub Actions" as the source
+  once in the repository settings; the site is https://grady89.github.io/tidewater/. The workflow has not run yet —
+  nothing was pushed tonight — so the first push to `main` is its first run.
+
+### Task 5: the playtest log
+- `ui/playtest.ts › PlaytestLog` is pure data with an injected clock, so the export shape is unit-tested from a
+  scripted session (`test/playtest.test.ts`); main.ts feeds it: `placement.onPlace/onRemove` (tool, cell, what it
+  cost or refunded), `onNotify` in state.ts (every notification is a "warning" event; a module-level listener like
+  the money audit — not state), the HUD's `lastHint` when it changes to something other than the tool's default
+  prompt, the walkthrough's step index/title when it changes, and a money/population sample at every peak.
+- Off by default; the switch, and the notes, live in localStorage so they survive a reload; the log itself starts
+  fresh at every page load with the switch on (it is a session log). Thirty minutes after `start()` it stops
+  taking events; the export says how long it ran. "Export playtest log" builds a Blob and clicks an `<a download>`
+  — no server anywhere. The smoke drives the real switch, textarea and download.
+
+### Task 2: the UI monkey
+- `test/monkey.ts` drives headless Chrome with real input: clicks with all three buttons at random canvas
+  points, drags (left = paint/select, right = orbit, middle = pan), wheel, held camera keys and every other key
+  the game reads, clicks on whatever buttons are visible (so the palette, the Town and Quality panels, the
+  save/load slots — dialogs are accepted or dismissed at random), typing into the seed field, viewport resizes,
+  and at 35 % / 70 % of the run a forced tsunami and a forced storm each followed by a save and a reload.
+- Pass criteria as the brief lists them; "fps never below 30 for more than 2 s" is measured from a
+  requestAnimationFrame log installed on every navigation: the longest run of consecutive frames slower than
+  33 ms. A single stall (a chunk rebuild, a resize) counts if it lasts two seconds; a page reload resets the log.
+  "No stuck modal" is checked at the end: three Escapes must leave the Town menu hidden.
+
+### Task 6: code health
+- The refactors are behaviour-neutral by construction and by measurement: a 12-seed × 120-cycle fuzz run was
+  recorded before (`fuzz-baseline.json`) and replayed after — identical end-state hashes for every seed — and
+  the smoke passes unchanged.
+- Removed: exports nothing referenced (`buildingCost`, `stormActive`, `tsunamiActive`, `addAt`, `damagedCount`,
+  `randInt`, `cellsWithin`, `lanternCount`, `isHome`, `springAhead`, `HARBOR`, `damagedMaterial` and its
+  material map, `footprintOf`). Merged: the three per-module flow caches into `fields.flowFor` (which is where
+  QA #2 came from), the lattice helpers into `sim/cells.ts` so `island.ts` no longer carries its own copies.
+- `any` is gone: the headless scripts type the console API with `TidewaterApi` (a type-only import of main.ts,
+  never loaded at runtime) and the ledger's own types; the handful of `!` that appeared mark places the scenario
+  guarantees (the starter town's market and pier exist).
+- The test suite: `sim.test.ts` was one 1474-line file that vitest could only run on one core (60 s+). It is now
+  six topic files (`sim`, `economy`, `fields`, `fire`, `town`, `world`) plus `fuzz` and `playtest`; vitest runs
+  files in parallel, so the wall time is the slowest file. Measured at 31 s with the 50-seed fuzz run holding
+  25 of the cores at the same time; the solo number is in QA.md.
+- Per-tick hot paths, same arithmetic in the same order: `stepDrift` keeps its neighbour table flat (an
+  Int32Array and a count per cell) and clears its scratch with `fill`; `updateNetwork` walks DIRS by index
+  (`grid.buildingAtIJ`) instead of building neighbour cell objects 2400 times a cycle per building.
+- ARCHITECTURE.md: the module map, the tick order, and the path from a palette click to a merged chunk mesh.
+- No TODO / FIXME existed anywhere in `src/`, `test/` or `shaders/`.
+
 ## Findings on the v1 questions
 
 (placement and connectivity exist now; play a few cycles and write answers here)

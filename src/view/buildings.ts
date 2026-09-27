@@ -3,7 +3,7 @@
 // stilts with rails, hanging lanterns on bracket arms, crates and barrels on the decks. Everything is boxes,
 // cylinders, cones and polyhedra, tinted per vertex and merged to one mesh per building; homes add a lantern
 // sphere that is lit while the home is reached. View only: nothing here changes a number in the sim.
-import { Axis, Color3, Mesh, MeshBuilder, Scene, Space, StandardMaterial, Vector3, VertexBuffer } from "@babylonjs/core";
+import { Axis, Color3, Matrix, Mesh, MeshBuilder, Scene, Space, StandardMaterial, Vector3, VertexBuffer } from "@babylonjs/core";
 import { STILT_SINK } from "../config";
 import { BUILDINGS } from "../sim/balance";
 import { cellCenter, DIRS, Grid } from "../sim/grid";
@@ -89,10 +89,15 @@ function rock(scene: Scene, x: number, y: number, z: number, s: number, hex: str
 }
 
 /** Centre and extents of a footprint. */
-function bounds(cells: Cell[]): { cx: number; cz: number; w: number; d: number } {
+/**
+ * Centre and extent of a footprint. With the building's quarter turns, the extent is the *unturned* one: the
+ * factory builds the piece as designed and `turn` swings it onto the cells.
+ */
+function bounds(cells: Cell[], rot = 0): { cx: number; cz: number; w: number; d: number } {
   const is = cells.map(c => c.i), js = cells.map(c => c.j);
   const minI = Math.min(...is), maxI = Math.max(...is), minJ = Math.min(...js), maxJ = Math.max(...js);
-  return { cx: (minI + maxI + 1) / 2, cz: (minJ + maxJ + 1) / 2, w: maxI - minI + 1, d: maxJ - minJ + 1 };
+  const w = maxI - minI + 1, d = maxJ - minJ + 1;
+  return { cx: (minI + maxI + 1) / 2, cz: (minJ + maxJ + 1) / 2, w: rot % 2 ? d : w, d: rot % 2 ? w : d };
 }
 
 /** A gable roof: a 3-sided prism laid on its side, apex up, with a ridge beam. `along` is the ridge axis. */
@@ -280,7 +285,7 @@ function homeRoof(scene: Scene, parts: Mesh[], b: Building, cx: number, cz: numb
  * balcony (reference/house). Levels add a window box, then a chimney and a lit porch.
  */
 function home(scene: Scene, b: Building, bodyW: number, baseH: number): BuildingMeshes {
-  const { cx, cz, w, d } = bounds(b.cells);
+  const { cx, cz, w, d } = bounds(b.cells, b.rot);
   const F = b.floorY;
   const bodyH = baseH + 0.14 * (b.level - 1);
   const bodyD = bodyW * 0.92;
@@ -478,7 +483,7 @@ function pier(scene: Scene, b: Building): BuildingMeshes {
 
 /** After reference/dock: tall piles with blue-painted feet, red-capped bollards, a hut, a crane and a ladder. */
 function dock(scene: Scene, b: Building): BuildingMeshes {
-  const { cx, cz, w, d } = bounds(b.cells);
+  const { cx, cz, w, d } = bounds(b.cells, b.rot);
   const F = b.floorY;
   const parts: Mesh[] = [box(scene, w - 0.02, 0.12, d - 0.02, cx, F - 0.06, cz, PALETTE.planks)];
   for (const t of [-0.6, -0.2, 0.2, 0.6]) parts.push(box(scene, w - 0.1, 0.012, 0.02, cx, F + 0.006, cz + t, "#7a6248"));
@@ -509,7 +514,7 @@ function dock(scene: Scene, b: Building): BuildingMeshes {
 
 /** After reference/harbor: a stone quay with a white two-storey harbour house, red roofs, a crane and bollards. */
 function harbor(scene: Scene, b: Building): BuildingMeshes {
-  const { cx, cz, w, d } = bounds(b.cells);
+  const { cx, cz, w, d } = bounds(b.cells, b.rot);
   const F = b.floorY;
   const parts: Mesh[] = [];
   const bed = Math.min(...b.cells.map(c => { const { x, z } = cellCenter(c); return ground(x, z); })) - 0.2;
@@ -541,7 +546,7 @@ function harbor(scene: Scene, b: Building): BuildingMeshes {
 
 /** After reference/shipyard: a plank slipway to the water, a blue hull on its cradle, a crane and a workshop. */
 function shipyard(scene: Scene, b: Building): BuildingMeshes {
-  const { cx, cz, w, d } = bounds(b.cells);
+  const { cx, cz, w, d } = bounds(b.cells, b.rot);
   const F = b.floorY;
   const alongX = w >= d;
   const parts: Mesh[] = [box(scene, w - 0.02, 0.12, d - 0.02, cx, F - 0.06, cz, PALETTE.planks)];
@@ -653,7 +658,7 @@ function outfall(scene: Scene, b: Building): BuildingMeshes {
 // ---------- production ----------
 
 function market(scene: Scene, b: Building): BuildingMeshes {
-  const { cx, cz, w, d } = bounds(b.cells);
+  const { cx, cz, w, d } = bounds(b.cells, b.rot);
   const F = b.floorY;
   const parts: Mesh[] = [];
   deck(scene, parts, cx, cz, w, d, F);
@@ -694,7 +699,7 @@ function oysterBed(scene: Scene, b: Building): BuildingMeshes {
 }
 
 function clamCamp(scene: Scene, b: Building): BuildingMeshes {
-  const { cx, cz, w, d } = bounds(b.cells);
+  const { cx, cz, w, d } = bounds(b.cells); // cell-oriented: the shelter follows the footprint's own axis
   const F = b.floorY;
   const parts: Mesh[] = [];
   deck(scene, parts, cx, cz, w, d, F);
@@ -715,7 +720,7 @@ function clamCamp(scene: Scene, b: Building): BuildingMeshes {
 
 /** After reference/production: a small shed, the log pile with red-cut ends, a chopping block and a stump. */
 function lumberCamp(scene: Scene, b: Building): BuildingMeshes {
-  const { cx, cz, w, d } = bounds(b.cells);
+  const { cx, cz, w, d } = bounds(b.cells); // cell-oriented: shed and log pile follow the footprint's own axis
   const F = b.floorY;
   const parts: Mesh[] = [];
   deck(scene, parts, cx, cz, w, d, F);
@@ -729,7 +734,7 @@ function lumberCamp(scene: Scene, b: Building): BuildingMeshes {
 
 /** An open shed on posts under a blue gable roof, the big blade standing at the open side, logs beside. */
 function sawmill(scene: Scene, b: Building): BuildingMeshes {
-  const { cx, cz, w, d } = bounds(b.cells);
+  const { cx, cz, w, d } = bounds(b.cells, b.rot);
   const F = b.floorY;
   const parts: Mesh[] = [];
   deck(scene, parts, cx, cz, w, d, F);
@@ -750,7 +755,7 @@ function sawmill(scene: Scene, b: Building): BuildingMeshes {
 
 /** A white shed with a red gable roof and a tall brick chimney with a cap. */
 function smokehouse(scene: Scene, b: Building): BuildingMeshes {
-  const { cx, cz, w, d } = bounds(b.cells);
+  const { cx, cz, w, d } = bounds(b.cells, b.rot);
   const F = b.floorY;
   const parts: Mesh[] = [];
   deck(scene, parts, cx, cz, w, d, F);
@@ -781,7 +786,7 @@ function netLoft(scene: Scene, b: Building): BuildingMeshes {
 
 /** A plank barn with a red gable roof, big double doors and crates stacked at the side. */
 function warehouse(scene: Scene, b: Building): BuildingMeshes {
-  const { cx, cz, w, d } = bounds(b.cells);
+  const { cx, cz, w, d } = bounds(b.cells, b.rot);
   const F = b.floorY;
   const parts: Mesh[] = [];
   deck(scene, parts, cx, cz, w, d, F);
@@ -818,7 +823,7 @@ function well(scene: Scene, b: Building): BuildingMeshes {
 
 /** A two-storey white house with a red roof, blue shutters and a red cross over the door. */
 function clinic(scene: Scene, b: Building): BuildingMeshes {
-  const { cx, cz, w, d } = bounds(b.cells);
+  const { cx, cz, w, d } = bounds(b.cells, b.rot);
   const F = b.floorY;
   const parts: Mesh[] = [];
   deck(scene, parts, cx, cz, w, d, F);
@@ -867,7 +872,7 @@ function fireWatch(scene: Scene, b: Building): BuildingMeshes {
 
 /** A shed with a timber roof, two round tanks (one rust-red, one white) and a pipe run between them. */
 function treatmentPlant(scene: Scene, b: Building): BuildingMeshes {
-  const { cx, cz, w, d } = bounds(b.cells);
+  const { cx, cz, w, d } = bounds(b.cells, b.rot);
   const F = b.floorY;
   const parts: Mesh[] = [];
   deck(scene, parts, cx, cz, w, d, F);
@@ -911,7 +916,7 @@ function lifeguard(scene: Scene, b: Building): BuildingMeshes {
 
 /** A low white house with a shingle roof, two steaming chimneys and a round blue pool in front. */
 function bathhouse(scene: Scene, b: Building): BuildingMeshes {
-  const { cx, cz, w, d } = bounds(b.cells);
+  const { cx, cz, w, d } = bounds(b.cells, b.rot);
   const F = b.floorY;
   const parts: Mesh[] = [];
   deck(scene, parts, cx, cz, w, d, F);
@@ -928,7 +933,7 @@ function bathhouse(scene: Scene, b: Building): BuildingMeshes {
 
 /** After reference/leisure: a tall narrow inn, blue roof, a red lean-to, a hanging sign and lanterns. */
 function tavern(scene: Scene, b: Building): BuildingMeshes {
-  const { cx, cz, w, d } = bounds(b.cells);
+  const { cx, cz, w, d } = bounds(b.cells, b.rot);
   const F = b.floorY;
   const parts: Mesh[] = [];
   deck(scene, parts, cx, cz, w, d, F);
@@ -968,7 +973,7 @@ function shrine(scene: Scene, b: Building): BuildingMeshes {
 
 /** A square of flagstones with a bench under a red awning and a flower tub; walkers loiter here. */
 function marketSquare(scene: Scene, b: Building): BuildingMeshes {
-  const { cx, cz, w, d } = bounds(b.cells);
+  const { cx, cz, w, d } = bounds(b.cells, b.rot);
   const F = b.floorY;
   const parts: Mesh[] = [];
   deck(scene, parts, cx, cz, w, d, F);
@@ -990,7 +995,7 @@ function marketSquare(scene: Scene, b: Building): BuildingMeshes {
 
 /** A two-storey white house with a blue roof, a balcony on posts and lanterns either side of the door. */
 function inn(scene: Scene, b: Building): BuildingMeshes {
-  const { cx, cz, w, d } = bounds(b.cells);
+  const { cx, cz, w, d } = bounds(b.cells, b.rot);
   const F = b.floorY;
   const parts: Mesh[] = [];
   deck(scene, parts, cx, cz, w, d, F);
@@ -1013,21 +1018,19 @@ function inn(scene: Scene, b: Building): BuildingMeshes {
 
 // ---------- damage, dispatch, signatures ----------
 
-const damagedMats = new WeakMap<Scene, StandardMaterial>();
-/** Shared material for damaged buildings: the vertex colours come through, but darkened. */
-export function damagedMaterial(scene: Scene): StandardMaterial {
-  let m = damagedMats.get(scene);
-  if (!m) {
-    m = new StandardMaterial("damaged", scene);
-    m.diffuseColor = new Color3(0.45, 0.42, 0.4);
-    m.specularColor = Color3.Black();
-    damagedMats.set(scene, m);
-  }
-  return m;
-}
-
 /** Damage shows as a lean and a scorched tint. The tint is baked into the vertex colours so a damaged building
  *  still shares the one flat material and merges into its chunk. */
+/** Kinds whose factory reads its orientation off the footprint cells: the footprint turns, the mesh needn't. */
+const CELL_ORIENTED: ReadonlySet<string> = new Set(["clamCamp", "lumberCamp"]);
+
+/** Swing the built (unturned) mesh onto its turned footprint: a yaw about the footprint centre, baked into the vertices. */
+function turn(m: BuildingMeshes, b: Building): void {
+  const { cx, cz } = bounds(b.cells);
+  const matrix = Matrix.Translation(-cx, 0, -cz).multiply(Matrix.RotationY(b.rot * Math.PI / 2)).multiply(Matrix.Translation(cx, 0, cz));
+  m.root.bakeTransformIntoVertices(matrix);
+  if (m.lantern) m.lantern.position.copyFrom(Vector3.TransformCoordinates(m.lantern.position, matrix));
+}
+
 function applyDamage(scene: Scene, b: Building, m: BuildingMeshes): BuildingMeshes {
   if (!b.damaged) return m;
   void scene;
@@ -1044,7 +1047,9 @@ function applyDamage(scene: Scene, b: Building, m: BuildingMeshes): BuildingMesh
 }
 
 export function createBuildingMeshes(scene: Scene, b: Building, grid: Grid): BuildingMeshes {
-  return applyDamage(scene, b, buildMeshes(scene, b, grid));
+  const m = buildMeshes(scene, b, grid);
+  if (b.rot && !CELL_ORIENTED.has(b.kind)) turn(m, b);
+  return applyDamage(scene, b, m);
 }
 
 function buildMeshes(scene: Scene, b: Building, grid: Grid): BuildingMeshes {
@@ -1085,15 +1090,11 @@ function buildMeshes(scene: Scene, b: Building, grid: Grid): BuildingMeshes {
   }
 }
 
-export function footprintOf(kind: Building["kind"]): { w: number; d: number } {
-  return { w: BUILDINGS[kind].w, d: BUILDINGS[kind].d };
-}
-
 /** Everything about a building that changes its mesh; the view rebuilds when this changes. Street pieces also
  *  depend on what stands beside them. */
 export function meshSignature(b: Building, grid: Grid): string {
   const joins = b.kind === "walkway" || b.kind === "raisedWalkway" || b.kind === "path" ? ":" + joinKey(b, grid) : "";
-  return `${b.kind}:${b.level}:${b.lantern ? 1 : 0}:${b.damaged ? 1 : 0}${joins}`;
+  return `${b.kind}:${b.level}:${b.lantern ? 1 : 0}:${b.damaged ? 1 : 0}:${b.rot}${joins}`;
 }
 
 /** Whether the building's lantern should glow: homes need residents, everything else just a connection. */

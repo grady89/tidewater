@@ -8,17 +8,11 @@ import {
   FIRE_LANTERN, FIRE_SAVE_COVERAGE, FIRE_SMOKEHOUSE, FIRE_SPREAD_PER_S, FIRE_TAVERN, FIRE_WATCH_CUT, REPAIR_FRACTION,
   REPAIR_TIMBER_PER_100,
 } from "./balance";
-import { at, buildFlow, Flow, stepDrift } from "./fields";
+import { at, flowFor, stepDrift } from "./fields";
 import { cellIndex, Grid } from "./grid";
+import { moveMoney } from "./money";
 import { rand } from "./rng";
 import { Building, buildingList, Cell, Emitter, notify, SimState } from "./state";
-
-const flows = new WeakMap<Grid, Flow>();
-function flowFor(grid: Grid): Flow {
-  let f = flows.get(grid);
-  if (!f) { f = buildFlow(grid); flows.set(grid, f); }
-  return f;
-}
 
 const TICKS_PER_CYCLE = TIDE_PERIOD / SIM_TICK;
 
@@ -46,6 +40,7 @@ export function tickFire(state: SimState, grid: Grid, dt: number, rain = false):
   const f = state.fields.fire;
   if (rain) { f.fill(0); }
   else {
+    // Fire risk is not a fraction: a cluster's risk climbs past FIRE_IGNITE_THRESHOLD (1.0) and that is the rule.
     for (const e of state.fireEmitters) f[e.k] += e.rate * (dt / SIM_TICK);
     stepDrift(f, flowFor(grid), dt, false, FIRE_DECAY, FIRE_DIFFUSE, FIRE_ADVECT_NONE);
   }
@@ -103,7 +98,7 @@ export function repairDamage(state: SimState): number {
     if (!b.damaged || !isStreet(b)) continue;
     const money = BUILDINGS[b.kind].cost.money;
     if (state.resources.money < money) continue;
-    state.resources.money -= money;
+    moveMoney(state, -money, "rebuild");
     b.damaged = false;
     streets++; spent += money; repaired++;
   }
@@ -112,7 +107,7 @@ export function repairDamage(state: SimState): number {
     if (!b.damaged) continue;
     const c = repairCost(b);
     if (state.resources.money < c.money || state.resources.timber < c.timber) continue;
-    state.resources.money -= c.money;
+    moveMoney(state, -c.money, "repair");
     state.resources.timber -= c.timber;
     b.damaged = false;
     repaired++;
@@ -129,12 +124,6 @@ export function isStreet(b: Building): boolean {
 /** A building that can do its job: connected, dry, and intact. */
 export function active(b: Building): boolean {
   return b.reached && !b.cut && !b.damaged;
-}
-
-export function damagedCount(state: SimState): number {
-  let n = 0;
-  for (const b of buildingList(state)) if (b.damaged) n++;
-  return n;
 }
 
 /** Homes near damage grieve a little (HAPPY.damage). */

@@ -63,6 +63,9 @@ export class Walkers {
   private colors = new Float32Array(0);
   private rng = 1;
 
+  /** Live walkers at most; beyond it the view samples. The Low quality preset halves it. */
+  cap = MAX_WALKERS;
+
   constructor(scene: Scene, private readonly grid: Grid) {
     // The figure, after reference/people: a wide conical straw hat over a round head, a tunic that flares to the
     // hem with stub sleeves, short dark trousers, bare feet. The tunic and sleeves are white so the per-instance
@@ -203,7 +206,7 @@ export class Walkers {
     // The last shift's workers leave their posts (they become the homeward wave below).
     this.walkers = this.walkers.filter(w => !w.stay);
     const total = state.assignments.reduce((n, a) => n + a.n, 0);
-    const keep = total > MAX_WALKERS ? MAX_WALKERS / total : 1;
+    const keep = total > this.cap ? this.cap / total : 1;
     for (const a of state.assignments) {
       const home = state.buildings[a.home], work = state.buildings[a.work];
       if (!home || !work) continue;
@@ -225,7 +228,7 @@ export class Walkers {
       }
       for (let k = 0; k < a.n; k++) {
         if (this.rand() > keep) continue;
-        if (this.walkers.length >= MAX_WALKERS) return;
+        if (this.walkers.length >= this.cap) return;
         const jitter = new Vector3((this.rand() - 0.5) * 0.4, 0, (this.rand() - 0.5) * 0.4);
         const color = Color4.FromHexString(COLORS[Math.floor(this.rand() * COLORS.length)]);
         const start = now + this.rand() * 2;
@@ -250,7 +253,7 @@ export class Walkers {
     const pairs = state.assignments.map(a => [state.buildings[a.home], state.buildings[a.work]] as const).filter(([h, w]) => h && w);
     if (!pairs.length) return 0;
     let spawned = 0;
-    for (let k = 0; k < n && this.walkers.length < MAX_WALKERS * 2; k++) {
+    for (let k = 0; k < n && this.walkers.length < this.cap * 2; k++) {
       const [home, work] = pairs[Math.floor(this.rand() * pairs.length)];
       const path = this.route(home, work);
       if (!path || path.length < 2) continue;

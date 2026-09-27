@@ -2,6 +2,7 @@
 // tree sites on it. Seed 0 is the original island, untouched. Pure geometry; nothing here reads the state.
 import { SIZE } from "../config";
 import { BUILDINGS, ISLAND_MAX_REROLLS, ISLAND_MIN_FLATS, ISLAND_MIN_HARBOR_SITES, ISLAND_MIN_PIER_SITES, ISLAND_MIN_REGION, ISLAND_MIN_TREED } from "./balance";
+import { cellIndex as at, DIRS, HALF, inBounds } from "./cells";
 import { cellClass, HeightFn, islandHeight } from "./heightfield";
 import { isleCell } from "./isle";
 import type { TreeSite } from "./trees";
@@ -32,7 +33,6 @@ export interface Island {
   stats: IslandStats;
 }
 
-const HALF = SIZE / 2;
 const DEEP = 0, FLAT = 1, HIGH = 2;
 const TREE_SEED = 7;
 const TREE_COUNT = 70;
@@ -68,10 +68,6 @@ function classify(height: HeightFn): { cls: Uint8Array; h: Float32Array; isle: U
   return { cls, h, isle };
 }
 
-const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]] as const;
-const inBounds = (i: number, j: number) => i >= -HALF && i < HALF && j >= -HALF && j < HALF;
-const at = (i: number, j: number) => (i + HALF) * SIZE + (j + HALF);
-
 export function islandStats(height: HeightFn, trees: readonly TreeSite[]): IslandStats {
   const { cls, h, isle } = classify(height);
   const main = (k: number) => isle[k] === 0;
@@ -90,7 +86,7 @@ export function islandStats(height: HeightFn, trees: readonly TreeSite[]): Islan
       const k = stack.pop()!;
       n++;
       const i = Math.floor(k / SIZE) - HALF, j = (k % SIZE) - HALF;
-      for (const [di, dj] of DIRS) {
+      for (const { i: di, j: dj } of DIRS) {
         if (!inBounds(i + di, j + dj)) continue;
         const q = at(i + di, j + dj);
         if (seen[q] || cls[q] !== FLAT || !main(q)) continue;
@@ -107,7 +103,7 @@ export function islandStats(height: HeightFn, trees: readonly TreeSite[]): Islan
     const k = at(i, j);
     if (cls[k] !== DEEP || !main(k)) continue;
     let ok = false;
-    for (const [di, dj] of DIRS) {
+    for (const { i: di, j: dj } of DIRS) {
       if (ok) break;
       if (!inBounds(i + di, j + dj) || cls[at(i + di, j + dj)] !== FLAT) continue;
       ok = true;

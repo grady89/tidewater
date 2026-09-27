@@ -14,6 +14,7 @@ import { rand } from "./rng";
 import { Building, buildingList, Cell, notify, SimState } from "./state";
 import { levelAt } from "./tide";
 import { hasLighthouse } from "./trade";
+import { trimCrew } from "./workers";
 
 /** Is a harbour behind a breakwater? Any breakwater within SHELTER_RADIUS counts. */
 export function sheltered(grid: Grid, harbour: Building): boolean {
@@ -77,6 +78,7 @@ export function startStorm(state: SimState, grid: Grid): void {
     if (lost > 0) {
       h.boats -= lost;
       h.atSea = false;
+      trimCrew(state, h);
       notify(state, `The storm took ${lost} boat${lost > 1 ? "s" : ""} from the ${BUILDINGS[h.kind].name.toLowerCase()}`);
     }
   }
@@ -162,6 +164,7 @@ function strike(state: SimState, grid: Grid): void {
     if ((BUILDINGS[b.kind].slots ?? 0) > 0 && b.boats > 0 && !sheltered(grid, b)) {
       notify(state, `The wave took ${b.boats} boat${b.boats > 1 ? "s" : ""} from the ${BUILDINGS[b.kind].name.toLowerCase()}`);
       b.boats = 0; b.atSea = false;
+      trimCrew(state, b);
     }
     if (b.kind === "seaWall" || b.kind === "breakwater") continue;
     if (b.floorY >= WAVE_HEIGHT || b.damaged) continue;
@@ -172,10 +175,3 @@ function strike(state: SimState, grid: Grid): void {
   t.struck = [...struck];
 }
 
-export function stormActive(state: SimState): boolean {
-  return state.storm.active;
-}
-
-export function tsunamiActive(state: SimState): boolean {
-  return state.tsunami.stage !== null;
-}

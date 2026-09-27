@@ -5,7 +5,7 @@
 // crosses the water.
 import { SIZE } from "../config";
 import { BUILDINGS, FERRY_COST } from "./balance";
-import { cellIndex, Grid, HALF } from "./grid";
+import { cellIndex, DIRS, Grid, HALF, inBounds } from "./grid";
 import { Building, SimState } from "./state";
 
 export interface NetworkStats {
@@ -24,10 +24,14 @@ export function updateNetwork(state: SimState, grid: Grid, waterLevel: number): 
     if (BUILDINGS[b.kind].residents > 0) stats.houses++;
     if (BUILDINGS[b.kind].network === "root" && !b.cut) { b.reached = true; queue.push(b); }
   }
+  // The same flood fill as ever, visiting each cell's neighbours in DIRS order; it runs every tick, so it looks the
+  // occupancy up by index instead of building neighbour cells.
   while (queue.length) {
     const b = queue.pop()!;
-    for (const c of b.cells) for (const n of grid.neighbors(c)) {
-      const q = grid.buildingAt(n);
+    for (const c of b.cells) for (const d of DIRS) {
+      const i = c.i + d.i, j = c.j + d.j;
+      if (!inBounds(i, j)) continue;
+      const q = grid.buildingAtIJ(i, j);
       if (!q || q.cut || q.reached) continue;
       q.reached = true;
       if (BUILDINGS[q.kind].network === "link") queue.push(q);

@@ -11,6 +11,3 @@ export function rand(state: SimState): number {
 }
 
 /** Integer in [0, n). */
-export function randInt(state: SimState, n: number): number {
-  return Math.floor(rand(state) * n);
-}

@@ -3,6 +3,7 @@
 // Landfill and planted trees live in the state; the grid re-applies landfill on attach.
 import { LANDFILL_COST, LANDFILL_HEIGHT, PLANT_COST, CLEAR_TIMBER } from "./balance";
 import { cellIndex, Grid, inBounds } from "./grid";
+import { moveMoney } from "./money";
 import { Cell, notify, SimState } from "./state";
 import { treeSites } from "./trees";
 
@@ -20,7 +21,7 @@ export function landfillBlocker(state: SimState, grid: Grid, c: Cell): string | 
 /** Fill the cell: it becomes dry ground at LANDFILL_HEIGHT, for good. */
 export function addLandfill(state: SimState, grid: Grid, c: Cell): boolean {
   if (landfillBlocker(state, grid, c)) return false;
-  state.resources.money -= LANDFILL_COST.money;
+  moveMoney(state, -LANDFILL_COST.money, "landfill");
   state.resources.timber -= LANDFILL_COST.timber;
   state.landfill.push(cellIndex(c.i, c.j));
   grid.applyLandfill(c);
@@ -47,7 +48,7 @@ export function plantBlocker(state: SimState, grid: Grid, c: Cell): string | nul
 /** Plant a sapling: a new site, age 0, that grows like a felled tree regrows. */
 export function plantTree(state: SimState, grid: Grid, c: Cell): boolean {
   if (plantBlocker(state, grid, c)) return false;
-  state.resources.money -= PLANT_COST;
+  moveMoney(state, -PLANT_COST, "plant");
   const x = c.i + 0.5, z = c.j + 0.5;
   state.extraTrees.push({ x, z, s: 1.0, cell: { i: c.i, j: c.j } });
   state.trees.push(0.05);

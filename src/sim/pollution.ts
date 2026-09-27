@@ -5,18 +5,11 @@ import {
   OYSTER_POLLUTION_KILL, POLLUTION_ADVECT, POLLUTION_DECAY, POLLUTION_DIFFUSE, SMOKEHOUSE_POLLUTION,
   WASTE_BACKLOG_DRAIN, WASTE_PER_RESIDENT,
 } from "./balance";
-import { at, buildFlow, CELLS, Flow, stepDrift } from "./fields";
+import { at, CELLS, flowFor, stepDrift } from "./fields";
 import { cellIndex, Grid } from "./grid";
 import { Building, buildingList, Cell, notify, SimState } from "./state";
 import { isRising } from "./tide";
 import { staffing } from "./workers";
-
-const flows = new WeakMap<Grid, Flow>();
-function flowFor(grid: Grid): Flow {
-  let f = flows.get(grid);
-  if (!f) { f = buildFlow(grid); flows.set(grid, f); }
-  return f;
-}
 
 const TICKS_PER_CYCLE = TIDE_PERIOD / SIM_TICK;
 
@@ -57,8 +50,10 @@ export function routeWaste(state: SimState): void {
 /** Every tick: emit, decay, diffuse, and drift with the tide. */
 export function tickPollution(state: SimState, grid: Grid, dt: number): void {
   const p = state.fields.pollution;
-  for (const e of state.emitters) p[e.k] += e.rate * (dt / SIM_TICK);
-  stepDrift(p, flowFor(grid), dt, isRising(state.tide), POLLUTION_DECAY, POLLUTION_DIFFUSE, POLLUTION_ADVECT);
+  // Pollution is a 0..1 fraction (every reader clamps it as one): an emitter fills its cell no further than
+  // full, and the drift keeps 1 the ceiling (QA #3).
+  for (const e of state.emitters) p[e.k] = Math.min(1, p[e.k] + e.rate * (dt / SIM_TICK));
+  stepDrift(p, flowFor(grid), dt, isRising(state.tide), POLLUTION_DECAY, POLLUTION_DIFFUSE, POLLUTION_ADVECT, 1);
 }
 
 /** Settlement: fish grounds recover toward a cap that pollution lowers; oyster beds in foul water sicken and die. */

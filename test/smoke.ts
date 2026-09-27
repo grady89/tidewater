@@ -10,8 +10,8 @@ function assert(cond: unknown, msg: string): asserts cond {
   if (!cond) throw new Error("smoke assertion failed: " + msg);
 }
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-type Api = any;
+import type { TidewaterApi as Api } from "../src/main";
+import type { Building, Cell } from "../src/sim/state";
 async function waitReady(page: Page): Promise<void> {
   await page.waitForFunction(() => (window as unknown as { __tidewater?: { ready: boolean } }).__tidewater?.ready === true, null, { timeout: 30_000 });
 }
@@ -175,9 +175,9 @@ try {
     api.grant(500, 0, 50);
     const grid = api.grid;
     let c: { i: number; j: number } | null = null;
-    for (let i = -30; i < 30 && !c; i++) for (let j = -30; j < 30; j++) { const q = { i, j }; if (grid.classAt(q) === "flat" && !grid.buildingAt(q) && grid.heightAt(q) < 0.2 && !grid.neighbors(q).some((n: any) => grid.buildingAt(n))) { c = q; break; } }
+    for (let i = -30; i < 30 && !c; i++) for (let j = -30; j < 30; j++) { const q = { i, j }; if (grid.classAt(q) === "flat" && !grid.buildingAt(q) && grid.heightAt(q) < 0.2 && !grid.neighbors(q).some(n => grid.buildingAt(n))) { c = q; break; } }
     if (!c) return null;
-    const before = api.scene.getMeshByName("ground").getBoundingInfo && api.terrainHeight(c.i + 0.5, c.j + 0.5);
+    const before = api.terrainHeight(c.i + 0.5, c.j + 0.5);
     api.place("landfill", c.i, c.j);
     const after = api.terrainHeight(c.i + 0.5, c.j + 0.5);
     const cls = grid.classAt(c);
@@ -221,7 +221,7 @@ try {
     const api = (window as unknown as { __tidewater: Api }).__tidewater;
     api.advance(4);
     const s = api.sim;
-    let pop = 0; for (const b of Object.values(s.buildings) as any[]) pop += b.residents;
+    let pop = 0; for (const b of Object.values(s.buildings) as Building[]) pop += b.residents;
     return { money: s.resources.money, pop, last: s.last, happiness: s.happiness, log: s.log.slice(-3) };
   });
   console.log("M2 after 4 cycles:", JSON.stringify(ran));
@@ -235,8 +235,8 @@ try {
   const cut = await page.evaluate(() => {
     const api = (window as unknown as { __tidewater: Api }).__tidewater;
     api.setTide(null);
-    const market = (Object.values(api.sim.buildings) as any[]).find(b => b.kind === "market");
-    const removed: { i: number; j: number; kind: string }[] = [];
+    const market = (Object.values(api.sim.buildings) as Building[]).find(b => b.kind === "market")!;
+    const removed: { i: number; j: number; kind: Building["kind"] }[] = [];
     for (const c of market.cells) for (const n of api.grid.neighbors(c)) {
       const b = api.grid.buildingAt(n);
       if (b && (b.kind === "walkway" || b.kind === "raisedWalkway")) { removed.push({ i: n.i, j: n.j, kind: b.kind }); api.remove(n.i, n.j); }
@@ -277,14 +277,13 @@ try {
 
   // M4: boats out at high water, moored (and heeled) at low water; walkers at shift change; ≥ 60 fps.
   const m4setup = await page.evaluate(async () => {
-    type Cell = { i: number; j: number };
     const api = (window as unknown as { __tidewater: Api }).__tidewater;
     const grid = api.grid;
     api.grant(600, 20);
     const s = api.sim;
-    const pier = (Object.values(s.buildings) as any[]).find(b => b.kind === "pier");
+    const pier = (Object.values(s.buildings) as Building[]).find(b => b.kind === "pier")!;
     // A second pier along the same shore and a dock against the first pier; boats set in the ledger (the shipyard is M5).
-    let pier2: any = null, bd = Infinity;
+    let pier2: Cell | null = null, bd = Infinity;
     for (let i = -32; i < 32 && !pier2; i++) for (let j = -32; j < 32; j++) {
       const c = { i, j };
       if (grid.classAt(c) !== "deep" || !grid.footprint("pier", c) || grid.buildingAt(c)) continue;
@@ -292,7 +291,7 @@ try {
       if (d >= 3 && d < bd) { bd = d; pier2 = c; }
     }
     const p2 = pier2 ? api.place("pier", pier2.i, pier2.j) : null;
-    let dock: any = null;
+    let dock: Building | null = null;
     for (const pc of pier.cells as Cell[]) for (const n of grid.neighbors(pc)) {
       for (let di = 0; di < 2 && !dock; di++) for (let dj = 0; dj < 2 && !dock; dj++) dock = api.place("dock", n.i - di, n.j - dj);
       if (dock) break;
@@ -308,7 +307,7 @@ try {
     api.grant(1500);
     let laid = 0, huts = 0;
     for (let round = 0; round < 8; round++) {
-      const links = (Object.values(s.buildings) as any[]).filter(b => b.kind === "walkway" || b.kind === "raisedWalkway");
+      const links = (Object.values(s.buildings) as Building[]).filter(b => b.kind === "walkway" || b.kind === "raisedWalkway");
       let placed = false;
       for (const w of links) {
         for (const n of grid.neighbors(w.cells[0])) {
@@ -318,12 +317,12 @@ try {
       }
       if (!placed) break;
     }
-    for (const w of (Object.values(s.buildings) as any[]).filter(b => b.kind === "raisedWalkway")) {
+    for (const w of (Object.values(s.buildings) as Building[]).filter(b => b.kind === "raisedWalkway")) {
       for (const n of grid.neighbors(w.cells[0])) { if (huts >= 6) break; if (api.place("house", n.i, n.j)) huts++; }
     }
     api.advance(6);
-    let pop = 0; for (const b of Object.values(s.buildings) as any[]) pop += b.residents;
-    return { pier2: !!p2, dock: !!dock, laid, houses: huts, pop, boats: (Object.values(s.buildings) as any[]).reduce((n, b) => n + b.boats, 0) };
+    let pop = 0; for (const b of Object.values(s.buildings) as Building[]) pop += b.residents;
+    return { pier2: !!p2, dock: !!dock, laid, houses: huts, pop, boats: (Object.values(s.buildings) as Building[]).reduce((n, b) => n + b.boats, 0) };
   });
   console.log("M4 setup:", JSON.stringify(m4setup));
   assert(m4setup.boats >= 4, "at least four boats in the ledger");
@@ -337,9 +336,9 @@ try {
     api.advanceTo(0.0);  // the peak: boats are on their grounds
     api.frameTown(30);
     const boats = api.view.boats();
-    const harbours = (Object.values(api.sim.buildings) as any[]).filter(b => b.kind === "pier" || b.kind === "dock")
+    const harbours = (Object.values(api.sim.buildings) as Building[]).filter(b => b.kind === "pier" || b.kind === "dock")
       .map(b => ({ kind: b.kind, boats: b.boats, workers: b.workers, reached: b.reached, atSea: b.atSea, ground: b.ground }));
-    return { walkersAtShift, phase: api.sim.phase, away: boats.filter((b: any) => b.atSea).length, total: boats.length, dusk: api.view.dusk(), harbours, assignments: api.sim.assignments, gulls: api.view.gulls(), crabs: api.view.crabs() };
+    return { walkersAtShift, phase: api.sim.phase, away: boats.filter(b => b.atSea).length, total: boats.length, dusk: api.view.dusk(), harbours, assignments: api.sim.assignments, gulls: api.view.gulls(), crabs: api.view.crabs() };
   });
   console.log("M4 high water:", JSON.stringify(high));
   assert(high.phase === "high", "clock is at high water");
@@ -355,7 +354,7 @@ try {
     const api = (window as unknown as { __tidewater: Api }).__tidewater;
     api.advanceTo(0.5);
     const boats = api.view.boats();
-    return { phase: api.sim.phase, moored: boats.filter((b: any) => b.moored).length, away: boats.filter((b: any) => b.atSea).length, crabs: api.view.crabs() };
+    return { phase: api.sim.phase, moored: boats.filter(b => b.moored).length, away: boats.filter(b => b.atSea).length, crabs: api.view.crabs() };
   });
   console.log("M4 low water:", JSON.stringify(low));
   assert(low.phase === "low", "clock is at low water");
@@ -401,12 +400,12 @@ try {
     sc.placeSecondPier(s, grid, town.pier.cells[0]); // a berth for the boat to come
     sc.shelterHarbours(s, grid);
     const treesBefore = camp ? (await import("/src/sim/trees.ts" as string) as typeof import("../src/sim/trees")).grownTreesNear(s, camp.cells) : -1;
-    const boatsBefore = (Object.values(s.buildings) as any[]).reduce((n, b) => n + b.boats, 0);
+    const boatsBefore = (Object.values(s.buildings) as Building[]).reduce((n, b) => n + b.boats, 0);
     let yard = null, launched = -1;
     for (let cycle = 1; cycle <= 12; cycle++) {
       api.advance(1);
       if (!yard && s.resources.planks >= 40) yard = sc.placeShipyard(s, grid, town.pier.cells[0]);
-      const boats = (Object.values(s.buildings) as any[]).reduce((n, b) => n + b.boats, 0);
+      const boats = (Object.values(s.buildings) as Building[]).reduce((n, b) => n + b.boats, 0);
       if (boats > boatsBefore) { launched = cycle; break; }
     }
     const treesAfter = camp ? (await import("/src/sim/trees.ts" as string) as typeof import("../src/sim/trees")).grownTreesNear(s, camp.cells) : -1;
@@ -425,22 +424,22 @@ try {
     const api = (window as unknown as { __tidewater: Api }).__tidewater;
     const s = api.sim, grid = api.grid;
     api.grant(500);
-    let bed: any = null, outfall: any = null;
+    let bed: Building | null = null, outfall: Building | null = null;
     for (let i = -32; i < 32 && !outfall; i++) for (let j = -32; j < 32 && !outfall; j++) {
       const c = { i, j };
       if (grid.classAt(c) !== "flat" || grid.buildingAt(c)) continue;
       const h = grid.heightAt(c);
       if (h < 0 || h > 0.45) continue;
-      const deep = grid.neighbors(c).find((n: any) => grid.classAt(n) === "deep" && grid.footprint("outfall", n) && grid.canPlace("outfall", grid.footprint("outfall", n)));
+      const deep = grid.neighbors(c).find(n => grid.classAt(n) === "deep" && grid.footprint("outfall", n) && grid.canPlace("outfall", grid.footprint("outfall", n)!));
       if (!deep) continue;
       bed = grid.place("oysterBed", [c]);
       outfall = api.place("outfall", deep.i, deep.j);
     }
     api.setOverlay("pollution");
     let died = -1;
-    for (let cycle = 1; cycle <= 5; cycle++) { api.advance(1); if (!s.buildings[bed.id]) { died = cycle; break; } }
+    for (let cycle = 1; cycle <= 5; cycle++) { api.advance(1); if (!s.buildings[bed!.id]) { died = cycle; break; } }
     let peak = 0; for (const v of api.fields.pollution) if (v > peak) peak = v;
-    api.frameAt(outfall.cells[0].i + 0.5, outfall.cells[0].j + 0.5, 18);
+    api.frameAt(outfall!.cells[0].i + 0.5, outfall!.cells[0].j + 0.5, 18);
     return { bed: !!bed, outfall: !!outfall, died, peak, log: s.log.slice(-2) };
   });
   console.log("M6:", JSON.stringify(m6));
@@ -465,7 +464,7 @@ try {
     const shrine = sc.placeByWalkway(s, grid, "shrine", 1).length;
     const tavern = sc.placeByWalkway(s, grid, "tavern", 1).length;
     let lanterns = 0;
-    for (const w of (Object.values(s.buildings) as any[]).filter(b => b.kind === "walkway" || b.kind === "raisedWalkway")) if (api.place("lanternPost", w.cells[0].i, w.cells[0].j)) lanterns++;
+    for (const w of (Object.values(s.buildings) as Building[]).filter(b => b.kind === "walkway" || b.kind === "raisedWalkway")) if (api.place("lanternPost", w.cells[0].i, w.cells[0].j)) lanterns++;
     api.advance(8);
     const best = town.huts.slice().sort((a, b) => b.level - a.level)[0];
     api.select(best.cells[0].i, best.cells[0].j);
@@ -520,7 +519,7 @@ try {
     const api = (window as unknown as { __tidewater: Api }).__tidewater;
     api.grant(200);
     let net = null;
-    for (let i = -30; i < 30 && !net; i++) for (let j = -30; j < 30 && !net; j++) { const c = { i, j }; if (api.grid.classAt(c) === "deep" && !api.grid.buildingAt(c) && api.grid.neighbors(c).some((n: any) => api.grid.classAt(n) === "flat")) net = api.place("sharkNet", i, j); }
+    for (let i = -30; i < 30 && !net; i++) for (let j = -30; j < 30 && !net; j++) { const c = { i, j }; if (api.grid.classAt(c) === "deep" && !api.grid.buildingAt(c) && api.grid.neighbors(c).some(n => api.grid.classAt(n) === "flat")) net = api.place("sharkNet", i, j); }
     api.setTide(0.6); api.tickSeconds(0.1);
     const high = api.view.netFloats();
     api.setTide(-0.35); api.tickSeconds(0.1);
@@ -604,7 +603,7 @@ try {
     api.advance(2);
     api.tickSeconds(20);
     api.frameAt(22.5, 21, 16);
-    return { lockedBlocker, lockedFerry, harbor: !!harbor, open: api.view.isleOpen(), pier: !!isle.pier, walkways: isle.walkways.length, huts: isle.huts.length, ferry: api.view.ferry(), reached: isle.huts.filter((h: any) => h.reached).length, bridge, smokehouse, terminals: api.view.ferryTerminals(), commuters: api.view.commuters(), riders: api.view.riders(), log: s.log.slice(-4) };
+    return { lockedBlocker, lockedFerry, harbor: !!harbor, open: api.view.isleOpen(), pier: !!isle.pier, walkways: isle.walkways.length, huts: isle.huts.length, ferry: api.view.ferry(), reached: isle.huts.filter(h => h.reached).length, bridge, smokehouse, terminals: api.view.ferryTerminals(), commuters: api.view.commuters(), riders: api.view.riders(), log: s.log.slice(-4) };
   });
   await page.waitForTimeout(300);
   await page.screenshot({ path: "shots/b6-isle.png" });
@@ -705,7 +704,7 @@ try {
     const s = api.sim;
     let guard = 0;
     while (s.tsunami.stage && guard++ < 400) api.tickSeconds(1);
-    let damaged = 0; for (const b of Object.values(s.buildings) as any[]) if (b.damaged) damaged++;
+    let damaged = 0; for (const b of Object.values(s.buildings) as Building[]) if (b.damaged) damaged++;
     return { stage: s.tsunami.stage, damaged, override: s.tide.override, log: s.log.filter((m: string) => /wave|sea/.test(m)).slice(-3) };
   });
   console.log("M11 after:", JSON.stringify(m11d));
@@ -729,7 +728,7 @@ try {
     // The island's flats hold ~160 jobs; the rest of the 200-walker load is view-only stress on the same routes.
     const extra = shiftWalkers < 200 ? api.stressWalkers(200 - shiftWalkers) : 0;
     api.frameTown(40);
-    return { ...built, shiftWalkers, extra, walkers: api.view.walkers(), away: api.view.boats().filter((b: any) => b.atSea).length, assignments: s.assignments.reduce((n: number, a: any) => n + a.n, 0), roofs: api.view.roofs() };
+    return { ...built, shiftWalkers, extra, walkers: api.view.walkers(), away: api.view.boats().filter(b => b.atSea).length, assignments: s.assignments.reduce((n, a) => n + a.n, 0), roofs: api.view.roofs() };
   });
   console.log("M12 big town:", JSON.stringify(m12));
   // Backlog 4: the homes of a big town wear all three roof shapes.
@@ -833,14 +832,111 @@ try {
   console.log("B2 caustics:", JSON.stringify(b2));
   assert(b2 && b2.on > b2.off + 0.5, "caustics brighten the shallows");
 
+  // Rotation: a hut placed by a walkway faces it; a smokehouse given a quarter turn stands on end; R turns the ghost.
+  const rotation = await page.evaluate(() => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    const grid = api.grid;
+    const open = (skip: { i: number; j: number }[]) => {
+      for (let i = -30; i < 30; i++) for (let j = -30; j < 30; j++) {
+        if (skip.some(s => Math.abs(s.i - i) < 4 && Math.abs(s.j - j) < 4)) continue;
+        const cells = [{ i, j }, { i: i + 1, j }, { i: i - 1, j }, { i, j: j + 1 }, { i, j: j - 1 }, { i: i + 1, j: j + 1 }, { i: i + 1, j: j - 1 }];
+        if (cells.every(c => grid.classAt(c) === "flat" && !grid.buildingAt(c)) && !grid.onIsle(cells)) return { i, j };
+      }
+      return null;
+    };
+    api.grant(2000, 0, 0);
+    const a = open([])!;
+    api.place("walkway", a.i, a.j + 1);
+    const hut = api.place("hut", a.i, a.j);
+    const b = open([a])!;
+    const shed = api.place("smokehouse", b.i, b.j, 1);
+    // R on the ghost: hover a third spot with the hut tool, press R twice, read the ghost's turn from the next placement.
+    const c = open([a, b])!;
+    api.placement.setTool("hut");
+    api.placement.hover = c;
+    api.placement.rotate(); api.placement.rotate();
+    const turned = api.placement.place(c);
+    api.frameAt(a.i + 0.5, a.j + 0.5, 6, -0.6, 1.0);
+    return { hutRot: hut?.rot, shedRot: shed?.rot, shedCells: shed?.cells ?? [], turnedRot: turned?.rot, hint: api.view.hint() };
+  });
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: "shots/rotation.png" });
+  console.log("Rotation:", JSON.stringify(rotation));
+  assert(rotation.hutRot === 2, "a hut placed south of a walkway faces north to it");
+  assert(rotation.shedRot === 1 && rotation.shedCells.length === 2 && rotation.shedCells[0].i === rotation.shedCells[1].i, "a quarter turn stands the smokehouse on end");
+  assert(rotation.turnedRot === 2, "R twice turns the ghost half round");
+
+  // Quality presets: the first launch's probe chose one; each preset sets what it says; Low drops the gulls and
+  // halves the walkers; the choice survives a reload (checked in M1 below).
+  const quality = await page.evaluate(() => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    const first = api.view.quality();
+    api.setQuality("low");
+    api.tickSeconds(0.1);
+    const low = { ...api.view.quality(), gullsShown: api.view.gulls() };
+    api.setQuality("high");
+    api.tickSeconds(0.1);
+    const high = { ...api.view.quality(), gullsShown: api.view.gulls() };
+    api.setQuality("medium");
+    const medium = api.view.quality();
+    return { first, low, high, medium };
+  });
+  console.log("Quality:", JSON.stringify(quality));
+  assert(quality.first.quality === "high" && !quality.first.probing, "the remembered preset (this context's first launch chose it) is High");
+  assert(!quality.low.bloom && !quality.low.reflections && !quality.low.caustics && quality.low.walkersCap === 100 && !quality.low.gulls && quality.low.gullsShown === 0, "Low: no bloom, reflections, caustics, gulls; half the walkers");
+  assert(quality.high.bloom && quality.high.reflections && quality.high.caustics && quality.high.walkersCap === 200 && quality.high.gulls && quality.high.gullsShown > 0, "High: everything on");
+  assert(quality.medium.bloom && !quality.medium.reflections && quality.medium.caustics, "Medium: High without reflections");
+  // The first-launch probe itself: forget the preset, reload, and within a few seconds the frame-rate probe has
+  // chosen one (High on this GPU) and said so.
+  await page.evaluate(() => { localStorage.removeItem("tidewater.quality"); });
+  await page.reload();
+  await waitReady(page);
+  const probing = await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.view.quality());
+  await page.waitForTimeout(3600);
+  const probed = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { ...api.view.quality(), stored: localStorage.getItem("tidewater.quality"), log: api.sim.log.slice(-3) }; });
+  console.log("Quality probe:", JSON.stringify({ probing: probing.probing, note: probed.note, quality: probed.quality, stored: probed.stored }));
+  assert(probing.probing && probing.quality === "high", "with nothing remembered the launch starts at High and probes");
+  assert(!probed.probing && probed.quality === "high" && /Chosen at first launch: High \(\d+ fps measured\)/.test(probed.note) && probed.stored === "high", "the probe chose High on this GPU and remembered it");
+  assert(probed.log.some((m: string) => m.startsWith("Quality set to High")), "the choice was logged");
+  await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.setQuality("medium"));
+
+  // Playtest log (Session B task 5): switched on in the Town menu, it records placements, removals, warnings,
+  // hints, walkthrough steps and a sample per cycle; "Export playtest log" downloads JSON with the notes in it.
+  await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.menu(true));
+  await page.click("#menu .playtest-on");
+  await page.fill("#menu .playtest-notes", "monkey notes");
+  await page.keyboard.press("Escape");
+  const logged = await page.evaluate(() => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    const grid = api.grid;
+    let c: { i: number; j: number } | null = null;
+    for (let i = -30; i < 30 && !c; i++) for (let j = -30; j < 30 && !c; j++) if (grid.classAt({ i, j }) === "flat" && !grid.buildingAt({ i, j }) && !grid.onIsle([{ i, j }])) c = { i, j };
+    const w = api.place("walkway", c!.i, c!.j);
+    api.remove(c!.i, c!.j);
+    api.blockerAt("harbor", c!.i, c!.j); // a blocker hint
+    api.advance(1);
+    return { enabled: api.playtest.enabled, placed: !!w, exported: api.playtest.export() };
+  });
+  await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.menu(true));
+  const [download] = await Promise.all([page.waitForEvent("download", { timeout: 10_000 }), page.click("#menu .playtest-export")]);
+  const downloaded = JSON.parse(await (await import("node:fs/promises")).readFile((await download.path())!, "utf8")) as { version: number; notes: string; events: { type: string }[]; samples: unknown[]; summary: Record<string, number> };
+  await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; api.playtest.enable(false); api.menu(false); });
+  console.log("Playtest log:", JSON.stringify({ enabled: logged.enabled, placed: logged.placed, file: download.suggestedFilename(), summary: downloaded.summary, notes: downloaded.notes, types: [...new Set(downloaded.events.map(e => e.type))] }));
+  assert(logged.enabled && logged.placed, "the menu switch turned the log on");
+  assert(/^tidewater-playtest-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}\.json$/.test(download.suggestedFilename()), "the export downloads as a dated JSON file");
+  assert(downloaded.version === 1 && downloaded.notes === "monkey notes", "the export carries the version and the notes");
+  assert(downloaded.summary.placements >= 1 && downloaded.summary.removals >= 1 && downloaded.summary.cycles >= 1 && downloaded.events.some(e => e.type === "step"), "placements, removals, a cycle sample and the walkthrough step are in the export");
+
   // M1: save, reload the page, every building is back and the clock kept its place.
   const before = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; api.save(); return { n: Object.keys(api.sim.buildings).length, cycle: api.sim.tide.cycle, money: api.sim.resources.money, chunks: api.view.chunks() }; });
   await page.reload();
   await waitReady(page);
-  const after = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { n: Object.keys(api.sim.buildings).length, cycle: api.sim.tide.cycle, money: api.sim.resources.money, chunks: api.view.chunks(), meshes: api.scene.meshes.filter((m: any) => m.name.startsWith("chunk:")).length }; });
+  const after = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { n: Object.keys(api.sim.buildings).length, cycle: api.sim.tide.cycle, money: api.sim.resources.money, chunks: api.view.chunks(), meshes: api.scene.meshes.filter(m => m.name.startsWith("chunk:")).length, quality: api.view.quality().quality }; });
   console.log("M1:", JSON.stringify({ before, after }));
   assert(after.n === before.n && before.n >= 5, "all buildings present after reload");
   assert(after.cycle === before.cycle && after.money === before.money, "ledger restored");
+  assert(after.quality === "medium", "the quality preset is remembered across a reload");
+  await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.setQuality("high"));
   assert(after.chunks === before.chunks && after.meshes === after.chunks && after.chunks > 0 && after.chunks <= 64, "view rebuilt one merged mesh per chunk");
   await page.screenshot({ path: "shots/m1.png" });
 
@@ -854,7 +950,7 @@ try {
   await page.waitForTimeout(300);
   const t4 = await page.evaluate(() => {
     const api = (window as unknown as { __tidewater: Api }).__tidewater;
-    const hut = Object.values(api.sim.buildings)[0] as any;
+    const hut = Object.values(api.sim.buildings)[0];
     return { menuOpen: !document.getElementById("menu")!.hidden, seed: api.sim.world.seed, island: api.view.island(), buildings: Object.keys(api.sim.buildings).length, hutClass: hut ? api.grid.classAt(hut.cells[0]) : null, h: api.terrainHeight(0.5, 0.5), trees: api.sim.trees.length, log: api.sim.log.slice(-2) };
   });
   await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; api.frameTown(30); });

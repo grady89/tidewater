@@ -2,6 +2,7 @@
 // settlement, one at a time. It is the way out of a bad start (money gone, nothing earning) and a way to bring
 // a harbor forward; the interest keeps it from being free money.
 import { LOAN_AMOUNT, LOAN_INTEREST, LOAN_REPAY_CYCLES } from "./balance";
+import { moveMoney } from "./money";
 import { notify, SimState } from "./state";
 
 export function canBorrow(state: SimState): boolean {
@@ -15,7 +16,7 @@ export function loanInstalment(): number {
 
 export function takeLoan(state: SimState): boolean {
   if (!canBorrow(state)) return false;
-  state.resources.money += LOAN_AMOUNT;
+  moveMoney(state, LOAN_AMOUNT, "loan");
   state.loan.owed = LOAN_AMOUNT * (1 + LOAN_INTEREST);
   state.loan.perCycle = loanInstalment();
   state.loan.taken++;

@@ -57,10 +57,6 @@ export function secondsToLowTide(t: TideState): number {
 }
 
 /** The upcoming peak belongs to a spring cycle. */
-export function springAhead(t: TideState): boolean {
-  return isSpringCycle(t.cycle + 1);
-}
-
 /** High tides until the next spring peak, counting the upcoming one as 1. */
 export function cyclesToSpring(t: TideState): number {
   let k = t.cycle + 1, n = 1;

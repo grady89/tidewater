@@ -43,6 +43,35 @@ HANDOFF are updated to match.
 
 Not touched tonight (another session owns them): `test/fuzz*`, `.github/`, `src/ui/settings*`.
 
+## Session B (QA, branch `qa`, from `rules` 9963c4e) — all six tasks DONE, nothing BLOCKED
+
+Grady was awake and sent two requests mid-session; both were done first and are in NOTES "Session B": building
+rotation (a building faces an adjoining street on its own, R turns it, the ghost shows a door tab) and the isle's
+outline (warped rim, off-centre knob, tilted shelf — no more ring of light). Sim tests and the smoke cover both.
+
+Commits: `3951b0c` Task 4 (the deploy files stand alone); the rest of the session is one commit after it, because
+the live requests and tasks 1, 3, 5 and 6 all touch the same files (main.ts, grid.ts, state.ts, placement.ts, the
+docs) and no per-task split of them leaves every intermediate tree green — see the commit message for what is in
+it. Every commit was made with `npm run build`, `npm test`, `npm run smoke` and `npm run fuzz` green.
+QA.md has every bug (3 fixed, each with a regression test) and every proposal.
+
+| Task | Status | Notes |
+|---|---|---|
+| 1 Sim fuzzer | DONE | `npm run fuzz`: `test/fuzzCore.ts` plays ~6 random valid actions a cycle (every kind placed with random turn and lift, removals with boats out, boats, loans, plank orders, forced storms/tsunamis/fires, land tools, lanterns, save→load mid-storm and mid-wave, speed, grants) and checks every invariant at every cycle; esbuild bundles it for worker threads. `src/sim/money.ts` makes every purse change an audited entry (no number moved). **Final run: 50/50 seeds × 2000 cycles clean** (1797 s on 25 workers). Found on the way: QA #1 stale crew after a storm at the peak, QA #3 pollution past 1.0 (emitters, then the drift); QA #2 (stale tide flows after landfill / a load onto another island) came from reading the field code. Fire risk is held to finite ≥ 0, not [0,1]: its ignition threshold is 1.0 by design (proposal in QA.md). `test/fuzz.test.ts` keeps two short seeds in `npm test` |
+| 2 UI monkey | DONE | `npm run monkey`: 15 minutes, 33,446 real inputs (clicks/drags with all three buttons, wheel, held keys, every visible button, the seed field, resizes, a reload in a tsunami and one in a storm) — zero console/page errors or unhandled rejections, both events survived their reload, no stuck modal, mean 159 fps, longest run under 30 fps 1.04 s (limit 2 s). Nothing to fix |
+| 3 Quality presets | DONE | `ui/settings.ts` + the Quality… panel: High / Medium (no reflections) / Low (no bloom, reflections, caustics, gulls; half the walkers). A 3 s probe at High picks one on first launch (≥ 55 High, ≥ 35 Medium, else Low), remembered in localStorage; the smoke drives the probe (135 fps → High). `npm run quality` on SwiftShader: 14.7 / 12.0 / 14.6 fps — the software renderer is raster-bound, the presets are inside its noise; the 4060: 165 at all three (the cap). Numbers and the reading in QA.md |
+| 4 Deploy | DONE | 3951b0c · `.github/workflows/ci.yml` (build + test + `check:dist` on every push, Pages from `main`), `base: "./"`, `test/deploycheck.ts` loads `dist/` under `/tidewater/` in headless Chrome with no 404s (green locally); https://grady89.github.io/tidewater/ in README. **Not yet run on GitHub** — nothing was pushed; Pages must be set to "GitHub Actions" once |
+| 5 Playtest log | DONE | `ui/playtest.ts` (pure, injected clock) + the Town menu's switch, notes and "Export playtest log" (Blob download); placements/removals with cycle and purse, every notification and non-default hint, walkthrough steps, money + population per cycle, 30 minutes then stops; off by default, local only. `test/playtest.test.ts` proves the export shape from a scripted session; the smoke drives the real switch, textarea and download |
+| 6 Code health | DONE | dead exports removed (13), the three flow caches merged into `fields.flowFor`, lattice helpers into `sim/cells.ts`, no `any` anywhere (headless scripts type the console API), `stepDrift`/`updateNetwork` allocation-free with identical arithmetic (12-seed fuzz hashes identical before and after), the 1474-line test file split into six topic files → `npm test` 16 s alone (was 60 s+), ARCHITECTURE.md (module map, tick order, click → ledger → mesh). No TODOs existed. Smoke unchanged |
+
+Not touched (another session owns them): `src/sim/balance.ts` rule logic, the stilt/floor code, the ferry. The
+one balance file change is none; the three "clamp" fixes are in pollution.ts/fields.ts and change nothing in a
+town that never saturates a cell.
+
+For the morning: push `qa` (or merge to `main`) to see the workflow run and Pages publish; the SwiftShader numbers
+say nothing about a real integrated GPU, which is still the one machine unmeasured; QA.md's proposals (the purse
+below zero, landfill beside a pier, fire risk not a fraction) are rule calls.
+
 For the morning: the four Task 2 items are off HANDOFF's known-broken list; the ferry needs the harbor bridged to the
 street before anyone crosses (an unbridged harbor still opens the isle); old saves keep their pre-rule floors and land
 on island 0. The next thing to do is still HANDOFF's #1 — play the walkthrough cold with a mouse — now on a random island.

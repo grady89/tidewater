@@ -23,6 +23,8 @@ export interface Building {
   cells: Cell[];
   /** Top of the deck in world Y. */
   floorY: number;
+  /** Quarter turns from the default facing (door toward −z): 0–3. Odd turns swap a footprint's width and depth. */
+  rot: number;
   /** Floor is below the water this tick. Breaks connectivity; nothing is destroyed. */
   cut: boolean;
   /** Linked to the network (a pier or market) through walkways this tick. */
@@ -250,7 +252,14 @@ export function population(state: SimState): number {
   return n;
 }
 
+let notifyListener: ((msg: string, state: SimState) => void) | null = null;
+/** Hear every notification as it is logged (the playtest log). Not state; null in the plain game. */
+export function onNotify(fn: ((msg: string, state: SimState) => void) | null): void {
+  notifyListener = fn;
+}
+
 export function notify(state: SimState, msg: string): void {
   state.log.push(msg);
   if (state.log.length > 40) state.log.shift();
+  if (notifyListener) notifyListener(msg, state);
 }

@@ -21,6 +21,10 @@ export type Fate = "safe" | "spring" | "always";
 const CLICK_SLOP_PX = 5;
 /** Per-cell pieces that are laid in runs: drag from one cell to another and the whole line goes down. */
 const LINE_TOOLS: ReadonlySet<Tool> = new Set<Tool>(["walkway", "raisedWalkway", "path", "breakwater", "sharkNet", "seaWall"]);
+/** Buildings on land turn with R (streets, and everything in the water, keep their one orientation). */
+const ROTATABLE: ReadonlySet<PlacementClass> = new Set<PlacementClass>(["flat", "high", "flatOrHigh", "shore", "beach"]);
+/** Where the door is for each quarter turn: −z, −x, +z, +x. */
+const DOOR_SIDE: readonly Cell[] = [{ i: 0, j: -1 }, { i: -1, j: 0 }, { i: 0, j: 1 }, { i: 1, j: 0 }];
 const MAX_LINE = 40;
 
 /** The cells from `a` to `b` as an L: first along the longer axis, then the other. Both ends included. */
@@ -49,6 +53,9 @@ export class Placement {
   line: { count: number; cost: number } | null = null;
   /** Called when the player clicks an existing building. */
   onSelect: (b: Building | null) => void = () => {};
+  /** Called after each placement (the tool, what it touched, what it cost) and each removal (with the refund). */
+  onPlace: (tool: Tool, b: Building, cost: number) => void = () => {};
+  onRemove: (b: Building, refund: number) => void = () => {};
   private readonly ghost: Mesh;
   private readonly lineGhosts: { ok: Mesh; bad: Mesh };
   private readonly mats: Record<"ok" | "spring" | "always" | "bad", StandardMaterial>;
@@ -76,6 +83,18 @@ export class Placement {
   }
   private get toolLift(): number { return this.liftable ? this.lift : 0; }
 
+  /** Quarter turns the player gave the ghost with R; null lets the door face the street on its own. */
+  turns: number | null = null;
+  get rotatable(): boolean { return isBuildingTool(this.tool) && ROTATABLE.has(BUILDINGS[this.tool].cls) && !LINE_TOOLS.has(this.tool); }
+  /** R: one more quarter turn from whatever the ghost shows now (its own facing, or the last turn given). */
+  rotate(): void {
+    if (!this.rotatable) return;
+    const current = this.hover ? this.evaluate(this.hover).rot : (this.turns ?? 0);
+    this.turns = (current + 1) & 3;
+    this.refresh();
+  }
+  private readonly ghostDoor: Mesh;
+
   constructor(private readonly scene: Scene, private readonly camera: ArcRotateCamera, private readonly grid: Grid, canvas: HTMLCanvasElement) {
     this.ghost = MeshBuilder.CreateBox("ghost", { size: 1 }, scene);
     this.ghost.scaling.y = 0.06;
@@ -99,9 +118,16 @@ export class Placement {
     this.ghostStilts.isPickable = false;
     this.ghostStilts.material = this.mats.ok;
     this.ghostStilts.setEnabled(false);
+    // The ghost's door: a blue tab on the side the door will face, so a turn is seen before it is paid for.
+    this.ghostDoor = MeshBuilder.CreateBox("ghostDoor", { size: 1 }, scene);
+    this.ghostDoor.isPickable = false;
+    const doorMat = this.ghostMaterial("ghostDoorMat", "#2f6f8f");
+    doorMat.alpha = 0.95;
+    this.ghostDoor.material = doorMat;
+    this.ghostDoor.setEnabled(false);
 
     canvas.addEventListener("pointermove", () => this.refresh());
-    canvas.addEventListener("pointerleave", () => { this.hover = null; this.ghost.setEnabled(false); });
+    canvas.addEventListener("pointerleave", () => { this.hover = null; this.ghost.setEnabled(false); this.ghostStilts.setEnabled(false); this.ghostDoor.setEnabled(false); });
     canvas.addEventListener("pointerdown", e => {
       this.down = { x: e.clientX, y: e.clientY, button: e.button };
       if (e.button === 0 && this.dragsLine && this.hover) this.lineStart = this.hover;
@@ -132,6 +158,7 @@ export class Placement {
   }
 
   setTool(tool: Tool): void {
+    if (tool !== this.tool) this.turns = null;
     this.tool = tool;
     this.refresh();
   }
@@ -189,28 +216,29 @@ export class Placement {
     return this.evaluate(anchor).blocker;
   }
 
-  /** Footprint, blocker, caution, flood fate, stilt length and price for placing the current tool at `anchor`. */
-  private evaluate(anchor: Cell): { cells: Cell[]; blocker: string | null; warn: string | null; fate: Fate; y: number; stilt: number; cost: number } {
+  /** Footprint, blocker, caution, flood fate, stilt length, price and turn for placing the current tool at `anchor`. */
+  private evaluate(anchor: Cell): { cells: Cell[]; blocker: string | null; warn: string | null; fate: Fate; y: number; stilt: number; cost: number; rot: number } {
     const state = this.grid.state;
     if (this.tool === "boat") {
       const b = this.grid.buildingAt(anchor);
-      return { cells: b && (BUILDINGS[b.kind].slots ?? 0) > 0 ? b.cells : [anchor], blocker: boatPurchaseBlocker(state, b), warn: null, fate: "safe", y: b?.floorY ?? 1, stilt: 0, cost: BOAT_COST };
+      return { cells: b && (BUILDINGS[b.kind].slots ?? 0) > 0 ? b.cells : [anchor], blocker: boatPurchaseBlocker(state, b), warn: null, fate: "safe", y: b?.floorY ?? 1, stilt: 0, cost: BOAT_COST, rot: 0 };
     }
     if (this.tool === "lanternPost") {
       const b = this.grid.buildingAt(anchor);
-      return { cells: [anchor], blocker: lanternBlocker(state, this.grid, anchor), warn: null, fate: "safe", y: b?.floorY ?? 1, stilt: 0, cost: LANTERN_COST };
+      return { cells: [anchor], blocker: lanternBlocker(state, this.grid, anchor), warn: null, fate: "safe", y: b?.floorY ?? 1, stilt: 0, cost: LANTERN_COST, rot: 0 };
     }
-    if (this.tool === "landfill") return { cells: [anchor], blocker: landfillBlocker(state, this.grid, anchor), warn: null, fate: "safe", y: LANDFILL_HEIGHT + 0.03, stilt: 0, cost: LANDFILL_COST.money };
-    if (this.tool === "plantTree") return { cells: [anchor], blocker: plantBlocker(state, this.grid, anchor), warn: null, fate: "safe", y: this.grid.heightAt(anchor) + 0.05, stilt: 0, cost: PLANT_COST };
-    if (this.tool === "clearTree") return { cells: [anchor], blocker: clearBlocker(state, this.grid, anchor), warn: null, fate: "safe", y: this.grid.heightAt(anchor) + 0.05, stilt: 0, cost: 0 };
+    if (this.tool === "landfill") return { cells: [anchor], blocker: landfillBlocker(state, this.grid, anchor), warn: null, fate: "safe", y: LANDFILL_HEIGHT + 0.03, stilt: 0, cost: LANDFILL_COST.money, rot: 0 };
+    if (this.tool === "plantTree") return { cells: [anchor], blocker: plantBlocker(state, this.grid, anchor), warn: null, fate: "safe", y: this.grid.heightAt(anchor) + 0.05, stilt: 0, cost: PLANT_COST, rot: 0 };
+    if (this.tool === "clearTree") return { cells: [anchor], blocker: clearBlocker(state, this.grid, anchor), warn: null, fate: "safe", y: this.grid.heightAt(anchor) + 0.05, stilt: 0, cost: 0, rot: 0 };
     const kind = this.tool;
     const def = BUILDINGS[kind];
-    const cells = this.grid.footprint(kind, anchor);
-    if (!cells) return { cells: [anchor], blocker: def.cls === "edge" ? "Needs deep water against the shore" : "Off the map", warn: null, fate: "safe", y: this.pickY(), stilt: 0, cost: def.cost.money };
+    const cells = this.grid.footprint(kind, anchor, this.turns ?? 0);
+    if (!cells) return { cells: [anchor], blocker: def.cls === "edge" ? "Needs deep water against the shore" : "Off the map", warn: null, fate: "safe", y: this.pickY(), stilt: 0, cost: def.cost.money, rot: this.turns ?? 0 };
+    const rot = this.rotatable ? (this.turns ?? this.grid.facing(cells)) : 0;
     const y = this.grid.floorFor(kind, cells, this.toolLift);
     const stilt = this.grid.stiltLength(kind, cells, y);
     const cost = placeCost(kind, stilt).money;
-    const no = (blocker: string) => ({ cells, blocker, warn: null, fate: "safe" as Fate, y, stilt, cost });
+    const no = (blocker: string) => ({ cells, blocker, warn: null, fate: "safe" as Fate, y, stilt, cost, rot });
     if (!this.grid.classOk(def.cls, cells)) return no(classHint(def.cls));
     if (!this.grid.terrainOk(kind, cells)) return no(`Needs ground between ${def.terrain!.min} and ${def.terrain!.max} m`);
     if (cells.some(c => this.grid.buildingAt(c))) return no("Occupied");
@@ -225,7 +253,21 @@ export class Placement {
     if (def.network !== "root" && !cells.some(c => this.grid.neighbors(c).some(n => { const b = this.grid.buildingAt(n); return !!b && (b.reached || BUILDINGS[b.kind].network === "root"); }))) {
       warn = def.network === "link" ? "Not joined to the town yet: streets need a pier at one end" : "No street touches it: nobody can reach it";
     }
-    return { cells, blocker: null, warn, fate: floodFate(y), y, stilt, cost };
+    return { cells, blocker: null, warn, fate: floodFate(y), y, stilt, cost, rot };
+  }
+
+  /** The blue door tab on the side the building will face. */
+  private showDoor(cells: Cell[], y: number, rot: number, on: boolean): void {
+    if (!on) { this.ghostDoor.setEnabled(false); return; }
+    const is = cells.map(c => c.i), js = cells.map(c => c.j);
+    const minI = Math.min(...is), maxI = Math.max(...is) + 1, minJ = Math.min(...js), maxJ = Math.max(...js) + 1;
+    const cx = (minI + maxI) / 2, cz = (minJ + maxJ) / 2;
+    const side = DOOR_SIDE[rot & 3];
+    const x = side.i === 0 ? cx : side.i < 0 ? minI + 0.05 : maxI - 0.05;
+    const z = side.j === 0 ? cz : side.j < 0 ? minJ + 0.05 : maxJ - 0.05;
+    this.ghostDoor.position.set(x, y + 0.1, z);
+    this.ghostDoor.scaling.set(side.i === 0 ? 0.32 : 0.08, 0.2, side.i === 0 ? 0.08 : 0.32);
+    this.ghostDoor.setEnabled(true);
   }
 
   /** The cells of the run being dragged, with what each would cost; blocked cells are skipped, not fatal. */
@@ -246,7 +288,11 @@ export class Placement {
   /** Lay the dragged run in order, so each deck meets the one before; stop when the money runs out. */
   private placeLine(): void {
     const kind = this.tool as BuildingKind;
-    for (const c of this.linePath) tryPlace(this.grid.state, this.grid, kind, c, this.toolLift);
+    for (const c of this.linePath) {
+      const before = this.grid.state.resources.money;
+      const b = tryPlace(this.grid.state, this.grid, kind, c, this.toolLift);
+      if (b) this.onPlace(kind, b, before - this.grid.state.resources.money);
+    }
     this.linePath = [];
     this.line = null;
     this.onSelect(null);
@@ -289,6 +335,7 @@ export class Placement {
     this.hover = this.pickCell();
     if (this.lineStart && this.hover) {
       this.ghostStilts.setEnabled(false);
+      this.ghostDoor.setEnabled(false);
       // Paint: the run follows the pointer's own track, cell by cell, so a street can bend where the player
       // bends it. Each pointer step adds the L from the last painted cell; revisited cells are skipped.
       if (this.linePath.length === 0) this.linePath = [this.lineStart];
@@ -308,11 +355,12 @@ export class Placement {
     }
     this.lineGhosts.ok.setEnabled(false); this.lineGhosts.bad.setEnabled(false);
     this.line = null;
-    if (!this.hover) { this.ghost.setEnabled(false); this.ghostStilts.setEnabled(false); this.blocker = null; this.warn = null; return; }
-    const { cells, blocker, warn, fate, y, stilt, cost } = this.evaluate(this.hover);
+    if (!this.hover) { this.ghost.setEnabled(false); this.ghostStilts.setEnabled(false); this.ghostDoor.setEnabled(false); this.blocker = null; this.warn = null; return; }
+    const { cells, blocker, warn, fate, y, stilt, cost, rot } = this.evaluate(this.hover);
     this.stilt = stilt;
     this.cost = cost;
     this.showStilts(cells, y, !blocker && this.liftable);
+    this.showDoor(cells, y, rot, !blocker && this.rotatable);
     this.blocker = blocker;
     this.warn = warn;
     this.fate = fate;
@@ -334,10 +382,14 @@ export class Placement {
     this.onSelect(existing);
   }
 
-  /** Place (and pay for) the current tool at `anchor`. Returns the building, or null if blocked. */
-  place(anchor: Cell | null = this.hover): Building | null {
+  /**
+   * Place (and pay for) the current tool at `anchor`. Returns the building, or null if blocked. `rot` overrides
+   * the ghost's turn for this one placement (null = face the street); undefined uses the ghost's.
+   */
+  place(anchor: Cell | null = this.hover, rot: number | null | undefined = undefined): Building | null {
     if (!anchor) return null;
     const state = this.grid.state;
+    const before = state.resources.money;
     let result: Building | null = null;
     if (this.tool === "boat") {
       const at = this.grid.buildingAt(anchor);
@@ -351,8 +403,9 @@ export class Placement {
     } else if (this.tool === "clearTree") {
       if (clearTree(state, this.grid, anchor)) this.landChanged = true;
     } else {
-      result = tryPlace(state, this.grid, this.tool, anchor, this.toolLift);
+      result = tryPlace(state, this.grid, this.tool, anchor, this.toolLift, rot === undefined ? this.turns : rot);
     }
+    if (result) this.onPlace(this.tool, result, before - state.resources.money);
     this.refresh();
     return result;
   }
@@ -361,7 +414,8 @@ export class Placement {
     if (!at) return;
     const b = this.grid.buildingAt(at);
     if (!b) return;
-    removeBuilding(this.grid.state, this.grid, b);
+    const refund = removeBuilding(this.grid.state, this.grid, b);
+    this.onRemove(b, refund);
     this.onSelect(null);
     this.refresh();
   }

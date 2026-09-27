@@ -2,6 +2,7 @@
 // spatial index over them (rebuilt from state on load) plus the fixed terrain classification.
 import { CLEARANCE, DRY_TERRAIN, SIZE, SPRING_HI, STILT_MIN, TIDE_HI, TIDE_LO, WALKWAY_SNAP } from "../config";
 import { BEACH_MAX_HEIGHT, BuildingKind, BUILDINGS, LANDFILL_HEIGHT, LIFT_MAX, LIFT_STEP, PlacementClass } from "./balance";
+import { cellIndex, DIRS, HALF, inBounds } from "./cells";
 import { cellClass } from "./heightfield";
 import { Island, island } from "./island";
 import { isleCell } from "./isle";
@@ -10,23 +11,9 @@ import { Building, Cell, SimState } from "./state";
 /** deep: always underwater. flat: the tidal flats, buildable. high: dry land above the tide. */
 export type CellClass = "deep" | "flat" | "high";
 
-/** Cells span i, j in [-HALF, HALF). Cell (i, j) covers x in [i, i+1), z in [j, j+1). */
-export const HALF = SIZE / 2;
-
-export const DIRS: readonly Cell[] = [{ i: 1, j: 0 }, { i: -1, j: 0 }, { i: 0, j: 1 }, { i: 0, j: -1 }];
-
-export function inBounds(i: number, j: number): boolean {
-  return i >= -HALF && i < HALF && j >= -HALF && j < HALF;
-}
-export function cellIndex(i: number, j: number): number {
-  return (i + HALF) * SIZE + (j + HALF);
-}
-export function cellCenter(c: Cell): { x: number; z: number } {
-  return { x: c.i + 0.5, z: c.j + 0.5 };
-}
-export function worldToCell(x: number, z: number): Cell {
-  return { i: Math.floor(x), j: Math.floor(z) };
-}
+// The lattice helpers live in cells.ts (so the island generator can share them without importing the Grid);
+// they are re-exported here because this is where everything else looks for them.
+export { cellCenter, cellIndex, DIRS, HALF, inBounds, worldToCell } from "./cells";
 
 export class Grid {
   readonly heights = new Float32Array(SIZE * SIZE);
@@ -40,6 +27,8 @@ export class Grid {
   readonly beach = new Uint8Array(SIZE * SIZE);
   /** Cell index → on the second island (locked until the town has a harbor)? */
   readonly isle = new Uint8Array(SIZE * SIZE);
+  /** Bumped whenever the heights change (attach, landfill), so caches keyed on the terrain (the field flows) refresh. */
+  terrainVersion = 0;
 
   constructor(public state: SimState) {
     this.attach(state);
@@ -64,6 +53,7 @@ export class Grid {
   attach(state: SimState): void {
     this.state = state;
     this.resetTerrain();
+    this.terrainVersion++;
     for (const k of state.landfill) this.applyLandfill({ i: Math.floor(k / SIZE) - HALF, j: (k % SIZE) - HALF });
     this.rebuild();
   }
@@ -94,6 +84,7 @@ export class Grid {
   /** Raise one cell to dry ground. */
   applyLandfill(c: Cell): void {
     const k = cellIndex(c.i, c.j);
+    this.terrainVersion++;
     this.heights[k] = LANDFILL_HEIGHT;
     this.classes[k] = "high";
     this.deep[k] = 0;
@@ -109,6 +100,8 @@ export class Grid {
   heightAt(c: Cell): number { return this.heights[cellIndex(c.i, c.j)]; }
   classAt(c: Cell): CellClass | null { return inBounds(c.i, c.j) ? this.classes[cellIndex(c.i, c.j)] : null; }
   buildingAt(c: Cell): Building | null { return inBounds(c.i, c.j) ? this.occupancy[cellIndex(c.i, c.j)] : null; }
+  /** `buildingAt` for an in-bounds (i, j) pair, for the per-tick loops that must not build cell objects. */
+  buildingAtIJ(i: number, j: number): Building | null { return this.occupancy[cellIndex(i, j)]; }
   neighbors(c: Cell): Cell[] {
     return DIRS.map(d => ({ i: c.i + d.i, j: c.j + d.j })).filter(n => inBounds(n.i, n.j));
   }
@@ -141,7 +134,7 @@ export class Grid {
   }
 
   /** The cells a building of `kind` anchored at `c` would occupy, or null if that shape can't be formed there. */
-  footprint(kind: BuildingKind, c: Cell): Cell[] | null {
+  footprint(kind: BuildingKind, c: Cell, rot = 0): Cell[] | null {
     if (!inBounds(c.i, c.j)) return null;
     const def = BUILDINGS[kind];
     if (def.cls === "edge") {
@@ -161,12 +154,34 @@ export class Grid {
       return null;
     }
     const cells: Cell[] = [];
-    for (let di = 0; di < def.w; di++) for (let dj = 0; dj < def.d; dj++) {
+    const w = rot % 2 ? def.d : def.w, d = rot % 2 ? def.w : def.d;
+    for (let di = 0; di < w; di++) for (let dj = 0; dj < d; dj++) {
       const x = { i: c.i + di, j: c.j + dj };
       if (!inBounds(x.i, x.j)) return null;
       cells.push(x);
     }
     return cells;
+  }
+
+  /**
+   * The turn that puts a building's door toward the street: the side of the footprint with the most walkways,
+   * piers or markets against it (0 = −z, 1 = −x, 2 = +z, 3 = +x). A footprint that isn't square keeps its shape,
+   * so only 0 and 2 are on offer for it. Nothing adjoining: 0.
+   */
+  facing(cells: Cell[]): number {
+    const is = cells.map(c => c.i), js = cells.map(c => c.j);
+    const square = Math.max(...is) - Math.min(...is) === Math.max(...js) - Math.min(...js);
+    const count = [0, 0, 0, 0];
+    const own = new Set(cells.map(c => cellIndex(c.i, c.j)));
+    for (const c of cells) for (const [k, d] of [[0, { i: 0, j: -1 }], [1, { i: -1, j: 0 }], [2, { i: 0, j: 1 }], [3, { i: 1, j: 0 }]] as [number, Cell][]) {
+      const n = { i: c.i + d.i, j: c.j + d.j };
+      if (!inBounds(n.i, n.j) || own.has(cellIndex(n.i, n.j))) continue;
+      const b = this.buildingAt(n);
+      if (b && BUILDINGS[b.kind].network !== "leaf") count[k]++;
+    }
+    let best = 0;
+    for (const k of square ? [0, 1, 2, 3] : [0, 2]) if (count[k] > count[best]) best = k;
+    return best;
   }
 
   /** Does some cell touch a flat cell carrying a walkway? (Lumber camps must be served from the flats.) */
@@ -246,10 +261,10 @@ export class Grid {
     return Math.max(0, floor - this.groundUnder(cells));
   }
 
-  place(kind: BuildingKind, cells: Cell[], lift = 0): Building {
+  place(kind: BuildingKind, cells: Cell[], lift = 0, rot = 0): Building {
     const s = this.state;
     const b: Building = {
-      id: s.nextId++, kind, cells, floorY: this.floorFor(kind, cells, lift), cut: false, reached: false,
+      id: s.nextId++, kind, cells, floorY: this.floorFor(kind, cells, lift), rot: rot & 3, cut: false, reached: false,
       workers: 0, residents: 0, boats: 0, atSea: false, ground: null, output: 0, happiness: 1, progress: 0, stress: 0,
       level: 1, streak: 0, lantern: false, injured: 0, shock: 0, fire: 0, damaged: false,
     };

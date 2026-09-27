@@ -11,7 +11,8 @@ import { Grid } from "./sim/grid";
 import { crossCommuters, ferryTerminals } from "./sim/network";
 import { AUTOSAVE_KEY, deserialize, serialize } from "./sim/save";
 import { newGame } from "./sim/start";
-import { notify, SimState } from "./sim/state";
+import { notify, onNotify, population, SimState } from "./sim/state";
+import { playtestFileName, PlaytestLog, readPlaytestEnabled, readPlaytestNotes, writePlaytestEnabled, writePlaytestNotes } from "./ui/playtest";
 import { advanceCycles, tick } from "./sim/tick";
 import { cycleFraction } from "./sim/tide";
 import { takeLoan } from "./sim/loan";
@@ -20,6 +21,7 @@ import { Hud } from "./ui/hud";
 import { InfoPanel } from "./ui/infoPanel";
 import { SaveMenu } from "./ui/saveMenu";
 import { Speed, SpeedControls } from "./ui/speed";
+import { PRESETS, PROBE_SECONDS, Quality, QUALITY_LABEL, qualityForFps, readQuality, SettingsPanel, writeQuality } from "./ui/settings";
 import { AchievementPopup } from "./ui/achievements";
 import { MarkerLabel } from "./ui/markerLabel";
 import { Tutorial } from "./ui/tutorial";
@@ -141,27 +143,78 @@ function load(json: string): void {
   save();
 }
 
-const menu = new SaveMenu(document.getElementById("menu")!, { serialize: () => serialize(state), cycle: () => state.tide.cycle, islandSeed: () => state.world.seed, load, newTown });
+// ---------- playtest log (opt-in, local) ----------
+const playtest = new PlaytestLog();
+let playtestNotes = readPlaytestNotes();
+function setPlaytest(on: boolean): void {
+  writePlaytestEnabled(on);
+  if (on) playtest.start(); else playtest.stop();
+}
+if (readPlaytestEnabled()) playtest.start();
+onNotify(msg => playtest.record("warning", state.tide.cycle, state.resources.money, msg));
+placement.onPlace = (tool, b, cost) => playtest.record("place", state.tide.cycle, state.resources.money, `${tool} at ${b.cells[0].i},${b.cells[0].j}${cost ? ` · ${Math.round(cost)}$` : ""}`);
+placement.onRemove = (b, refund) => playtest.record("remove", state.tide.cycle, state.resources.money, `${b.kind} at ${b.cells[0].i},${b.cells[0].j} · refund ${refund}$`);
+const menu = new SaveMenu(document.getElementById("menu")!, {
+  serialize: () => serialize(state), cycle: () => state.tide.cycle, islandSeed: () => state.world.seed, load, newTown,
+  playtest: {
+    enabled: () => playtest.enabled,
+    setEnabled: setPlaytest,
+    notes: () => playtestNotes,
+    setNotes: text => { playtestNotes = text; writePlaytestNotes(text); },
+    exportJson: () => JSON.stringify(playtest.export(playtestNotes), null, 2),
+    fileName: () => playtestFileName(),
+  },
+});
 let speed: Speed = 1;
 const audio = new Audio();
-const REFLECTIONS_KEY = "tidewater.reflections";
+/** The reflections toggle flips the live setting; the quality preset decides what a launch starts with. */
 function setReflections(on: boolean): void {
   water.setReflections(on);
-  try { localStorage.setItem(REFLECTIONS_KEY, on ? "1" : "0"); } catch { /* ignore */ }
 }
-try { if (localStorage.getItem(REFLECTIONS_KEY) === "1") water.setReflections(true); } catch { /* ignore */ }
+// ---------- quality presets ----------
+// Remembered in localStorage; on the first launch a PROBE_SECONDS frame-rate probe at High picks one.
+let quality: Quality = readQuality() ?? "high";
+let qualityNote = readQuality() ? "" : "Measuring the frame rate for a few seconds…";
+let probe: { frames: number; t0: number } | null = readQuality() ? null : { frames: 0, t0: performance.now() };
+const settings = new SettingsPanel(document.getElementById("settings")!, { current: () => quality, apply: q => applyQuality(q), note: () => qualityNote });
+function applyQuality(q: Quality): void {
+  quality = q;
+  const c = PRESETS[q];
+  pipe.bloomEnabled = c.bloom;
+  water.setReflections(c.reflections);
+  water.setCaustics(c.caustics);
+  walkers.cap = c.walkers;
+  wildlife.showGulls = c.gulls;
+  writeQuality(q);
+  settings.render();
+}
+function probeFrame(): void {
+  if (!probe) return;
+  probe.frames++;
+  const s = (performance.now() - probe.t0) / 1000;
+  if (s < PROBE_SECONDS) return;
+  const fps = probe.frames / s;
+  probe = null;
+  const q = qualityForFps(fps);
+  qualityNote = `Chosen at first launch: ${QUALITY_LABEL[q]} (${fps.toFixed(0)} fps measured)`;
+  applyQuality(q);
+  notify(state, `Quality set to ${QUALITY_LABEL[q]} (${fps.toFixed(0)} fps measured) — change it under Quality…`);
+}
+applyQuality(quality);
 const speedControls = new SpeedControls(document.getElementById("speed")!, {
   onSpeed: s => { speed = s; },
   onMenu: () => menu.toggle(),
   onMute: () => audio.setMuted(!audio.muted),
   onReflections: () => setReflections(!water.reflections),
+  onSettings: () => settings.toggle(),
 });
 
 window.addEventListener("keydown", e => {
   if (e.target instanceof HTMLInputElement) return;
-  if (e.key === "Escape") { if (menu.open) menu.toggle(false); else if (info.selectedId !== null) info.select(null); else menu.toggle(true); return; }
+  if (e.key === "Escape") { if (settings.open) settings.toggle(false); else if (menu.open) menu.toggle(false); else if (info.selectedId !== null) info.select(null); else menu.toggle(true); return; }
   if (e.key === " ") { speed = speed === 0 ? 1 : 0; e.preventDefault(); return; }
   if (e.key === "]" || e.key === "[") { placement.adjustLift(e.key === "]" ? 1 : -1); e.preventDefault(); return; }
+  if ((e.key === "r" || e.key === "R") && placement.rotatable) { placement.rotate(); e.preventDefault(); return; }
   if (cameraControl.keyDown(e.key)) { e.preventDefault(); return; }
   if (hud.key(e.key)) e.preventDefault();
 });
@@ -203,10 +256,15 @@ function syncView(): void {
   terrain.update(camera.position, state.tide.level, state.tide.wetLevel);
   water.update(viewTime, camera.position, state.tide.level);
   cameraControl.leftDrag = !placement.dragsLine;
-  hud.update({ tool: placement.tool, blocker: placement.blocker, warn: placement.warn, line: placement.line, lift: placement.liftable ? placement.lift : null, stilt: placement.stilt, cost: placement.cost, fate: placement.fate, state });
+  hud.update({ tool: placement.tool, blocker: placement.blocker, warn: placement.warn, line: placement.line, lift: placement.liftable ? placement.lift : null, rotatable: placement.rotatable, stilt: placement.stilt, cost: placement.cost, fate: placement.fate, state });
   info.update(state);
   tutorial.update(state);
   hud.highlight(tutorial.current);
+  if (playtest.enabled) {
+    playtest.hint(hud.lastHint.text, hud.lastHint.isDefault, state.tide.cycle, state.resources.money);
+    playtest.step(tutorial.index, tutorial.title, state.tide.cycle, state.resources.money);
+    playtest.sample(state.tide.cycle, state.resources.money, population(state)); // once per cycle (it dedupes)
+  }
   markerLabel.update(pierMarker.cell ? api.screenOf(pierMarker.cell.i + 0.5, pierMarker.cell.j + 0.5, state.tide.level + 0.2) : null);
   achievements.update(state, viewTime);
   speedControls.update(speed, audio.muted, water.reflections);
@@ -224,6 +282,7 @@ engine.runRenderLoop(() => {
     acc -= SIM_TICK;
     if (state.tide.peaked) save();
   }
+  if (probe) probeFrame();
   syncView();
   scene.render();
 });
@@ -241,9 +300,10 @@ const api = {
     overlays.show(kind);
   },
   /** Place (and pay for) a building; "boat" buys a boat at the pier under (i, j). Null when blocked. */
-  place(type: Tool, i: number, j: number) {
+  /** Place the tool at (i, j); `rot` is a quarter turn for buildings (omit to face the street). */
+  place(type: Tool, i: number, j: number, rot: number | null = null) {
     placement.setTool(type);
-    return placement.place({ i, j });
+    return placement.place({ i, j }, rot);
   },
   remove(i: number, j: number) {
     placement.remove({ i, j });
@@ -335,6 +395,7 @@ const api = {
     personScale: () => PERSON_SCALE,
     porters: () => ({ now: walkers.porters, spawned: walkers.portersSpawned }),
     reflections: () => water.reflections,
+    quality: () => ({ quality, bloom: pipe.bloomEnabled, reflections: water.reflections, caustics: water.caustics, walkersCap: walkers.cap, gulls: wildlife.showGulls, note: qualityNote, probing: probe !== null }),
     chunks: () => views.chunkCount,
     caustics: () => water.caustics,
     gulls: () => wildlife.gullCount,
@@ -357,8 +418,12 @@ const api = {
       return out;
     },
   },
-  /** The reflections quality toggle (remembered). */
+  /** The reflections toggle (live; the quality preset sets the launch state). */
   setReflections,
+  /** Apply and remember a quality preset. */
+  setQuality: applyQuality,
+  /** The playtest log: switch it, read the export (with the notes the menu holds). */
+  playtest: { enable: setPlaytest, export: () => playtest.export(playtestNotes), get enabled() { return playtest.enabled; } },
   /** Why the current tool can't go at (i, j), or null when it can. */
   blockerAt(type: Tool, i: number, j: number) {
     placement.setTool(type);
@@ -417,4 +482,6 @@ const api = {
   engine, scene, camera, placement,
 };
 (window as unknown as { __tidewater: typeof api }).__tidewater = api;
+/** The console/test API's shape, for the headless scripts under test/ (a type-only import: they never load this module). */
+export type TidewaterApi = typeof api;
 scene.executeWhenReady(() => { api.ready = true; api.bootMs = performance.now() - bootStart; });

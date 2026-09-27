@@ -34,6 +34,15 @@ export interface SaveMenuHooks {
   islandSeed(): number;
   load(json: string): void;
   newTown(seed: number): void;
+  /** The opt-in playtest log: its switch, the notes that go into the export, and the export itself. */
+  playtest: {
+    enabled(): boolean;
+    setEnabled(on: boolean): void;
+    notes(): string;
+    setNotes(text: string): void;
+    exportJson(): string;
+    fileName(): string;
+  };
 }
 
 /** The seed a typed value means: a whole number from 0 up; anything else is the original island. */
@@ -47,9 +56,24 @@ export class SaveMenu {
   private readonly seedInput: HTMLInputElement;
 
   constructor(private readonly root: HTMLElement, private readonly hooks: SaveMenuHooks) {
-    root.innerHTML = `<div class="menu-head"><h2>Town</h2><button type="button" class="close" aria-label="Close">×</button></div><div class="slots"></div><div class="menu-actions"><label class="seed-field">Island seed <input class="seed" type="number" min="0" step="1" inputmode="numeric" aria-label="Island seed"></label><button type="button" class="random">Random</button><button type="button" class="new">New town</button></div>`;
+    root.innerHTML = `<div class="menu-head"><h2>Town</h2><button type="button" class="close" aria-label="Close">×</button></div><div class="slots"></div><div class="menu-actions"><label class="seed-field">Island seed <input class="seed" type="number" min="0" step="1" inputmode="numeric" aria-label="Island seed"></label><button type="button" class="random">Random</button><button type="button" class="new">New town</button></div>`
+      + `<div class="playtest"><label class="playtest-switch"><input type="checkbox" class="playtest-on"> Record a playtest log (the first 30 minutes; it stays on this machine)</label><textarea class="playtest-notes" rows="2" placeholder="Notes to go in the export"></textarea><div class="menu-actions"><button type="button" class="playtest-export">Export playtest log</button></div></div>`;
     this.panel = root.querySelector<HTMLElement>(".slots")!;
     this.seedInput = root.querySelector<HTMLInputElement>(".seed")!;
+    const playtestOn = root.querySelector<HTMLInputElement>(".playtest-on")!;
+    const notes = root.querySelector<HTMLTextAreaElement>(".playtest-notes")!;
+    playtestOn.checked = hooks.playtest.enabled();
+    notes.value = hooks.playtest.notes();
+    playtestOn.addEventListener("change", () => hooks.playtest.setEnabled(playtestOn.checked));
+    notes.addEventListener("input", () => hooks.playtest.setNotes(notes.value));
+    root.querySelector(".playtest-export")!.addEventListener("click", () => {
+      const blob = new Blob([hooks.playtest.exportJson()], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = hooks.playtest.fileName();
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
     root.querySelector(".close")!.addEventListener("click", () => this.toggle(false));
     root.querySelector(".random")!.addEventListener("click", () => { this.seedInput.value = String(1 + Math.floor(Math.random() * 999999)); });
     root.querySelector(".new")!.addEventListener("click", () => {

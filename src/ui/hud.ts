@@ -17,6 +17,8 @@ export interface HudState {
   line: { count: number; cost: number } | null;
   /** Deck lift steps for the current tool, or null when the tool has no lift. */
   lift: number | null;
+  /** The current tool is a building that R turns. */
+  rotatable: boolean;
   /** Stilt length under the hovered footprint (0 for kinds that don't price stilts) and its full price. */
   stilt: number;
   cost: number;
@@ -69,6 +71,8 @@ export class Hud {
   private readonly tideShip: HTMLElement;
   private readonly tideEvent: HTMLElement;
   private readonly hint: HTMLElement;
+  /** What the hint line shows, and whether it is just the tool's default prompt (for the playtest log). */
+  lastHint = { text: "", isDefault: true };
   private readonly ledgerLabel: HTMLElement;
   private readonly ledgerValue: HTMLElement;
   private readonly tradeStatus: HTMLElement;
@@ -287,8 +291,11 @@ export class Hud {
     // Auto-sized pieces show their stilts and the price they make: long stilts on low ground cost more.
     const stiltText = s.lift !== null ? `Stilts ${s.stilt.toFixed(1)} m · ${s.cost}$${s.lift > 0 ? ` · deck +${(s.lift * LIFT_STEP).toFixed(1)} m` : ""} · [ ] lifts the deck` : null;
     const base = LINE_TOOL_HINT.has(s.tool) ? FATE_TEXT.line : FATE_TEXT.safe;
-    const cautions = [s.warn, fateText, stiltText].filter((t): t is string => t !== null);
-    this.hint.textContent = s.blocker ?? lineText ?? (cautions.length ? cautions.join(" · ") : base);
+    const turnText = s.rotatable ? "R turns it (the door faces the street on its own)" : null;
+    const cautions = [s.warn, fateText, stiltText, turnText].filter((t): t is string => t !== null);
+    const hintText = s.blocker ?? lineText ?? (cautions.length ? cautions.join(" · ") : base);
+    this.lastHint = { text: hintText, isDefault: hintText === base };
+    this.hint.textContent = hintText;
     this.hint.classList.toggle("blocked", s.blocker !== null);
     this.hint.classList.toggle("warn", s.blocker === null && !s.line && (s.warn !== null || s.fate !== "safe"));
 

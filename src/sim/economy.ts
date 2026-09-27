@@ -15,6 +15,7 @@ import { active, damageNear, fireSources, repairDamage, rollIgnitions } from "./
 import { REMOVE_REFUND, STILT_COST_PER_UNIT } from "./balance";
 import { repayLoan } from "./loan";
 import { Grid } from "./grid";
+import { moveMoney } from "./money";
 import { depleteGround, fishAt, pollutionAt, routeWaste, settleFields } from "./pollution";
 import { chooseGround } from "./sea";
 import { announceLevel, rebuildCoverage } from "./services";
@@ -29,15 +30,11 @@ export function canAfford(state: SimState, cost: Cost): boolean {
   return r.money >= cost.money && r.planks >= (cost.planks ?? 0) && r.timber >= (cost.timber ?? 0);
 }
 
-export function pay(state: SimState, cost: Cost): void {
+export function pay(state: SimState, cost: Cost, why = "build"): void {
   const r = state.resources;
-  r.money -= cost.money;
+  moveMoney(state, -cost.money, why);
   r.planks -= cost.planks ?? 0;
   r.timber -= cost.timber ?? 0;
-}
-
-export function buildingCost(kind: BuildingKind): Cost {
-  return BUILDINGS[kind].cost;
 }
 
 /** Does this kind size (and price) its own stilts? */
@@ -53,16 +50,19 @@ export function placeCost(kind: BuildingKind, stilt = 0): Cost {
   return { ...c, money: Math.round(c.money + STILT_COST_PER_UNIT * stilt) };
 }
 
-/** Validate, pay, and place a building anchored at `anchor`. Null (and nothing paid) when it can't go there. */
-export function tryPlace(state: SimState, grid: Grid, kind: BuildingKind, anchor: Cell, lift = 0): Building | null {
-  const cells = grid.footprint(kind, anchor);
+/**
+ * Validate, pay, and place a building anchored at `anchor`. Null (and nothing paid) when it can't go there.
+ * `rot` is the player's quarter turn; null lets the door face the street (Grid.facing).
+ */
+export function tryPlace(state: SimState, grid: Grid, kind: BuildingKind, anchor: Cell, lift = 0, rot: number | null = null): Building | null {
+  const cells = grid.footprint(kind, anchor, rot ?? 0);
   if (!cells || !grid.canPlace(kind, cells)) return null;
   const floor = grid.floorFor(kind, cells, autoStilts(kind) ? lift : 0);
   const cost = placeCost(kind, grid.stiltLength(kind, cells, floor));
   if (!canAfford(state, cost)) return null;
   pay(state, cost);
   const firstHarbor = kind === "harbor" && !grid.isleOpen();
-  const b = grid.place(kind, cells, autoStilts(kind) ? lift : 0);
+  const b = grid.place(kind, cells, autoStilts(kind) ? lift : 0, rot ?? grid.facing(cells));
   if (firstHarbor) notify(state, "The ferry runs: the isle across the water is open to build on");
   return b;
 }
@@ -71,7 +71,7 @@ export function tryPlace(state: SimState, grid: Grid, kind: BuildingKind, anchor
 export function removeBuilding(state: SimState, grid: Grid, b: Building): number {
   const refund = Math.round(BUILDINGS[b.kind].cost.money * REMOVE_REFUND);
   grid.remove(b);
-  state.resources.money += refund;
+  moveMoney(state, refund, "refund");
   return refund;
 }
 
@@ -100,7 +100,7 @@ export function boatPurchaseBlocker(state: SimState, at: Building | null): strin
 
 export function buyBoat(state: SimState, at: Building): boolean {
   if (boatPurchaseBlocker(state, at)) return false;
-  state.resources.money -= BOAT_COST;
+  moveMoney(state, -BOAT_COST, "boat");
   at.boats++;
   notify(state, `A fishing boat is tied up at the ${BUILDINGS[at.kind].name.toLowerCase()}`);
   return true;
@@ -202,7 +202,7 @@ function produce(state: SimState, grid: Grid, buildings: Building[]): void {
         b.progress += s;
         if (b.progress >= SHIPYARD_CYCLES) {
           b.progress = 0;
-          pay(state, SHIPYARD_BOAT_COST);
+          pay(state, SHIPYARD_BOAT_COST, "shipyard");
           berth.boats++;
           b.output = 1;
           notify(state, `The shipyard launched a boat for the ${BUILDINGS[berth.kind].name.toLowerCase()}`);
@@ -295,7 +295,7 @@ export function settleCycle(state: SimState, grid: Grid): void {
   // Upkeep.
   for (const b of buildings) stats.expenses += BUILDINGS[b.kind].upkeep;
   stats.expenses += repayLoan(state);
-  r.money += stats.income - stats.expenses;
+  moveMoney(state, stats.income - stats.expenses, "settlement");
 
   // The trade ship and the tourists (they move money themselves; the stats just record it).
   const moved = settleTrade(state, grid);

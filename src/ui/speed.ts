@@ -8,6 +8,7 @@ export interface SpeedCallbacks {
   onMenu: () => void;
   onMute: () => void;
   onReflections: () => void;
+  onSettings: () => void;
 }
 
 export class SpeedControls {
@@ -45,6 +46,13 @@ export class SpeedControls {
     this.reflections.title = "Water reflections (costs a second render per frame)";
     this.reflections.addEventListener("click", cb.onReflections);
     root.appendChild(this.reflections);
+    const settings = document.createElement("button");
+    settings.type = "button";
+    settings.className = "settings-open";
+    settings.textContent = "Quality…";
+    settings.title = "Quality presets: High / Medium / Low";
+    settings.addEventListener("click", cb.onSettings);
+    root.appendChild(settings);
   }
 
   update(current: number, muted = false, reflections = false): void {

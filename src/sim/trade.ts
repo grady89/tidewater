@@ -2,12 +2,13 @@
 // lighthouse) at that cycle's high water: it buys smoked goods and surplus fish above the market price, delivers
 // any plank order, swaps the tourists, and the view sails it in and out through that high water.
 import {
-  BUILDINGS, FOOD_PER_CYCLE, FOOD_RESERVE_CYCLES, IMMIGRANTS_PER_CYCLE, INN_CAPACITY, PLANK_ORDER_SIZE, TOURIST_BORED_FACTOR,
+  FOOD_PER_CYCLE, FOOD_RESERVE_CYCLES, IMMIGRANTS_PER_CYCLE, INN_CAPACITY, PLANK_ORDER_SIZE, TOURIST_BORED_FACTOR,
   TOURIST_SPEND, TOURISTS_PER_SHIP, TRADE_EVERY, TRADE_EVERY_LIGHTHOUSE, TRADE_PLANK_PRICE, TRADE_PRICE_FISH,
   TRADE_PRICE_SMOKED,
 } from "./balance";
 import { addCapped } from "./economy";
 import { Grid } from "./grid";
+import { moveMoney } from "./money";
 import { Building, buildingList, notify, population, SimState } from "./state";
 import { staffing } from "./workers";
 
@@ -63,7 +64,7 @@ export function settleTrade(state: SimState, grid: Grid): { trade: number; touri
   // Tourists spend every cycle they're here.
   if (state.tourists > 0) {
     tourism = state.tourists * TOURIST_SPEND * (attractions(state, grid) ? 1 : TOURIST_BORED_FACTOR);
-    r.money += tourism;
+    moveMoney(state, tourism, "tourism");
   }
 
   if (state.tide.cycle >= t.nextVisit) {
@@ -83,7 +84,7 @@ export function settleTrade(state: SimState, grid: Grid): { trade: number; touri
       t.plankOrder = Math.max(0, t.plankOrder - delivered);
       if (delivered > 0) notify(state, `The trade ship unloaded ${delivered} planks`);
     }
-    r.money += trade;
+    moveMoney(state, trade, "trade");
     // Tourists: the last party sails, a new one lands if there is room.
     const room = innCapacity(state);
     const arriving = Math.min(room, TOURISTS_PER_SHIP);
@@ -102,4 +103,3 @@ export function cyclesToShip(state: SimState): number {
   return state.trade.nextVisit < 0 ? -1 : Math.max(0, state.trade.nextVisit - state.tide.cycle);
 }
 
-export const HARBOR = BUILDINGS.harbor;

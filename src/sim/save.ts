@@ -1,5 +1,5 @@
 // Save/load is JSON.stringify of the ledger. The grid index is rebuilt from the pieces on load.
-import { createState, SimState } from "./state";
+import { Building, createState, SimState } from "./state";
 
 export const AUTOSAVE_KEY = "tidewater.autosave";
 
@@ -19,6 +19,7 @@ export function deserialize(json: string): SimState {
   s.extraTrees ??= []; s.landfill ??= []; // saves from before the land tools
   s.loan ??= { owed: 0, perCycle: 0, taken: 0 };
   s.world ??= { seed: 0 }; // saves from before seeded islands: the original island
+  for (const b of Object.values(s.buildings ?? {})) (b as Partial<Building>).rot ??= 0; // saves from before rotation
   if (s.tsunami && s.tsunami.due === undefined) s.tsunami.due = -1; // saves from before the warning cycle
   const fresh = createState();
   for (const key of Object.keys(fresh) as (keyof SimState)[]) {

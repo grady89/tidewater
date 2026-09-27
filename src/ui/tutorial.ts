@@ -59,6 +59,10 @@ export class Tutorial {
   }
 
   /** The open step's pointers, for the HUD to pulse. */
+  /** The current step's index (STEPS.length once the walkthrough is done) and title, for the playtest log. */
+  get index(): number { return this.step; }
+  get title(): string { return STEPS[this.step]?.title ?? "Walkthrough done"; }
+
   get current(): { tab?: Category; tool?: Tool } | null {
     if (this.step >= STEPS.length) return null;
     const s = STEPS[this.step];

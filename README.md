@@ -6,6 +6,9 @@ shellfish, trade, tourists) and the sea takes (pollution, sharks, storms, and on
 
 ![A stilt town at high water with boats on their grounds](shots/m4-high.png)
 
+**Play it:** https://grady89.github.io/tidewater/ — built and published from `main` by GitHub Actions
+(`.github/workflows/ci.yml`: build + tests on every push, Pages deploy on `main`).
+
 ## Run it
 
 ```bash
@@ -13,7 +16,10 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5180. `npm run build` typechecks and bundles to `dist/`; `npm run preview` serves that.
+Open http://localhost:5180. `npm run build` typechecks and bundles to `dist/`; `npm run preview` serves that;
+`npm run check:dist` loads the build under the GitHub Pages path in headless Chrome and fails on any 404.
+QA tools: `npm run fuzz` (sim fuzzer, 50 seeds × 2000 cycles across worker threads), `npm run monkey` (15 minutes
+of random real input in headless Chrome), `npm run quality` (the three presets measured on the software renderer).
 `npm run test` runs the simulation's unit checks; `npm run smoke` drives the whole game headlessly through every
 milestone and drops screenshots in `shots/`.
 
@@ -36,12 +42,15 @@ milestone and drops screenshots in `shots/`.
 | First pier | the gold ring on the water shows where it fits; docks need a pier or raised walkway alongside |
 | Buy a boat | pick **Boat** (Sea tab) and click a pier or dock |
 | Lantern post | pick **Lantern post** (Streets tab) and click a walkway |
+| Turn a building | **R** while placing. The blue tab on the ghost is the door; it faces an adjoining street on its own until you turn it |
 | Order planks | the button in the panel once you have a harbor; the trade ship brings them |
 | Overlays | Pollution, Fish, Sharks, Fire — the buttons above the ledger line |
 | Speed | the bar at the bottom: pause (space), 1×, 2×, 4× |
 | Save / load / new town | **Town…** at the bottom, or Esc. **New town** starts on the island of the seed in the field (0 is the original island; **Random** picks another) |
+| Playtest log | in **Town…**: tick *Record a playtest log* and the first 30 minutes of what you do and what the game tells you are kept on this machine; **Export playtest log** downloads them as JSON, with your notes |
 | Sound | the speaker button; it starts on your first click |
-| Reflections | **Reflections** at the bottom — a second render of the scene in the water; off by default |
+| Reflections | **Reflections** at the bottom — a second render of the scene in the water; the quality preset decides the start |
+| Quality | **Quality…** at the bottom: High / Medium (no reflections) / Low (no bloom, reflections, caustics or gulls; half the walkers). Chosen for you at first launch by a 3-second frame-rate probe and remembered |
 
 ## How the town works
 
