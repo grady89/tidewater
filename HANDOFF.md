@@ -194,6 +194,27 @@ Three things next:
    following the Fjord and Atoll files; the materials (mangrove, lava, dune, oasis, vent, spring, fertile) and
    the shader tints are already there for them.
 
+## Assets pilot (branch `assets-pilot`, 2026-09-28)
+
+A pilot of headless Blender as a second way to make a mesh. Nothing the game ships changed: the Blender versions sit
+behind `USE_BLENDER_ASSETS` (config.ts, off) and CLAUDE.md is untouched. Read docs/assets/pilot.md (the report,
+with the turntables, the side-by-sides and the numbers), decisions.md (16 calls the brief left open), PROGRESS.md.
+
+- **The pipeline** (tools/assets): `npm run assets` writes palette.json from the looks, resolves Blender once and runs
+  build.py headless over six Python kits (dory, outrigger, longboat in all three looks; whale, turtle, palm). It
+  enforces the palette and the triangle budgets, and writes public/assets/*.glb and turntables in shots/assets/,
+  both committed. Only rebuilding needs Blender (4 or later; this machine has 5.2.2 LTS).
+- **The loader** (src/view/assets.ts): glTF in (`@babylonjs/loaders`, imported on first use), kit-shaped meshes out,
+  in the game's axes, colours and winding. With the flag (or `?assets=blender`) Boats, Trees and Wildlife swap to
+  them once loaded. `__tidewater.view.assetCompare(name)` shows one beside its primitive; the smoke writes
+  shots/assets/compare-<name>.png for all six.
+- **The finding**: at the island's default distance the pairs look the same and frame rate doesn't move (165 fps
+  either way on the GPU; triangles up 7–10 % on the Fjord and Atoll, from the longboat and the palm). Close up, the
+  Blender versions are plainly better.
+- **The recommendation**: sanction it narrowly, for fixed-shape instanced props and creatures, and keep everything
+  the ledger shapes at runtime procedural. Flipping the flag needs a look at the comparisons, a CLAUDE.md §2
+  amendment (it says "no imported models"), and a trimmed longboat. pilot.md has the reasoning.
+
 ## Balance observations from the playtests
 
 - The market's two silent failure modes — no walkway to a pier, no workers — were the #1 confusion in play

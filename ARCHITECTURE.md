@@ -83,6 +83,8 @@ src/view/
   ground.ts              the ground sampler every prop stands on (the rendered terrain, landfill included)
   roofs.ts               roof shape and colour per building (shared by the island's meshes and the World's miniatures)
   biomes/                the looks: index.ts (BiomeLook, lookFor, Tidewater's look), fjord.ts, atoll.ts
+  assets.ts              the assets pilot's loader (behind USE_BLENDER_ASSETS, off): public/assets/*.glb → kit-shaped meshes
+  assetCompare.ts        the pilot's side-by-side: a Blender asset beside its primitive kit (`view.assetCompare`)
   audio.ts               procedural Web Audio (surf, bell, thrum, pad, gulls, hammering)
 src/build/
   placement.ts           pointer → cell, ghost (fate tint, stilts, door tab), drag-to-paint, lift, turn, place/remove
@@ -266,3 +268,26 @@ meets them:
   (both faces built with a harbor, sharing an edge); decisions.md #30, PROGRESS.md Stage 9 for where it stopped.
 
 `docs/biomes/PROGRESS.md` is the stage ledger, `decisions.md` the calls made where BIOMES.md was silent.
+
+## Blender-built assets (the pilot, docs/assets, branch `assets-pilot`)
+
+A second way to make a mesh, trialled and behind a flag: `USE_BLENDER_ASSETS` (config.ts, off; `?assets=blender` turns
+it on for one page load). Nothing the game draws depends on it.
+
+- **Making them** (tools/assets; Blender 4 or later is needed only to rebuild): `npm run assets` (optionally with asset
+  names and `--look <id>`) writes tools/assets/palette.json from src/view/biomes (and fails if it changed uncommitted),
+  resolves Blender once (tools/assets/blender.json, gitignored) and runs tools/assets/build.py headless. Each asset is
+  a Python kit (tools/assets/kits/<name>.py, `build(bpy, palette, look_id)`) built from lib.py's plain-geometry
+  helpers: every face flat, one COLOR_0 corner attribute painted only from the look's palette (plus three tint masks
+  for instance-painted parts), welded, triangulated, origin at the base centre, named child objects. build.py enforces
+  the triangle budget (props 600, boats 900), exports public/assets/<name>[.<look>].glb and renders a Workbench
+  turntable to shots/assets/. The outputs are committed, so nothing else ever needs Blender.
+- **Loading them** (src/view/assets.ts): the glTF plugin (`@babylonjs/loaders`, imported on first use) reads a file once
+  per name and look; every part is lifted out of the hierarchy into plain vertex data in the game's axes (Blender x,
+  y, z → x, z, y), COLOR_0 is turned back from linear to the sRGB bytes the flat material uses, each triangle is wound
+  Babylon's way (checked against the file's normals), and normals are checked flat. The kits ask for meshes in their
+  own shape — `boatAsset` (hull + sail), `palmAsset` (trunks + canopies), `whaleAsset` (whales + spouts),
+  `turtleAsset` — and thin-instance them unchanged. With the flag on, main.ts preloads the twelve files and asks Boats,
+  Trees and Wildlife to rebuild (`reloadKit`, `reloadAssets`); with it off nothing loads. The primitive builders are
+  exported functions (`primitiveBoatKit`, `primitiveTreeKit`, `primitiveWhale`, `primitiveTurtle`) so the comparison
+  (`view.assetCompare`, src/view/assetCompare.ts) can draw both.
