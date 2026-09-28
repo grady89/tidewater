@@ -13,7 +13,7 @@ import { advanceCycles, tick } from "../src/sim/tick";
 import { companyCarries } from "../src/sim/trade";
 import { jobsAt } from "../src/sim/workers";
 import { cellIndex, Grid } from "../src/sim/grid";
-import { bridgeTo, growStreet, placeByWalkway, placeEdge, starterTown } from "./scenario";
+import { bridgeTo, growStreet, placeByWalkway, placeEdge, starterTown, joinByLine } from "./scenario";
 
 function fjordTown(seed = 7) {
   const { state, grid } = newGame(1, seed, "fjord");
@@ -130,14 +130,8 @@ describe("the Fjord's kinds", () => {
     for (const b of buildingList(state)) if (b.kind === "pier") b.boats = 0;
     advanceCycles(state, grid, 2);
     if (mine!.workers === 0) {
-      // Join the mine to the street along a straight line of paths and walkways.
-      const from = town.market!.cells[0], to = mine!.cells[0];
-      const steps = Math.max(Math.abs(to.i - from.i), Math.abs(to.j - from.j));
-      for (let k = 1; k < steps; k++) {
-        const c = { i: Math.round(from.i + (to.i - from.i) * k / steps), j: Math.round(from.j + (to.j - from.j) * k / steps) };
-        if (grid.buildingAt(c)) continue;
-        tryPlace(state, grid, "path", c) ?? tryPlace(state, grid, "walkway", c) ?? tryPlace(state, grid, "raisedWalkway", c);
-      }
+      // Join the mine to the street along a walkable route of paths and walkways.
+      joinByLine(state, grid, town.market!.cells[0], mine!.cells[0]);
       advanceCycles(state, grid, 2);
     }
     expect(mine!.workers).toBeGreaterThan(0);

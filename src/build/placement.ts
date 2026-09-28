@@ -6,7 +6,7 @@ import { BuildingKind, BUILDINGS, PlacementClass, ROTATABLE_CLASSES } from "../s
 import { autoStilts, boatPurchaseBlocker, buyBoat, canAfford, placeCost, removeBuilding, tryPlace } from "../sim/economy";
 import { BOAT_COST, LANDFILL_COST, LANTERN_COST, LIFT_MAX, PLANT_COST } from "../sim/balance";
 import { CLEARANCE } from "../config";
-import { Grid, HALF, inBounds, worldToCell } from "../sim/grid";
+import { DIRS, Grid, HALF, inBounds, worldToCell } from "../sim/grid";
 import { Axis, linePath, MAX_LINE, routePath } from "./line";
 export { linePath, routePath } from "./line";
 import { ground as groundHeight } from "../view/ground";
@@ -261,6 +261,9 @@ export class Placement {
     if (!this.grid.terrainOk(kind, cells)) return no(`Needs ground between ${def.terrain!.min} and ${def.terrain!.max} m`);
     if (!this.grid.materialOk(kind, cells)) return no(def.material && !cells.some(c => UNBUILDABLE.has(this.grid.materialAt(c))) ? `Needs ${MATERIAL_LABEL[def.material]}` : "Nothing stands on the lava field");
     if (cells.some(c => this.grid.buildingAt(c))) return no("Occupied");
+    if (this.grid.treeOn(cells)) return no("A tree stands here: clear it (Land tab) or go round");
+    if (!this.grid.slopeOk(kind, cells)) return no("Too steep to walk: a path takes gentler ground");
+    if (!this.grid.joinStepOk(kind, cells)) return no("Too steep a step up from the street: a path climbs at most 0.7 m a cell, a stair 1 m");
     if (this.grid.onIsle(cells) && !this.grid.isleOpen()) return no("Across the water: a harbor's ferry opens the isle");
     if (def.needsWalkway && !this.grid.touchesWalkway(cells)) return no("Must touch a walkway on the flats");
     if (def.needsLink && !this.grid.touchesLink(cells)) return no("Must touch a pier or a raised walkway (they bridge deep water)");
@@ -291,7 +294,17 @@ export class Placement {
 
   private fitsKind(kind: BuildingKind, c: Cell): boolean {
     const cells = this.grid.footprint(kind, c);
-    return !!cells && this.grid.classOk(BUILDINGS[kind].cls, cells) && !this.grid.buildingAt(c) && (!this.grid.onIsle(cells) || this.grid.isleOpen());
+    return !!cells && this.grid.classOk(BUILDINGS[kind].cls, cells) && !this.grid.buildingAt(c) && (!this.grid.onIsle(cells) || this.grid.isleOpen())
+      && !this.grid.treeOn(cells) && this.grid.slopeOk(kind, cells) && this.grid.joinStepOk(kind, cells);
+  }
+
+  /** A street piece or a berth orthogonally beside `c`: the run leaves from it when `c` itself cannot take the run. */
+  private streetBeside(c: Cell): Building | null {
+    for (const d of DIRS) {
+      const b = this.grid.buildingAt({ i: c.i + d.i, j: c.j + d.j });
+      if (b && BUILDINGS[b.kind].network !== "leaf") return b;
+    }
+    return null;
   }
 
   /**
@@ -446,8 +459,13 @@ export class Placement {
       const start = this.lineStart, end = this.hover;
       if (this.lineAxis === null && (end.i !== start.i || end.j !== start.j)) this.lineAxis = Math.abs(end.i - start.i) >= Math.abs(end.j - start.j) ? "i" : "j";
       const axis = this.lineAxis ?? undefined;
-      const from = this.grid.buildingAt(start), to = this.grid.buildingAt(end);
-      const body = routePath(start, end, c => this.lineFits(c), MAX_LINE, { cost: c => this.lineCostAt(c), axis, startCells: from?.cells, goalCells: to?.cells })
+      // A drag begun on ground the run cannot take, beside a street (the flats at the foot of the hill, where a
+      // path cannot go), leaves from that street, so the run joins it.
+      const from = this.grid.buildingAt(start) ?? (this.lineFits(start) ? null : this.streetBeside(start));
+      const to = this.grid.buildingAt(end);
+      const kind = this.tool as BuildingKind;
+      const step = (p: Cell, q: Cell) => this.grid.stepOk(this.lineKindAt(p) ?? kind, p, this.lineKindAt(q) ?? kind, q);
+      const body = routePath(start, end, c => this.lineFits(c), MAX_LINE, { cost: c => this.lineCostAt(c), axis, step, startCells: from?.cells, goalCells: to?.cells })
         ?? linePath(start, end, axis).slice(1);
       this.linePath = (this.lineFits(start) ? [start, ...body] : body).slice(0, MAX_LINE);
       this.showLine();

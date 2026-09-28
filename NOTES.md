@@ -1043,6 +1043,22 @@ Grady's own pass (2026-09-28, by mouse) found what the scripted tester could not
   instances live in the mesh's own frame, so every instance's height was multiplied by 0.06 — the run's ghost
   had always sat near sea level, plausible on the low flats and buried anywhere higher. The thickness is now
   in the box's geometry.
+
+Grady's third pass (paths on the hill):
+
+- **Paths took any ground, through trees and up cliffs.** Nothing stands on a standing tree now
+  (`Grid.treeOn`, in `canPlace`: clear it from the Land tab or go round), and a path is walkable: it climbs at
+  most `PATH_MAX_RISE` (0.7 m) per cell along the run (`Grid.stepOk`, threaded through `routePath` as
+  `RouteOptions.step`), may only be stepped onto from a street it touches within that rise — or within a stair,
+  `STREET_STEP_MAX` 1 m, from a deck (`joinStepOk`) — and cannot perch on a spike (`slopeOk`: some neighbour
+  within the rise). A trail may still follow the contour of a steep flank; the drag finds the switchbacks itself.
+  The Fjord's banks are cliffs (two thirds of its dry cells rise more than 0.7 m a cell), so its mine test joins
+  by the same route (`joinByLine` now routes with `routePath` first).
+- **The deck met the path in mid-air.** A deck's stair aimed at the path cell's nominal floor (its centre); the
+  path's surface at the shared edge is the ground there. `deckJoins` reads the ground at the edge for a path
+  neighbour, and a deck builds a stair up to 1 m (was 0.8).
+- **The path started a cell away from the walkway.** A drag begun on the flats beside a walkway (where a path
+  cannot go) now leaves from that walkway (`Placement.streetBeside`), so the two join.
 - The achievement toast sat on the walkthrough; it now rises above the speed bar.
 - "Backwards stairs": the treads are built by the lower deck and climb toward the shared edge, which the code and
   a side view confirm; the stairs Grady saw were on the staircase-laid cells. If one still reads backwards after

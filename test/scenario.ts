@@ -1,10 +1,29 @@
 // Scripted towns shared by the unit tests and the smoke scenario (which imports this module into the page
 // through the Vite dev server). Sim-only: no Babylon.
+import { MAX_LINE, routePath } from "../src/build/line";
 import { BuildingKind, BUILDINGS, SWIM_RADIUS } from "../src/sim/balance";
 import { buyBoat, tryPlace } from "../src/sim/economy";
 import { sheltered } from "../src/sim/events";
 import { Grid } from "../src/sim/grid";
 import { Building, buildingList, Cell, SimState } from "../src/sim/state";
+import { treeSites } from "../src/sim/trees";
+
+/**
+ * tryPlace, felling any standing tree on the footprint first — what a player does from the Land tab before
+ * building on a wooded cell — and only when the tree was the one thing in the way (the trees come back otherwise).
+ */
+function tryPlaceClearing(state: SimState, grid: Grid, kind: BuildingKind, anchor: Cell, lift = 0, rot: number | null = null): Building | null {
+  const cells = grid.footprint(kind, anchor, rot ?? 0);
+  if (!cells || !grid.treeOn(cells)) return tryPlace(state, grid, kind, anchor, lift, rot);
+  const sites = treeSites(state);
+  const felled: number[] = [];
+  for (let k = 0; k < sites.length; k++) if (state.trees[k] >= 0 && cells.some(c => c.i === sites[k].cell.i && c.j === sites[k].cell.j)) felled.push(k);
+  const saved = felled.map(k => state.trees[k]);
+  for (const k of felled) state.trees[k] = -1;
+  const b = tryPlace(state, grid, kind, anchor, lift, rot);
+  if (!b) felled.forEach((k, at) => { state.trees[k] = saved[at]; });
+  return b;
+}
 import { floodFate } from "../src/sim/tide";
 
 const dist = (a: Cell, b: Cell) => Math.hypot(a.i - b.i, a.j - b.j);
@@ -34,7 +53,7 @@ export function layWalkways(state: SimState, grid: Grid, pier: Cell, target: Cel
   while (cur && laid.length < max) {
     seen.add(cur.i + "," + cur.j);
     const kind: BuildingKind = floodFate(grid.floorFor("walkway", [cur])) === "safe" ? "walkway" : "raisedWalkway";
-    if (!tryPlace(state, grid, kind, cur)) break;
+    if (!tryPlaceClearing(state, grid, kind, cur)) break;
     laid.push(cur);
     if (grid.neighbors(cur).some(n => n.i === target.i && n.j === target.j)) break;
     const next: Cell[] = grid.neighbors(cur)
@@ -62,7 +81,7 @@ export function growStreet(state: SimState, grid: Grid, n: number): number {
     consider(links.map(l => l.cells[0]));
     // Boxed in (a starter whose huts ring its two walkways): grow off the market's edge, itself a street link.
     if (!best) consider(buildingList(state).filter(b => b.kind === "market").flatMap(m => m.cells));
-    if (!best || !tryPlace(state, grid, "raisedWalkway", best)) break;
+    if (!best || !tryPlaceClearing(state, grid, "raisedWalkway", best)) break;
     laid++;
   }
   return laid;
@@ -79,7 +98,7 @@ export function placeByWalkway(state: SimState, grid: Grid, kind: BuildingKind, 
       if (out.length >= count) break;
       // Every anchor whose footprint would cover the neighbour cell.
       for (let di = 0; di < w && out.length < count; di++) for (let dj = 0; dj < d && out.length < count; dj++) {
-        const b = tryPlace(state, grid, kind, { i: n.i - di, j: n.j - dj });
+        const b = tryPlaceClearing(state, grid, kind, { i: n.i - di, j: n.j - dj });
         if (b) { out.push(b); break; }
       }
     }
@@ -112,7 +131,7 @@ export function reachHill(state: SimState, grid: Grid): Cell | null {
   // The hill road must survive spring tides too, or the camp idles every fourth cycle.
   for (const c of path.reverse()) {
     const kind: BuildingKind = floodFate(grid.floorFor("walkway", [c])) === "safe" ? "walkway" : "raisedWalkway";
-    if (!tryPlace(state, grid, kind, c)) return null;
+    if (!tryPlaceClearing(state, grid, kind, c)) return null;
   }
   return end;
 }
@@ -123,7 +142,7 @@ export function placeLumberCamp(state: SimState, grid: Grid, streetEnd: Cell): B
   for (let di = -2; di <= 2; di++) for (let dj = -2; dj <= 2; dj++) anchors.push({ i: streetEnd.i + di, j: streetEnd.j + dj });
   anchors.sort((a, b) => dist(a, streetEnd) - dist(b, streetEnd));
   for (const anchor of anchors) {
-    const b = tryPlace(state, grid, "lumberCamp", anchor);
+    const b = tryPlaceClearing(state, grid, "lumberCamp", anchor);
     if (b) return b;
   }
   return null;
@@ -140,7 +159,7 @@ export function placeEdge(state: SimState, grid: Grid, kind: BuildingKind, near:
     const d = dist(c, near);
     if (d >= minDist && d < bd) { bd = d; best = c; }
   }
-  return best ? tryPlace(state, grid, kind, best) : null;
+  return best ? tryPlaceClearing(state, grid, kind, best) : null;
 }
 
 /** Another pier (a berth for shipyard boats), on the nearest free shore site to `near`. */
@@ -174,7 +193,7 @@ export function pierByBeach(state: SimState, grid: Grid): { pier: Building; beac
     }
   }
   if (!best) return null;
-  const pier = tryPlace(state, grid, "pier", best.c);
+  const pier = tryPlaceClearing(state, grid, "pier", best.c);
   if (!pier) return null;
   pier.boats = BUILDINGS.pier.slots ?? 2; // the shipyard would fill it in time; the ledger takes it directly here
   return { pier, beach: best.beach };
@@ -193,7 +212,7 @@ export function shelterHarbours(state: SimState, grid: Grid): number {
       for (let di = -r; di <= r && !done; di++) for (let dj = -r; dj <= r && !done; dj++) {
         if (Math.max(Math.abs(di), Math.abs(dj)) !== r) continue;
         const n = { i: c.i + di, j: c.j + dj };
-        if (grid.classAt(n) === "deep" && !grid.buildingAt(n) && tryPlace(state, grid, "breakwater", n)) { laid++; done = true; }
+        if (grid.classAt(n) === "deep" && !grid.buildingAt(n) && tryPlaceClearing(state, grid, "breakwater", n)) { laid++; done = true; }
       }
       if (done) break;
     }
@@ -239,7 +258,7 @@ export function bigTown(state: SimState, grid: Grid, target = { buildings: 300, 
       for (let di = -r; di <= r && buildingList(state).length < target.buildings; di++) for (let dj = -r; dj <= r && buildingList(state).length < target.buildings; dj++) {
         if (Math.max(Math.abs(di), Math.abs(dj)) !== r) continue;
         const c = { i: h.cells[0].i + di, j: h.cells[0].j + dj };
-        if (grid.classAt(c) === "deep" && !grid.buildingAt(c) && (di + dj) % 2 === 0) tryPlace(state, grid, "breakwater", c);
+        if (grid.classAt(c) === "deep" && !grid.buildingAt(c) && (di + dj) % 2 === 0) tryPlaceClearing(state, grid, "breakwater", c);
       }
     }
   }
@@ -256,7 +275,7 @@ export function placeHarbor(state: SimState, grid: Grid, near: Cell): Building |
     const d = dist(c, near);
     if (d < bd) { bd = d; best = c; }
   }
-  return best ? tryPlace(state, grid, "harbor", best) : null;
+  return best ? tryPlaceClearing(state, grid, "harbor", best) : null;
 }
 
 /**
@@ -288,7 +307,7 @@ export function bridgeTo(state: SimState, grid: Grid, from: Building, max = 16):
   for (let c: Cell | null = end; c; c = prev.get(key(c)) ?? null) path.push(c);
   if (path.length > max) return [];
   const laid: Building[] = [];
-  for (const c of path.reverse()) { const b = tryPlace(state, grid, "raisedWalkway", c); if (!b) break; laid.push(b); }
+  for (const c of path.reverse()) { const b = tryPlaceClearing(state, grid, "raisedWalkway", c); if (!b) break; laid.push(b); }
   return laid;
 }
 
@@ -303,13 +322,13 @@ export function settleIsle(state: SimState, grid: Grid): { pier: Building | null
   for (let k = 0; k < 4; k++) {
     const options = grid.neighbors(cur).filter(n => !grid.buildingAt(n)).sort((a, b) => dist(a, centre) - dist(b, centre));
     let w: Building | null = null, next: Cell = cur;
-    for (const o of options) { w = tryPlace(state, grid, "raisedWalkway", o); if (w) { next = o; break; } }
+    for (const o of options) { w = tryPlaceClearing(state, grid, "raisedWalkway", o); if (w) { next = o; break; } }
     if (!w) break;
     walkways.push(w);
     cur = next;
     for (const n of grid.neighbors(next)) {
       if (huts.length >= 3 || grid.buildingAt(n)) continue;
-      const h = tryPlace(state, grid, "hut", n);
+      const h = tryPlaceClearing(state, grid, "hut", n);
       if (h) huts.push(h);
     }
   }
@@ -329,7 +348,7 @@ export function starterTown(state: SimState, grid: Grid): { pier: Building; huts
   const hut0 = buildingList(state).find(b => b.kind === "hut");
   if (!hut0) throw new Error("starter town needs the seeded hut (use newGame)");
   const site = pierSite(grid, hut0.cells[0]);
-  const pier = tryPlace(state, grid, "pier", site);
+  const pier = tryPlaceClearing(state, grid, "pier", site);
   if (!pier) throw new Error("could not place pier");
   buyBoat(state, pier);
   buyBoat(state, pier);
@@ -342,7 +361,7 @@ export function starterTown(state: SimState, grid: Grid): { pier: Building; huts
       if (c.i !== to.i) c = { i: c.i + Math.sign(to.i - c.i), j: c.j }; else c = { i: c.i, j: c.j + Math.sign(to.j - c.j) };
       if (c.i === to.i && c.j === to.j) break;
       if (grid.buildingAt(c)) continue;
-      const w = tryPlace(state, grid, "walkway", c) ?? tryPlace(state, grid, "raisedWalkway", c);
+      const w = tryPlaceClearing(state, grid, "walkway", c) ?? tryPlaceClearing(state, grid, "raisedWalkway", c);
       if (w) walkways.push(c);
     }
   }
@@ -360,7 +379,7 @@ export function placeNear(state: SimState, grid: Grid, kind: BuildingKind, near:
   const cells: Cell[] = [];
   for (let i = -32; i < 32; i++) for (let j = -32; j < 32; j++) cells.push({ i, j });
   cells.sort((a, b) => dist(a, near) - dist(b, near));
-  for (const c of cells) { const b = tryPlace(state, grid, kind, c); if (b) return b; }
+  for (const c of cells) { const b = tryPlaceClearing(state, grid, kind, c); if (b) return b; }
   return null;
 }
 
@@ -390,7 +409,7 @@ export function growStreetAny(state: SimState, grid: Grid, n: number): number {
 
 /** Lay whichever street piece fits on a cell: a path on dry ground, a walkway on the flats, a raised one over water. */
 function layLink(state: SimState, grid: Grid, c: Cell): Building | null {
-  return tryPlace(state, grid, "path", c) ?? tryPlace(state, grid, "walkway", c) ?? tryPlace(state, grid, "raisedWalkway", c);
+  return tryPlaceClearing(state, grid, "path", c) ?? tryPlaceClearing(state, grid, "walkway", c) ?? tryPlaceClearing(state, grid, "raisedWalkway", c);
 }
 const isLink = (b: Building | null) => !!b && (b.kind === "walkway" || b.kind === "raisedWalkway" || b.kind === "path" || b.kind === "market" || b.kind === "pier" || b.kind === "dock" || b.kind === "harbor");
 
@@ -400,8 +419,16 @@ const isLink = (b: Building | null) => !!b && (b.kind === "walkway" || b.kind ==
  * target's footprint to any link, up to eight cells out. Returns how many pieces went down.
  */
 export function joinByLine(state: SimState, grid: Grid, from: Cell, to: Cell): number {
-  const steps = Math.max(Math.abs(to.i - from.i), Math.abs(to.j - from.j));
   let laid = 0;
+  // First the game's own route: the street kinds in the order the player's drag would lay them, stepping within
+  // a path's rise, round trees and off cliffs.
+  const kinds: BuildingKind[] = ["path", "walkway", "raisedWalkway"];
+  const kindAt = (c: Cell): BuildingKind | null => { for (const k of kinds) { const fp = grid.footprint(k, c); if (fp && grid.canPlace(k, fp)) return k; } return null; };
+  const fits = (c: Cell) => kindAt(c) !== null;
+  const step = (p: Cell, q: Cell) => grid.stepOk(kindAt(p) ?? "walkway", p, kindAt(q) ?? "walkway", q);
+  const route = routePath(from, to, fits, MAX_LINE, { step, startCells: grid.buildingAt(from)?.cells, goalCells: grid.buildingAt(to)?.cells });
+  if (route) { for (const c of route) if (layLink(state, grid, c)) laid++; if (laid) return laid; }
+  const steps = Math.max(Math.abs(to.i - from.i), Math.abs(to.j - from.j));
   for (let k = 1; k < steps; k++) {
     const c = { i: Math.round(from.i + (to.i - from.i) * k / steps), j: Math.round(from.j + (to.j - from.j) * k / steps) };
     if (grid.buildingAt(c)) continue;

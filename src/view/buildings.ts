@@ -375,6 +375,8 @@ function home(scene: Scene, b: Building, bodyW: number, baseH: number): Building
 
 /** What a walkway meets on each side: nothing, a deck at its own height, or a deck `dh` higher (a step up). */
 export type Join = { side: Cell; kind: "open" | "flush" | "step"; dh: number };
+/** How far a path's surface sits above the ground it drapes over (the same lift as its strips). */
+const PATH_LIFT = 0.05;
 export function deckJoins(b: Building, grid: Grid): Join[] {
   const c = b.cells[0];
   return DIRS.map(d => {
@@ -382,8 +384,12 @@ export function deckJoins(b: Building, grid: Grid): Join[] {
     if (!n) return { side: d, kind: "open" as const, dh: 0 };
     // Paths drape over the ground, so two paths always meet flush whatever their nominal floors.
     if (b.kind === "path" && n.kind === "path") return { side: d, kind: "flush" as const, dh: 0 };
-    const dh = n.floorY - b.floorY;
-    if (dh > 0.1 && dh <= 0.8) return { side: d, kind: "step" as const, dh };
+    // A path's surface at the shared edge is the ground there, not its cell's nominal floor: a deck that meets
+    // a path on a bank climbs to where the path actually is.
+    const { x, z } = cellCenter(c);
+    const nh = n.kind === "path" ? ground(x + d.i * 0.5, z + d.j * 0.5) + PATH_LIFT : n.floorY;
+    const dh = nh - b.floorY;
+    if (dh > 0.1 && dh <= 1.0) return { side: d, kind: "step" as const, dh };
     return { side: d, kind: "flush" as const, dh: 0 };
   });
 }

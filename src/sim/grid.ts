@@ -1,7 +1,7 @@
 // Cell model over the terrain, occupancy index, and placement rules. Buildings live in SimState; the Grid is the
 // spatial index over them (rebuilt from state on load) plus the fixed terrain classification.
 import { CLEARANCE, SIZE, STILT_MIN, WALKWAY_SNAP } from "../config";
-import { BuildingKind, BUILDINGS, LIFT_MAX, LIFT_STEP, PlacementClass } from "./balance";
+import { BuildingKind, BUILDINGS, LIFT_MAX, LIFT_STEP, PlacementClass, STREET_STEP_MAX } from "./balance";
 import { biomeFor, catalogFor } from "./biomes";
 import { cellIndex, DIRS, HALF, inBounds } from "./cells";
 import { cellClass } from "./heightfield";
@@ -9,6 +9,7 @@ import { Island, island } from "./island";
 import { isleCell } from "./isle";
 import { Material, materialOf, UNBUILDABLE } from "./materials";
 import { BASE_TIDES, Tides, tidesFor } from "./tides";
+import { treeSites } from "./trees";
 import { Building, Cell, SimState } from "./state";
 
 /** deep: always underwater. flat: the tidal flats, buildable. high: dry land above the tide. */
@@ -234,9 +235,66 @@ export class Grid {
     return catalogFor(this.state.world.biome).includes(kind);
   }
 
+  /** Whether a standing tree occupies any of the cells: a street goes round it, or the tree is cleared first (Land tab). */
+  treeOn(cells: Cell[]): boolean {
+    const sites = treeSites(this.state);
+    for (let k = 0; k < sites.length; k++) {
+      if (this.state.trees[k] < 0) continue;
+      const s = sites[k].cell;
+      for (const c of cells) if (s.i === c.i && s.j === c.j) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Whether a piece with `maxRise` (a path) can stand on these cells at all: each cell has some neighbour it can be
+   * walked to from within the rise — a trail may follow the contour of a steep flank, but not perch on a spike.
+   */
+  slopeOk(kind: BuildingKind, cells: Cell[]): boolean {
+    const max = BUILDINGS[kind].maxRise;
+    if (max === undefined) return true;
+    return cells.every(c => {
+      const h = this.heightAt(c);
+      return DIRS.some(d => { const n = { i: c.i + d.i, j: c.j + d.j }; return inBounds(n.i, n.j) && Math.abs(this.heightAt(n) - h) <= max; });
+    });
+  }
+
+  /** The surface a street piece of `kind` would have at `c`: the ground for a path, the deck for the rest. */
+  surfaceOf(kind: BuildingKind, c: Cell): number {
+    return BUILDINGS[kind].maxRise !== undefined ? this.heightAt(c) : this.floorFor(kind, [c], 0);
+  }
+
+  /** Whether a run may step from `a` (laid as `kindA`) to `b` (as `kindB`): path to path within the rise, deck to path within a stair. */
+  stepOk(kindA: BuildingKind, a: Cell, kindB: BuildingKind, b: Cell): boolean {
+    const ra = BUILDINGS[kindA].maxRise, rb = BUILDINGS[kindB].maxRise;
+    if (ra === undefined && rb === undefined) return true;
+    const limit = ra !== undefined && rb !== undefined ? Math.min(ra, rb) : STREET_STEP_MAX;
+    return Math.abs(this.surfaceOf(kindA, a) - this.surfaceOf(kindB, b)) <= limit;
+  }
+
+  /** Whether a path on these cells can be stepped onto from some street it touches (when it touches any): no path climbs a bank in one stride. */
+  joinStepOk(kind: BuildingKind, cells: Cell[]): boolean {
+    const max = BUILDINGS[kind].maxRise;
+    if (max === undefined) return true;
+    let touches = 0;
+    for (const c of cells) {
+      const h = this.heightAt(c);
+      for (const d of DIRS) {
+        const n = { i: c.i + d.i, j: c.j + d.j };
+        const s = inBounds(n.i, n.j) ? this.buildingAt(n) : null;
+        if (!s || BUILDINGS[s.kind].network === "leaf") continue;
+        touches++;
+        const sh = s.kind === "path" ? this.heightAt(n) : s.floorY;
+        if (Math.abs(sh - h) <= (s.kind === "path" ? max : STREET_STEP_MAX)) return true;
+      }
+    }
+    return touches === 0;
+  }
+
   canPlace(kind: BuildingKind, cells: Cell[]): boolean {
     const def = BUILDINGS[kind];
     return this.inCatalog(kind) && this.classOk(def.cls, cells) && this.terrainOk(kind, cells) && this.materialOk(kind, cells) && cells.every(c => !this.buildingAt(c))
+      && !this.treeOn(cells) && this.slopeOk(kind, cells) && this.joinStepOk(kind, cells)
       && (!def.needsWalkway || this.touchesWalkway(cells)) && (!def.needsLink || this.touchesLink(cells))
       && (!def.requires || this.has(def.requires))
       && (!def.touches || this.touchesKind(cells, def.touches))
