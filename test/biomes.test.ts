@@ -71,6 +71,17 @@ describe("biome framework", () => {
     expect(cat).toContain("hut");
     expect(makesOf("fjord")).toEqual(["fish", "stockfish", "whaleOil", "iron", "timber", "planks"]);
   });
+
+  it("every charted biome's island meets deep water all round the square's edge", () => {
+    // The mesh ends at the edge and the water's heightmap clamps there, so land on the rim is a sheer cliff with the
+    // sea missing behind it, and a seam against the next face on the World.
+    for (const biome of chartedBiomes()) for (const seed of [0, 3, 880612]) {
+      const h = island(seed, biome).height;
+      let rim = -Infinity;
+      for (let t = -32; t <= 32; t += 0.5) rim = Math.max(rim, h(t, -32), h(t, 32), h(-32, t), h(32, t));
+      expect(rim, `${biome} seed ${seed}`).toBeLessThan(-2);
+    }
+  });
 });
 
 describe("catalog per biome and the starter town", () => {

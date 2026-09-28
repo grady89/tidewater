@@ -1071,3 +1071,9 @@ Grady's third pass (paths on the hill):
 - "Backwards stairs": the treads are built by the lower deck and climb toward the shared edge, which the code and
   a side view confirm; the stairs Grady saw were on the staircase-laid cells. If one still reads backwards after
   this build, a close-up with the tide clock in frame is the thing to send.
+- **The Fjord's back ran off the square.** Behind the head the valley climbed 5.5 m to the back edge and stopped
+  there, so the island ended in a sheer ten-metre cliff. The water's heightmap clamps at the edge, so every point
+  behind it read that cliff's height and the sea vanished in a strip to the horizon; on the World the miniature's
+  ridge ran into the next face with no shore. The valley now climbs 3 m to a col between the ridges and the whole
+  back falls to deep water between z −21.5 and −30.5, a slope like the flanks'. Thresholds still pass on every
+  seed tried with no rerolls; a test holds every charted coast's rim below −2.
