@@ -529,6 +529,7 @@ function syncView(): void {
     playtest.sample(state.tide.cycle, state.resources.money, population(state)); // once per cycle (it dedupes)
   }
   markerLabel.update(pierMarker.cell ? api.screenOf(pierMarker.cell.i + 0.5, pierMarker.cell.j + 0.5, state.tide.level + 0.2) : null);
+  placement.syncTag();
   achievements.update(state, viewTime);
   speedControls.update(speed, audio.muted, water.reflections);
   audio.sync(state, stormMix, { gulls: wildlife.gullCount });
@@ -789,6 +790,8 @@ const api = {
   returnToWorld,
   world: {
     faces: () => listMetas(store),
+    /** A sea's export (the JSON the card's Export button downloads), for testers whose browser drops downloads. */
+    export: (face: number) => exportSector(store, face),
     active: () => activeFace,
     hover: () => world.hover,
     front: () => world.frontFace,

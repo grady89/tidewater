@@ -22,7 +22,7 @@ export function tick(state: SimState, grid: Grid, dt = SIM_TICK): void {
   state.time += dt;
   state.tick++;
   tickTide(state.tide, dt);
-  updateNetwork(state, grid, state.tide.level);
+  const net = updateNetwork(state, grid, state.tide.level);
   tickTsunami(state, grid, dt);
   tickPollution(state, grid, dt);
   tickSharks(state, grid, dt, state.sharkEmitters);
@@ -39,7 +39,7 @@ export function tick(state: SimState, grid: Grid, dt = SIM_TICK): void {
   }
   biomeFor(state).tick?.(state, grid, dt);
   if (state.tide.peaked) {
-    if (isSpringCycle(state.tide.cycle)) notify(state, "Spring tide: the water runs higher and lower than usual");
+    if (isSpringCycle(state.tide.cycle)) notify(state, `Spring tide: the water runs higher and lower than usual${net.cut > 0 ? ` — ${net.cut} low walkway${net.cut > 1 ? "s are" : " is"} under water and the street is cut until it ebbs` : ""}`);
     settleCycle(state, grid);
     biomeFor(state).settle?.(state, grid);
     rollStorm(state, grid);

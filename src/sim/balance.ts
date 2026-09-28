@@ -159,6 +159,8 @@ export const LIFT_MAX = 4;
 export const STORM_FIRST_CYCLE = 6;
 export const STORM_CHANCE = 0.12;
 export const STORM_LOSS_CHANCE = 0.5;
+/** Storms take no boats before this cycle: the early town has no breakwater to buy yet, and one boat to its name. */
+export const STORM_LOSS_FIRST_CYCLE = 20;
 /** Harbours with a breakwater within this many cells are sheltered. */
 export const SHELTER_RADIUS = 6;
 export const STORM_WAVE_AMP = 3;

@@ -98,6 +98,10 @@
       #tutorial.bare p { color: var(--ink-dim); }
       #markerLabel { position: fixed; transform: translate(-50%, -140%); padding: 3px 9px; font-size: 11px; color: #1b2a33; background: var(--accent); border-radius: 6px; pointer-events: none; white-space: nowrap; }
       #markerLabel[hidden] { display: none; }
+      #costTag { position: fixed; transform: translate(14px, -50%); padding: 3px 9px; font-size: 12px; font-weight: 600; color: #1b2a33; background: rgba(247, 243, 232, .94); border-radius: 6px; pointer-events: none; white-space: nowrap; box-shadow: 0 1px 4px rgba(0, 0, 0, .3); z-index: 6; }
+      #costTag.warn { background: var(--accent); }
+      #costTag.blocked { background: #d9604b; color: #fff; }
+      #costTag[hidden] { display: none; }
       .pulse { animation: pulse 1.2s ease-in-out infinite; }
       @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(255, 209, 138, 0.0); border-color: var(--accent); } 50% { box-shadow: 0 0 0 4px rgba(255, 209, 138, 0.25); border-color: var(--accent); } }
       @media (prefers-reduced-motion: reduce) { .pulse { animation: none; border-color: var(--accent); } }
@@ -178,7 +182,7 @@
 
       /* ---------- the World (docs/globe) ---------- */
       body[data-mode="world"] #hud, body[data-mode="world"] #resources, body[data-mode="world"] #notes, body[data-mode="world"] #tutorial,
-      body[data-mode="world"] #achievement, body[data-mode="world"] #markerLabel, body[data-mode="world"] #speed, body[data-mode="world"] #info { display: none; }
+      body[data-mode="world"] #achievement, body[data-mode="world"] #markerLabel, body[data-mode="world"] #costTag, body[data-mode="world"] #speed, body[data-mode="world"] #info { display: none; }
       body[data-mode="world"] #c { cursor: grab; }
       body[data-mode="world"] #c.hovering { cursor: pointer; }
       body[data-mode="world"] #c.dragging { cursor: grabbing; }

@@ -5,7 +5,7 @@
 // harbours and block the wave; sea walls on the flats shield what stands behind them along the wave axis.
 import { SIZE } from "../config";
 import {
-  BUILDINGS, DRAWDOWN_LEVEL, DRAWDOWN_SECONDS, SHELTER_RADIUS, SHIELD_RANGE, STORM_CHANCE, STORM_FIRST_CYCLE,
+  BUILDINGS, DRAWDOWN_LEVEL, DRAWDOWN_SECONDS, SHELTER_RADIUS, SHIELD_RANGE, STORM_CHANCE, STORM_FIRST_CYCLE, STORM_LOSS_FIRST_CYCLE,
   STORM_LOSS_CHANCE, TSUNAMI_CHANCE, TSUNAMI_COOLDOWN, TSUNAMI_FIRST_CYCLE, WAVE_SETTLE_SECONDS,
   WAVE_SPEED,
 } from "./balance";
@@ -73,12 +73,19 @@ export function startStorm(state: SimState, grid: Grid): void {
   notify(state, profile ? `A ${profile.name} is coming: the boats stay in` : "A storm is coming: the boats stay in");
   // Boats out of shelter are at the sea's mercy; a lighthouse sees them all home.
   if (hasLighthouse(state)) return;
+  // The early town has no breakwater to buy yet and one boat to its name: before STORM_LOSS_FIRST_CYCLE the storm
+  // only keeps the boats in (the dice still roll, so the seed's story is unchanged), and it never takes a town's
+  // last boat.
+  const early = state.tide.cycle < STORM_LOSS_FIRST_CYCLE;
   const lossChance = STORM_LOSS_CHANCE * (profile?.loss ?? 1);
+  let fleet = buildingList(state).reduce((n, b) => n + b.boats, 0);
   for (const h of buildingList(state).sort((a, b) => a.id - b.id)) {
     if ((BUILDINGS[h.kind].slots ?? 0) === 0 || h.boats === 0 || sheltered(grid, h)) continue;
     let lost = 0;
     for (let k = 0; k < h.boats; k++) if (rand(state) < lossChance) lost++;
+    lost = early ? 0 : Math.min(lost, fleet - 1);
     if (lost > 0) {
+      fleet -= lost;
       h.boats -= lost;
       h.atSea = false;
       trimCrew(state, h);

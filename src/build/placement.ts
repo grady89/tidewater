@@ -59,7 +59,7 @@ export class Placement {
   get enabled(): boolean { return this._enabled; }
   set enabled(on: boolean) {
     this._enabled = on;
-    if (!on) { this.hover = null; this.down = null; this.lineStart = null; this.linePath = []; this.ghost.setEnabled(false); this.ghostStilts.setEnabled(false); this.ghostDoor.setEnabled(false); this.lineGhosts.ok.setEnabled(false); this.lineGhosts.bad.setEnabled(false); }
+    if (!on) { this.hover = null; this.down = null; this.lineStart = null; this.linePath = []; this.tagAt = null; this.tag.hidden = true; this.ghost.setEnabled(false); this.ghostStilts.setEnabled(false); this.ghostDoor.setEnabled(false); this.lineGhosts.ok.setEnabled(false); this.lineGhosts.bad.setEnabled(false); }
   }
 
   /** Extra deck height for auto-sized pieces, in LIFT_STEP steps ([ and ] keys); never below the safe height. */
@@ -68,6 +68,9 @@ export class Placement {
   /** Stilt length (floor − ground) and full price of the hovered footprint, for the ghost's label. */
   stilt = 0;
   cost = 0;
+  /** The price (and any caution) pinned beside the ghost, so the real cost is read where the eye is. */
+  private readonly tag: HTMLElement;
+  private tagAt: { x: number; y: number; z: number } | null = null;
   private readonly ghostStilts: Mesh;
   /** Called with the cell when landfill goes down, so the view can raise the ground. */
   onLandfill: (c: Cell) => void = () => {};
@@ -121,6 +124,10 @@ export class Placement {
     doorMat.alpha = 0.95;
     this.ghostDoor.material = doorMat;
     this.ghostDoor.setEnabled(false);
+    this.tag = document.createElement("div");
+    this.tag.id = "costTag";
+    this.tag.hidden = true;
+    document.body.appendChild(this.tag);
 
     canvas.addEventListener("pointermove", () => { if (this.enabled) this.refresh(); });
     canvas.addEventListener("pointerleave", () => { this.hover = null; this.ghost.setEnabled(false); this.ghostStilts.setEnabled(false); this.ghostDoor.setEnabled(false); });
@@ -140,7 +147,7 @@ export class Placement {
       if (e.button === 0 && start && this.linePath.length > 1) { this.placeLine(); return; }
       this.linePath = [];
       this.refresh();
-      if (moved) return;
+      if (moved && !start) return; // a line drag that never left its cell is a click
       if (e.button === 0) this.click();
       else if (e.button === 2) this.remove();
     });
@@ -308,6 +315,49 @@ export class Placement {
     return best;
   }
 
+  /** What laying the current line tool at `c` would cost (its own stilts against the ground; Infinity where nothing fits). */
+  private lineCostAt(c: Cell): number {
+    const k = this.lineKindAt(c);
+    if (!k) return Infinity;
+    const cells = this.grid.footprint(k, c)!;
+    return placeCost(k, this.grid.stiltLength(k, cells, this.grid.floorFor(k, cells, this.toolLift))).money;
+  }
+
+  /** The nearest cell within `r` of `c` under a pier, dock or harbor: the boat tool's click lands beside the berth as often as on it. */
+  private nearestBerth(c: Cell, r: number): Cell | null {
+    let best: Cell | null = null, bd = Infinity;
+    for (let di = -r; di <= r; di++) for (let dj = -r; dj <= r; dj++) {
+      const n = { i: c.i + di, j: c.j + dj };
+      if (!inBounds(n.i, n.j)) continue;
+      const b = this.grid.buildingAt(n);
+      if (!b || (BUILDINGS[b.kind].slots ?? 0) === 0) continue;
+      const d = di * di + dj * dj;
+      if (d < bd) { bd = d; best = n; }
+    }
+    return best;
+  }
+
+  /** Pin `text` beside the world point `at` (null hides it). */
+  private setTag(text: string | null, kind: "ok" | "warn" | "blocked", at: { x: number; y: number; z: number } | null): void {
+    this.tagAt = text ? at : null;
+    if (text) { this.tag.textContent = text; this.tag.className = kind; }
+    this.syncTag();
+  }
+
+  /** Re-project the tag onto the screen (called every frame: the camera moves under a still pointer). */
+  syncTag(): void {
+    const at = this.tagAt;
+    if (!at || !this.enabled) { this.tag.hidden = true; return; }
+    const engine = this.scene.getEngine();
+    const s = Vector3.Project(new Vector3(at.x, at.y, at.z), Matrix.Identity(), this.scene.getTransformMatrix(), this.camera.viewport.toGlobal(engine.getRenderWidth(), engine.getRenderHeight()));
+    if (s.z > 1) { this.tag.hidden = true; return; }
+    const k = engine.getHardwareScalingLevel();
+    const r = (engine.getRenderingCanvas() as HTMLCanvasElement).getBoundingClientRect();
+    this.tag.style.left = `${s.x * k + r.left}px`;
+    this.tag.style.top = `${s.y * k + r.top}px`;
+    this.tag.hidden = false;
+  }
+
   /** The cells of the run being dragged, with what each would cost; blocked cells are skipped, not fatal. */
   private evaluateLine(): { cells: Cell[]; ok: boolean[]; cost: number } {
     const kind = this.tool as BuildingKind;
@@ -383,7 +433,9 @@ export class Placement {
       const last = this.linePath[this.linePath.length - 1];
       if (last.i !== this.hover.i || last.j !== this.hover.j) {
         const seen = new Set(this.linePath.map(c => `${c.i},${c.j}`));
-        const step = routePath(last, this.hover, c => this.lineFits(c) && !seen.has(`${c.i},${c.j}`)) ?? linePath(last, this.hover).slice(1);
+        const from = this.grid.buildingAt(last), to = this.grid.buildingAt(this.hover);
+        const step = routePath(last, this.hover, c => this.lineFits(c) && !seen.has(`${c.i},${c.j}`), MAX_LINE, { cost: c => this.lineCostAt(c), startCells: from?.cells, goalCells: to?.cells })
+          ?? linePath(last, this.hover).slice(1);
         for (const c of step) {
           const key = `${c.i},${c.j}`;
           if (seen.has(key) || this.linePath.length >= MAX_LINE) continue;
@@ -393,15 +445,19 @@ export class Placement {
       }
       this.showLine();
       this.blocker = null; this.warn = null;
+      const laid = this.line && this.line.count > 0;
+      this.setTag(laid ? `${this.line!.count} × ${BUILDINGS[this.tool as BuildingKind].name.toLowerCase()} · ${this.line!.cost}$` : "Nothing can be laid here", laid ? "ok" : "blocked", { x: this.hover.i + 0.5, y: this.pickY(), z: this.hover.j + 0.5 });
       return;
     }
     this.lineGhosts.ok.setEnabled(false); this.lineGhosts.bad.setEnabled(false);
     this.line = null;
-    if (!this.hover) { this.ghost.setEnabled(false); this.ghostStilts.setEnabled(false); this.ghostDoor.setEnabled(false); this.blocker = null; this.warn = null; return; }
+    if (!this.hover) { this.ghost.setEnabled(false); this.ghostStilts.setEnabled(false); this.ghostDoor.setEnabled(false); this.blocker = null; this.warn = null; this.setTag(null, "ok", null); return; }
     // An edge piece's spot (pier, outfall, shipyard) is one exact cell: a click that lands a cell off takes the
     // nearest spot that works.
     const edgeKind = (this.tool as string) in BUILDINGS && BUILDINGS[this.tool as BuildingKind].cls === "edge" ? (this.tool as BuildingKind) : null;
     if (edgeKind) { const fp = this.grid.footprint(edgeKind, this.hover); if (!fp || !this.grid.canPlace(edgeKind, fp)) { const snapped = this.snapTo(edgeKind, this.hover, 1); if (snapped) this.hover = snapped; } }
+    // The boat tool: a click within two cells of a pier, dock or harbor buys there.
+    if (this.tool === "boat") { const at = this.grid.buildingAt(this.hover); if (!at || (BUILDINGS[at.kind].slots ?? 0) === 0) { const berth = this.nearestBerth(this.hover, 2); if (berth) this.hover = berth; } }
     const { cells, blocker, warn, fate, y, stilt, cost, rot } = this.evaluate(this.hover);
     this.stilt = stilt;
     this.cost = cost;
@@ -417,6 +473,9 @@ export class Placement {
     this.ghost.scaling.z = maxJ - minJ + 0.96;
     this.ghost.material = blocker ? this.mats.bad : fate === "safe" ? this.mats.ok : this.mats[fate];
     this.ghost.setEnabled(true);
+    const f = fate as string;
+    const note = blocker ?? [`${cost}$`, stilt > 0.05 ? `stilts ${stilt.toFixed(1)} m` : null, f === "safe" ? null : f === "always" ? "floods every tide" : "floods at spring tides", warn].filter((t): t is string => t !== null).join(" · ");
+    this.setTag(note, blocker ? "blocked" : warn || f !== "safe" ? "warn" : "ok", { x: (minI + maxI + 1) / 2, y: y + 0.3, z: (minJ + maxJ + 1) / 2 });
   }
 
   /** Left click: place if possible, otherwise inspect whatever is there. */
