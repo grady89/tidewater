@@ -1,17 +1,21 @@
 // Money and goods. Per-cycle settlement runs at the high-tide peak. High-water producers (boats) work the high
 // phase and land on leaving it; low-water producers (oyster beds, clam camps) work the low phase the same way.
 // Boats at a deep dock work both. Land production (wood, planks, smoking, boat building) settles once a cycle.
-import { SPRING_LO } from "../config";
 import {
   BOAT_BASE_FISH, BOAT_COST, BUILDINGS, BuildingKind, CAP_BASE, CLAM_PER_CELL, CLAM_RADIUS, Cost, FOOD_PER_CYCLE,
   FOOD_RESERVE_CYCLES, GoodKind, HAPPY, IMMIGRANTS_PER_CYCLE, IMMIGRATION_HAPPINESS, LEVEL_UP_CYCLES, LEVEL_UP_HAPPINESS,
   LUMBER_TREES_PER_CYCLE, MARKET_SELL_PER_CYCLE, MAX_LEVEL, NET_LOFT_BONUS, NET_LOFT_RADIUS, OYSTER_YIELD,
-  POLLUTION_HAPPY_SCALE, PRICE_FISH, PRICE_SHELLFISH, PURCHASABLE_BOATS, SAWMILL_RATE, SHIPYARD_BOAT_COST,
-  SHIPYARD_CYCLES, SMOKEHOUSE_RATE, SPRING_LOW_BONUS, TAX_PER_RESIDENT, TIMBER_PER_TREE, WAREHOUSE_CAP,
+  POLLUTION_HAPPY_SCALE, FOOD_PRICE, PURCHASABLE_BOATS, SAWMILL_RATE, SHIPYARD_BOAT_COST,
+  SHIPYARD_CYCLES, SMOKEHOUSE_RATE, SPRING_LOW_BONUS, TAX_PER_RESIDENT, TIMBER_PER_TREE, TOOLWORKS_BONUS, TOOLWORKS_IRON_PER_CYCLE, TOOLWORKS_RADIUS, WAREHOUSE_CAP,
+  COCONUT_PER_TREE, COCONUT_RADIUS, PEARL_RADIUS, PEARLS_PER_SHIFT, ICE_HOUSE_CAP_FACTOR, IRON_PER_CYCLE, SALT_PER_STOCKFISH, STOCKFISH_RATE, STOCKFISH_UNSALTED, WHALE_MEAT_PER_CYCLE, WHALE_OIL_PER_CYCLE,
   WASTE_BACKLOG_PENALTY_MAX, WASTE_BACKLOG_PENALTY_PER_UNIT,
 } from "./balance";
 import { at } from "./fields";
 import { active, damageNear, fireSources, repairDamage, rollIgnitions } from "./fire";
+import { biomeFor } from "./biomes";
+import { whaleSeason } from "./biomes/fjord";
+import { consumeLuxury, eat, favouriteInStock, foodsInStock, foodTotal, levelAllowed } from "./food";
+import { goodsOfRole } from "./goods";
 import { REMOVE_REFUND, STILT_COST_PER_UNIT } from "./balance";
 import { repayLoan } from "./loan";
 import { Grid } from "./grid";
@@ -22,7 +26,7 @@ import { announceLevel, rebuildCoverage } from "./services";
 import { healInjuries, sharkSources } from "./sharks";
 import { settleTrade } from "./trade";
 import { Building, buildingList, Cell, notify, Phase, SimState } from "./state";
-import { fellTrees, regrowTrees } from "./trees";
+import { fellTrees, grownTreesNear, regrowTrees } from "./trees";
 import { assignWorkers, employed, staffing } from "./workers";
 
 export function canAfford(state: SimState, cost: Cost): boolean {
@@ -106,11 +110,12 @@ export function buyBoat(state: SimState, at: Building): boolean {
   return true;
 }
 
-/** Storage cap for a good: the base plus every warehouse. */
+/** Storage cap for a good: the base plus every warehouse; an ice house (Fjord) doubles the fish. */
 export function capFor(state: SimState, good: GoodKind): number {
-  let n = 0;
-  for (const b of buildingList(state)) if (b.kind === "warehouse") n++;
-  return CAP_BASE[good] + n * WAREHOUSE_CAP;
+  let n = 0, ice = false;
+  for (const b of buildingList(state)) { if (b.kind === "warehouse") n++; if (b.kind === "iceHouse" && active(b)) ice = true; }
+  const cap = CAP_BASE[good] + n * WAREHOUSE_CAP;
+  return good === "fish" && ice ? cap * ICE_HOUSE_CAP_FACTOR : cap;
 }
 
 /** Add up to the cap and return what fit. A stock already over its cap (grants, a lost warehouse) is left alone. */
@@ -122,7 +127,7 @@ export function addCapped(state: SimState, good: GoodKind, amount: number): numb
 
 /** Can boats moored here work this phase? Piers only at high water; docks whenever the water moves. */
 export function sailsIn(b: Building, phase: Phase): boolean {
-  if (b.kind === "pier") return phase === "high";
+  if (b.kind === "pier" || b.kind === "iceBreakerPier") return phase === "high";
   if (b.kind === "dock") return phase !== "slack";
   return false;
 }
@@ -137,10 +142,23 @@ export function netLoftBonus(state: SimState, harbour: Building): number {
   return 1;
 }
 
+/** Output multiplier from a running toolworks (staffed, with iron this cycle) within TOOLWORKS_RADIUS of the building. */
+export function toolBonus(state: SimState, at: Building): number {
+  for (const b of buildingList(state)) {
+    if (b.kind !== "toolworks" || b.output <= 0 || !active(b)) continue;
+    const c = b.cells[0];
+    if (at.cells.some(h => Math.abs(h.i - c.i) <= TOOLWORKS_RADIUS && Math.abs(h.j - c.j) <= TOOLWORKS_RADIUS)) return 1 + TOOLWORKS_BONUS;
+  }
+  return 1;
+}
+
 /** Shift start: boats leave for the richest ground in range, low-water crews walk out. */
 export function shiftStart(state: SimState, grid: Grid, phase: Phase): void {
+  // A frozen sea (the Fjord's ice cycles) keeps every boat in except those at an ice-breaker pier.
+  const frozen = biomeFor(state).frozen?.(state) ?? false;
   for (const b of buildingList(state)) {
     if (!active(b)) continue;
+    if (frozen && b.kind !== "iceBreakerPier") continue;
     if (isHarbour(b) && b.boats > 0 && sailsIn(b, phase) && staffing(b) > 0) {
       b.ground = chooseGround(grid, b, state.fields.fish);
       b.atSea = b.ground !== null;
@@ -150,12 +168,12 @@ export function shiftStart(state: SimState, grid: Grid, phase: Phase): void {
 
 /** Shift end: boats land a catch scaled by the ground's fish density and thin it; shellfish comes in from the flats. */
 export function shiftEnd(state: SimState, grid: Grid, phase: Phase): void {
-  const springLow = phase === "low" && state.tide.level <= SPRING_LO + 0.05;
+  const springLow = phase === "low" && state.tide.level <= grid.tides.springLo + 0.05;
   for (const b of buildingList(state)) {
     if (isHarbour(b) && b.atSea) {
       b.atSea = false;
       const density = b.ground ? fishAt(state, b.ground) : 0;
-      const fish = b.boats * BOAT_BASE_FISH * staffing(b) * netLoftBonus(state, b) * density;
+      const fish = b.boats * BOAT_BASE_FISH * staffing(b) * netLoftBonus(state, b) * toolBonus(state, b) * density;
       depleteGround(state, b);
       b.output += addCapped(state, "fish", fish);
       state.last.fishCaught += fish;
@@ -163,10 +181,14 @@ export function shiftEnd(state: SimState, grid: Grid, phase: Phase): void {
     }
     if (phase !== "low" || !active(b)) continue;
     if (b.kind === "oysterBed") {
-      b.output += addCapped(state, "shellfish", OYSTER_YIELD * staffing(b) * (springLow ? SPRING_LOW_BONUS : 1));
+      b.output += addCapped(state, "shellfish", OYSTER_YIELD * staffing(b) * toolBonus(state, b) * (springLow ? SPRING_LOW_BONUS : 1));
     } else if (b.kind === "clamCamp") {
       const cells = grid.exposedFlatsNear(b.cells, CLAM_RADIUS, state.tide.level);
-      b.output += addCapped(state, "shellfish", cells * CLAM_PER_CELL * staffing(b) * (springLow ? SPRING_LOW_BONUS : 1));
+      b.output += addCapped(state, "shellfish", cells * CLAM_PER_CELL * staffing(b) * toolBonus(state, b) * (springLow ? SPRING_LOW_BONUS : 1));
+    } else if (b.kind === "divePlatform") {
+      // Atoll: the divers work the low water; a pearl house within reach grades what they bring up.
+      const graded = buildingList(state).some(p => p.kind === "pearlHouse" && active(p) && p.workers > 0 && p.cells.some(c => b.cells.some(d => Math.abs(c.i - d.i) <= PEARL_RADIUS && Math.abs(c.j - d.j) <= PEARL_RADIUS)));
+      if (graded) b.output += addCapped(state, "pearls", PEARLS_PER_SHIFT * staffing(b) * toolBonus(state, b) * (springLow ? SPRING_LOW_BONUS : 1));
     }
   }
 }
@@ -174,25 +196,60 @@ export function shiftEnd(state: SimState, grid: Grid, phase: Phase): void {
 /** Land production, once a cycle: wood, planks, smoked goods, and boats from the yard. */
 function produce(state: SimState, grid: Grid, buildings: Building[]): void {
   const r = state.resources;
+  // Toolworks first: they burn their iron now and every producer below reads the bonus off them (toolBonus).
+  for (const b of buildings) {
+    if (b.kind !== "toolworks") continue;
+    b.output = 0;
+    if (!active(b) || staffing(b) === 0) continue;
+    const iron = Math.min(r.iron, TOOLWORKS_IRON_PER_CYCLE * staffing(b));
+    r.iron -= iron;
+    b.output = iron;
+  }
   for (const b of buildings) {
     if (!active(b) || staffing(b) === 0) continue;
     const s = staffing(b);
     switch (b.kind) {
       case "lumberCamp": {
         const felled = fellTrees(state, b, LUMBER_TREES_PER_CYCLE * s);
-        b.output = addCapped(state, "timber", felled * TIMBER_PER_TREE);
+        b.output = addCapped(state, "timber", felled * TIMBER_PER_TREE * toolBonus(state, b));
         break;
       }
       case "sawmill": {
         const timber = Math.min(r.timber, SAWMILL_RATE * s);
         r.timber -= timber;
-        b.output = addCapped(state, "planks", timber);
+        b.output = addCapped(state, "planks", timber * toolBonus(state, b));
         break;
       }
       case "smokehouse": {
         const fish = Math.min(r.fish, SMOKEHOUSE_RATE * s);
         r.fish -= fish;
-        b.output = addCapped(state, "smoked", fish);
+        b.output = addCapped(state, "smoked", fish * toolBonus(state, b));
+        break;
+      }
+      // Fjord (BIOMES.md §3.3)
+      case "stockfishRacks": {
+        const fish = Math.min(r.fish, STOCKFISH_RATE * s);
+        const saltNeed = fish * SALT_PER_STOCKFISH;
+        const salt = Math.min(r.salt, saltNeed);
+        const salted = saltNeed > 0 ? salt / saltNeed : 0;
+        r.fish -= fish; r.salt -= salt;
+        b.output = addCapped(state, "stockfish", fish * (STOCKFISH_UNSALTED + (1 - STOCKFISH_UNSALTED) * salted) * toolBonus(state, b));
+        break;
+      }
+      case "whalingStation": {
+        if (!whaleSeason(state.tide.cycle) || b.boats === 0) { b.output = 0; break; }
+        b.output = addCapped(state, "whaleOil", WHALE_OIL_PER_CYCLE * s * toolBonus(state, b));
+        addCapped(state, "fish", WHALE_MEAT_PER_CYCLE * s);
+        break;
+      }
+      case "ironMine": {
+        b.output = addCapped(state, "iron", IRON_PER_CYCLE * s * toolBonus(state, b));
+        break;
+      }
+      // Atoll (BIOMES.md §3.2)
+      case "coconutGrove": {
+        const palms = grownTreesNear(state, b.cells, COCONUT_RADIUS);
+        b.output = addCapped(state, "coconut", palms * COCONUT_PER_TREE * s * toolBonus(state, b));
         break;
       }
       case "shipyard": {
@@ -226,54 +283,63 @@ export function homeHappiness(state: SimState, home: Building, fed: number, jobs
   const backlog = Math.min(WASTE_BACKLOG_PENALTY_MAX, state.wasteBacklog * WASTE_BACKLOG_PENALTY_PER_UNIT);
   const injury = home.shock > 0 || home.injured > 0 ? HAPPY.injury : 0;
   const damage = home.damaged || damageNear(grid, c, DAMAGE_GRIEF_RADIUS) ? HAPPY.damage : 0;
+  const favourite = favouriteInStock(state) ? HAPPY.favourite : 0;
+  const biome = biomeFor(state).happiness?.(state) ?? 0;
   const h = HAPPY.base + HAPPY.fed * fed + HAPPY.jobs * jobs + HAPPY.water * at(cov.water, c) + HAPPY.leisure * at(cov.leisure, c)
-    + HAPPY.night * at(cov.night, c) - HAPPY.pollution * foul - backlog - injury - damage;
+    + HAPPY.night * at(cov.night, c) + favourite + biome - HAPPY.pollution * foul - backlog - injury - damage;
   return Math.max(0, Math.min(1, h));
 }
 const DAMAGE_GRIEF_RADIUS = 3;
+const FOODS = goodsOfRole("food");
 
-/** The cycle settlement, run once at every high-tide peak. */
-export function settleCycle(state: SimState, grid: Grid): void {
+/** The cycle settlement, run once at every high-tide peak. quiet (the World ledger, sim/lanes.ts) skips the hazards: no ignitions. */
+export function settleCycle(state: SimState, grid: Grid, opts: { quiet?: boolean } = {}): void {
   const r = state.resources;
   const stats = { cycle: state.tide.cycle, fishCaught: state.last.fishCaught, fishSold: 0, shellfishSold: 0, income: 0, expenses: 0, immigrants: 0, tourism: 0, trade: 0 };
   const buildings = buildingList(state).sort((a, b) => a.id - b.id);
 
   assignWorkers(state, grid);
-  rebuildCoverage(state);
+  rebuildCoverage(state, grid);
 
-  // Residents eat first, pay tax, and judge their lot.
-  let pop = 0, happySum = 0, houses = 0;
+  // Residents eat first (across every food kind in stock), pay tax, and judge their lot. The variety on the
+  // table at the start of the meal is what the house levels read.
+  const variety = foodsInStock(state).length;
+  let pop = 0, happySum = 0, houses = 0, level3 = 0;
   for (const b of buildings) {
     if (BUILDINGS[b.kind].residents === 0) continue;
     if (b.residents === 0) { b.happiness = 1; b.streak = 0; continue; }
     pop += b.residents;
     const need = b.residents * FOOD_PER_CYCLE;
-    let ate = Math.min(r.fish, need); r.fish -= ate;
-    const more = Math.min(r.shellfish, need - ate); r.shellfish -= more; ate += more;
+    const ate = eat(state, need);
     const fed = need > 0 ? ate / need : 1;
     const jobs = b.reached ? employed(state, b) / Math.max(1, b.residents - b.injured) : 0;
     b.happiness = homeHappiness(state, b, fed, jobs, grid);
     happySum += b.happiness; houses++;
-    // Growth: a run of good cycles adds a storey.
+    // Growth: a run of good cycles adds a storey, once the table is varied enough for it (sim/food.ts).
     if (b.happiness >= LEVEL_UP_HAPPINESS) b.streak++; else b.streak = 0;
-    if (b.streak >= LEVEL_UP_CYCLES && b.level < MAX_LEVEL) { b.level++; b.streak = 0; announceLevel(state, b); }
+    if (b.streak >= LEVEL_UP_CYCLES && b.level < MAX_LEVEL && levelAllowed(state, b.level + 1, variety)) { b.level++; b.streak = 0; announceLevel(state, b); }
+    if (b.level >= 3) level3 += b.residents;
   }
+  consumeLuxury(state, level3);
   state.happiness = houses ? happySum / houses : 1;
   stats.income += pop * TAX_PER_RESIDENT;
 
-  // Sales of what's left beyond the town's food reserve; producers' per-cycle output counters reset here.
+  // Sales of food left beyond the town's reserve, kind by kind in registry order (the reserve is kept out of the
+  // first kinds first); producers' per-cycle output counters reset here.
   const reserve = (pop + IMMIGRANTS_PER_CYCLE) * FOOD_PER_CYCLE * FOOD_RESERVE_CYCLES;
   for (const b of buildings) {
     if (b.kind !== "market") { if (BUILDINGS[b.kind].residents === 0) b.output = 0; continue; }
     b.output = 0;
     if (!active(b)) continue;
     let capacity = MARKET_SELL_PER_CYCLE * staffing(b);
-    const fish = Math.max(0, Math.min(r.fish - reserve, capacity));
-    r.fish -= fish; capacity -= fish; stats.income += fish * PRICE_FISH; stats.fishSold += fish;
-    const shellReserve = Math.max(0, reserve - r.fish);
-    const shellfish = Math.max(0, Math.min(r.shellfish - shellReserve, capacity));
-    r.shellfish -= shellfish; stats.income += shellfish * PRICE_SHELLFISH; stats.shellfishSold += shellfish;
-    b.output = fish + shellfish;
+    let keep = reserve;
+    for (const g of FOODS) {
+      const sold = Math.max(0, Math.min(r[g] - keep, capacity));
+      r[g] -= sold; capacity -= sold; stats.income += sold * (FOOD_PRICE[g] ?? 0);
+      if (g === "fish") stats.fishSold += sold; else stats.shellfishSold += sold;
+      keep = Math.max(0, keep - r[g]);
+      b.output += sold;
+    }
   }
   // The commonest "why is nothing selling": every market is off the network or unstaffed at the peak. (A market
   // itself can't be under water — its stilts clear every tide — but the street to it can, at a spring peak.)
@@ -288,7 +354,7 @@ export function settleCycle(state: SimState, grid: Grid): void {
   routeWaste(state);
   state.sharkEmitters = sharkSources(state);
   state.fireEmitters = fireSources(state);
-  rollIgnitions(state);
+  if (!opts.quiet) rollIgnitions(state);
   repairDamage(state);
   healInjuries(state);
 
@@ -304,7 +370,7 @@ export function settleCycle(state: SimState, grid: Grid): void {
   stats.income += moved.tourism + Math.max(0, moved.trade);
 
   // Immigration: connected housing with room, food on hand, a town worth joining.
-  if (r.fish + r.shellfish > 0 && state.happiness >= IMMIGRATION_HAPPINESS) {
+  if (foodTotal(state) > 0 && state.happiness >= IMMIGRATION_HAPPINESS) {
     let budget = IMMIGRANTS_PER_CYCLE;
     for (const b of buildings) {
       if (budget <= 0) break;

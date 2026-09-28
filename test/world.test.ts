@@ -248,7 +248,8 @@ describe("seeded islands (Task 4)", () => {
     const { grid } = newGame(1);
     expect(fingerprint(grid)).toBe("3fcf3090");
     expect(fingerprint(newGame(1, 0).grid)).toBe("3fcf3090");
-    expect(zero.stats).toEqual({ flats: 555, region: 555, piers: 142, harbors: 1815, treed: 70 });
+    expect(zero.stats).toMatchObject({ flats: 555, region: 555, piers: 142, harbors: 1815, treed: 70 });
+    expect(zero.stats.materials[0]).toBeGreaterThan(zero.stats.flats); // every main-island cell is plain
   });
   it("every seed gives a validated island, the same one every time, rerolled when its first candidate fails", () => {
     for (let s = 1; s <= 40; s++) {

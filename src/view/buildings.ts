@@ -8,13 +8,16 @@ import { STILT_SINK } from "../config";
 import { BUILDINGS } from "../sim/balance";
 import { cellCenter, DIRS, Grid } from "../sim/grid";
 import { ground } from "./ground";
-import { roofFor, roofShape } from "./roofs";
+import { roofFor, roofShape, setRoofPalette } from "./roofs";
+import { BiomeLook, HouseKit } from "./biomes";
 import { Building, Cell } from "../sim/state";
 import { mergeFlat, tint } from "../world/flatMesh";
 
+// The palette is mutable in two fields: applyPalette swaps the walls and roofs (and the accents below) for the
+// island's biome look; every factory reads it at build time, and the chunks are rebuilt when the island changes.
 export const PALETTE = {
-  walls: ["#f2ece0", "#f4d9c6", "#d5e6ea", "#ece3c3", "#f7e7d3"],
-  roofs: ["#c9674f", "#4c5a66", "#b9543f", "#5d6d7a"],
+  walls: ["#f2ece0", "#f4d9c6", "#d5e6ea", "#ece3c3", "#f7e7d3"] as readonly string[],
+  roofs: ["#c9674f", "#4c5a66", "#b9543f", "#5d6d7a"] as readonly string[],
   wood: "#5a4636",
   planks: "#8a6f52",
   lantern: "#ffb859",
@@ -23,7 +26,18 @@ export const PALETTE = {
   hulls: ["#f2ece0", "#4c5a66", "#c9674f", "#2f6f8f"],
 };
 /** Accents the reference sheets lean on: the blue of doors and shutters, pale stone, dark window glass. */
-const BLUE = "#2f6f8f";
+let BLUE = "#2f6f8f";
+let TRIM = "#e6dccb";
+let HOUSE_KIT: HouseKit = "cottage";
+/** The biome look's walls, roofs and accents become the palette every factory builds from. */
+export function applyPalette(look: BiomeLook): void {
+  PALETTE.walls = look.walls;
+  PALETTE.roofs = look.roofs;
+  BLUE = look.accents.door;
+  TRIM = look.accents.trim;
+  HOUSE_KIT = look.house;
+  setRoofPalette(look.roofs, look.roofShapeFor);
+}
 const STONE = "#8d8a83";
 const STONE_LIGHT = "#b9b6ae"; // new hex: dry quay stone (noted in NOTES)
 const GLASS = "#2b3a45";      // new hex: window glass
@@ -271,10 +285,52 @@ function homeRoof(scene: Scene, parts: Mesh[], b: Building, cx: number, cz: numb
 }
 
 /**
+ * A round thatched hut (the Atoll): a cylinder of pale wall under a cone of thatch; level 2 adds a verandah on
+ * posts round the front, level 3 a second storey with its own smaller cone.
+ */
+function roundHome(scene: Scene, b: Building, bodyW: number, baseH: number): BuildingMeshes {
+  const { cx, cz, w, d } = bounds(b.cells, b.rot);
+  const F = b.floorY;
+  const dia = bodyW * 1.05;
+  const bodyH = baseH * 0.85;
+  const parts: Mesh[] = [];
+  deck(scene, parts, cx, cz, w, d, F);
+  const wall = PALETTE.walls[b.id % PALETTE.walls.length];
+  const bx = cx, bz = cz + 0.04;
+  parts.push(cyl(scene, dia, bodyH, bx, F + bodyH / 2, bz, wall, 8));
+  for (const k of [0.4, 0.75]) parts.push(cyl(scene, dia + 0.02, 0.015, bx, F + bodyH * k, bz, TRIM, 8));
+  door(scene, parts, bx, F, bz - dia / 2 + 0.02, false, 0.18, Math.min(0.32, bodyH * 0.6));
+  const roofHex = roofFor(b);
+  const rise = dia * 0.62;
+  let top = F + bodyH;
+  if (b.level >= 3) {
+    // The second storey: a narrower drum with a window, its cone above.
+    parts.push(cyl(scene, dia * 0.72, bodyH * 0.6, bx, top + bodyH * 0.3, bz, wall, 8));
+    window_(scene, parts, bx, top + bodyH * 0.3, bz - dia * 0.36 - 0.005, false, 0.12, 0.12, false);
+    parts.push(cyl(scene, dia + 0.3, 0.05, bx, top + 0.02, bz, roofHex, 8)); // the lower thatch brim
+    top += bodyH * 0.6;
+    parts.push(cyl(scene, dia * 0.72 + 0.3, rise * 0.8, bx, top + rise * 0.4, bz, roofHex, 8, 0));
+  } else {
+    parts.push(cyl(scene, dia + 0.3, rise, bx, top + rise / 2, bz, roofHex, 8, 0));
+  }
+  parts.push(cyl(scene, 0.06, 0.12, bx, top + (b.level >= 3 ? rise * 0.8 : rise) + 0.05, bz, PALETTE.wood, 4));
+  if (b.level >= 2) {
+    // The verandah: a half-ring of deck on short posts round the door side, under a thatch skirt.
+    parts.push(box(scene, dia + 0.2, 0.04, 0.26, bx, F + 0.02, bz - dia / 2 - 0.12, PALETTE.planks));
+    for (const sx of [-1, 1]) parts.push(box(scene, 0.05, 0.55, 0.05, bx + sx * (dia / 2 + 0.05), F + 0.28, bz - dia / 2 - 0.2, PALETTE.wood));
+    parts.push(box(scene, dia + 0.3, 0.03, 0.34, bx, F + 0.56, bz - dia / 2 - 0.14, roofHex));
+  }
+  railing(scene, parts, cx + w / 2 - 0.08, cz - d / 2 + 0.08, cx + w / 2 - 0.08, cz + d / 2 - 0.08, F, 0.26);
+  const lantern = bracketLantern(scene, parts, bx + dia / 2 - 0.02, F + bodyH * 0.7, bz - dia * 0.3, 1, 0);
+  return { root: mergeFlat(b.kind, parts, scene), lantern };
+}
+
+/**
  * A home. Huts are one small room; houses a wider cottage with shutters; tall houses a narrow tower with a
  * balcony (reference/house). Levels add a window box, then a chimney and a lit porch.
  */
 function home(scene: Scene, b: Building, bodyW: number, baseH: number): BuildingMeshes {
+  if (HOUSE_KIT === "round") return roundHome(scene, b, bodyW, baseH);
   const { cx, cz, w, d } = bounds(b.cells, b.rot);
   const F = b.floorY;
   const bodyH = baseH + 0.14 * (b.level - 1);
@@ -285,7 +341,7 @@ function home(scene: Scene, b: Building, bodyW: number, baseH: number): Building
   const bx = cx - 0.06, bz = cz + 0.05;
   parts.push(box(scene, bodyW, bodyH, bodyD, bx, F + bodyH / 2, bz, wall));
   // Plank lines: two thin bands so the wall reads as boards.
-  for (const k of [0.33, 0.66]) parts.push(box(scene, bodyW + 0.01, 0.015, bodyD + 0.01, bx, F + bodyH * k, bz, "#e6dccb"));
+  for (const k of [0.33, 0.66]) parts.push(box(scene, bodyW + 0.01, 0.015, bodyD + 0.01, bx, F + bodyH * k, bz, TRIM));
   door(scene, parts, bx - bodyW * 0.15, F, bz - bodyD / 2 - 0.005, false, 0.18, Math.min(0.32, bodyH * 0.55));
   window_(scene, parts, bx + bodyW / 2 + 0.005, F + bodyH * 0.6, bz, true, 0.14, 0.14, b.kind !== "hut");
   if (bodyH > 1.1) {
@@ -299,8 +355,15 @@ function home(scene: Scene, b: Building, bodyW: number, baseH: number): Building
     parts.push(box(scene, bodyW * 0.4, 0.06, 0.1, bx + bodyW * 0.2, F + bodyH * 0.5, bz - bodyD / 2 - 0.05, PALETTE.wood)); // window box
     window_(scene, parts, bx + bodyW * 0.2, F + bodyH * 0.62, bz - bodyD / 2 - 0.005, false, 0.13, 0.13);
   }
-  const rise = bodyH > 1.1 ? 0.42 : bodyW * 0.55;
+  const stave = HOUSE_KIT === "stave";
+  const rise = (bodyH > 1.1 ? 0.42 : bodyW * 0.55) * (stave ? 1.7 : 1);
   homeRoof(scene, parts, b, bx, bz, bodyW, bodyD, F + bodyH, rise);
+  if (stave) {
+    // Stave church language: a second, smaller gable riding the ridge, shingle bands, and a carved crest post.
+    gable(scene, parts, bx, bz, bodyW * 0.55, bodyD * 0.55, F + bodyH + rise * 0.55, rise * 0.5, PALETTE.roofs[b.id % PALETTE.roofs.length], b.id % 2 === 1, 0.08);
+    parts.push(box(scene, 0.05, 0.22, 0.05, bx, F + bodyH + rise * 1.05 + 0.1, bz, PALETTE.wood));
+    parts.push(box(scene, 0.09, 0.05, 0.05, bx, F + bodyH + rise * 1.05 + 0.22, bz, "#8a3f33"));
+  }
   if (b.level >= 3) chimney(scene, parts, bx + bodyW * 0.3, F + bodyH + rise * 0.5, bz + bodyD * 0.2, 0.3);
   // Porch railing on the open front edge, and the lantern on its bracket by the door.
   railing(scene, parts, cx + w / 2 - 0.08, cz - d / 2 + 0.08, cx + w / 2 - 0.08, cz + d / 2 - 0.08, F, 0.26);
@@ -775,13 +838,34 @@ function netLoft(scene: Scene, b: Building): BuildingMeshes {
 }
 
 /** A plank barn with a red gable roof, big double doors and crates stacked at the side. */
+/** Toolworks: a stone-footed workshop with a tall chimney, an anvil block by the door and a crate of iron. */
+function toolworks(scene: Scene, b: Building): BuildingMeshes {
+  const { cx, cz, w, d } = bounds(b.cells, b.rot);
+  const F = b.floorY;
+  const parts: Mesh[] = [];
+  deck(scene, parts, cx, cz, w, d, F);
+  parts.push(box(scene, 1.5, 0.35, 1.3, cx - 0.1, F + 0.175, cz, STONE));
+  parts.push(box(scene, 1.5, 0.7, 1.3, cx - 0.1, F + 0.7, cz, PALETTE.walls[2]));
+  gable(scene, parts, cx - 0.1, cz, 1.5, 1.3, F + 1.05, 0.55, PALETTE.roofs[1], true, 0.16);
+  chimney(scene, parts, cx + 0.35, F + 1.2, cz + 0.3, 0.6, STONE);
+  door(scene, parts, cx - 0.1, F, cz - 0.655, false, 0.36, 0.6);
+  window_(scene, parts, cx - 0.55, F + 0.75, cz - 0.655, false, 0.2, 0.16, false);
+  window_(scene, parts, cx + 0.35, F + 0.75, cz - 0.655, false, 0.2, 0.16, false);
+  // Anvil on a stump, a crate of iron and a barrel by the door.
+  parts.push(cyl(scene, 0.22, 0.22, cx + 0.78, F + 0.11, cz - 0.45, PALETTE.wood, 6));
+  parts.push(box(scene, 0.26, 0.1, 0.12, cx + 0.78, F + 0.27, cz - 0.45, "#4c5a66"));
+  crate(scene, parts, cx + 0.78, F, cz + 0.15, 0.24);
+  parts.push(box(scene, 0.2, 0.05, 0.14, cx + 0.78, F + 0.265, cz + 0.15, "#4c5a66"));
+  barrel(scene, parts, cx + 0.78, F, cz + 0.5, 0.22);
+  return { root: mergeFlat("toolworks", parts, scene) };
+}
 function warehouse(scene: Scene, b: Building): BuildingMeshes {
   const { cx, cz, w, d } = bounds(b.cells, b.rot);
   const F = b.floorY;
   const parts: Mesh[] = [];
   deck(scene, parts, cx, cz, w, d, F);
   parts.push(box(scene, 1.5, 1.05, 1.4, cx - 0.15, F + 0.525, cz, PALETTE.walls[0]));
-  for (const k of [0.25, 0.5, 0.75]) parts.push(box(scene, 1.51, 0.015, 1.41, cx - 0.15, F + 1.05 * k, cz, "#e6dccb"));
+  for (const k of [0.25, 0.5, 0.75]) parts.push(box(scene, 1.51, 0.015, 1.41, cx - 0.15, F + 1.05 * k, cz, TRIM));
   gable(scene, parts, cx - 0.15, cz, 1.5, 1.4, F + 1.05, 0.6, PALETTE.roofs[0], false, 0.16);
   door(scene, parts, cx - 0.15, F, cz - 0.705, false, 0.5, 0.62);
   parts.push(box(scene, 0.03, 0.6, 0.02, cx - 0.15, F + 0.31, cz - 0.72, PALETTE.wood));
@@ -1036,6 +1120,194 @@ function applyDamage(scene: Scene, b: Building, m: BuildingMeshes): BuildingMesh
   return m;
 }
 
+// ---------- the Fjord's kinds (BIOMES.md §3.3) ----------
+
+/** Stockfish racks: two A-frame drying racks hung with pale split fish, a salt barrel between them. */
+function stockfishRacks(scene: Scene, b: Building): BuildingMeshes {
+  const { cx, cz, w, d } = bounds(b.cells, b.rot);
+  const F = b.floorY;
+  const parts: Mesh[] = [];
+  deck(scene, parts, cx, cz, w, d, F);
+  for (const rx of [-0.5, 0.5]) {
+    for (const sz of [-0.32, 0.32]) {
+      const legA = box(scene, 0.05, 0.9, 0.05, rx + cx - 0.14, F + 0.42, cz + sz, PALETTE.wood); legA.rotation.z = 0.28; parts.push(legA);
+      const legB = box(scene, 0.05, 0.9, 0.05, rx + cx + 0.14, F + 0.42, cz + sz, PALETTE.wood); legB.rotation.z = -0.28; parts.push(legB);
+    }
+    parts.push(box(scene, 0.06, 0.06, 0.78, cx + rx, F + 0.86, cz, PALETTE.wood));
+    for (let k = 0; k < 5; k++) {
+      const fish = box(scene, 0.04, 0.26, 0.08, cx + rx + (k % 2 ? 0.05 : -0.05), F + 0.7, cz - 0.28 + k * 0.14, k % 3 ? "#e6dccb" : "#d9c9a5");
+      fish.rotation.x = 0.15;
+      parts.push(fish);
+    }
+  }
+  barrel(scene, parts, cx, F, cz + 0.32, 0.2);
+  crate(scene, parts, cx, F, cz - 0.34, 0.18);
+  return { root: mergeFlat("stockfishRacks", parts, scene) };
+}
+
+/** Whaling station: a long tarred shed on a heavy quay, a flensing deck with a winch and a hoist, blubber barrels. */
+function whalingStation(scene: Scene, b: Building): BuildingMeshes {
+  const { cx, cz, w, d } = bounds(b.cells, b.rot);
+  const F = b.floorY;
+  const parts: Mesh[] = [box(scene, w - 0.02, 0.12, d - 0.02, cx, F - 0.06, cz, PALETTE.planks)];
+  for (const sx of [-1, 0, 1]) for (const sz of [-1, 1]) parts.push(stilt(scene, cx + sx * (w / 2 - 0.2), cz + sz * (d / 2 - 0.15), F - 0.12, 0.16, 6));
+  parts.push(box(scene, 1.7, 0.85, 1.0, cx - 0.55, F + 0.425, cz + 0.35, "#3d2e26"));
+  gable(scene, parts, cx - 0.55, cz + 0.35, 1.7, 1.0, F + 0.85, 0.7, "#2b2b2b", true, 0.16);
+  chimney(scene, parts, cx - 1.1, F + 1.2, cz + 0.55, 0.5, STONE);
+  door(scene, parts, cx - 0.3, F, cz + 0.35 - 0.505, false, 0.34, 0.6);
+  window_(scene, parts, cx - 0.95, F + 0.5, cz + 0.35 - 0.505, false, 0.16, 0.14, false);
+  // The flensing deck: a dark stain, a winch drum, a hoist frame with a hook, barrels of oil.
+  parts.push(box(scene, 1.0, 0.02, 0.9, cx + 0.8, F + 0.01, cz - 0.3, "#4a3a30"));
+  parts.push(cyl(scene, 0.32, 0.22, cx + 0.5, F + 0.11, cz - 0.55, PALETTE.wood, 8).rotate(Axis.X, Math.PI / 2, Space.WORLD) as Mesh);
+  for (const sx of [-0.35, 0.35]) parts.push(box(scene, 0.06, 1.3, 0.06, cx + 1.05 + sx, F + 0.65, cz - 0.15, PALETTE.wood));
+  parts.push(box(scene, 0.8, 0.06, 0.06, cx + 1.05, F + 1.3, cz - 0.15, PALETTE.wood));
+  parts.push(box(scene, 0.015, 0.6, 0.015, cx + 1.05, F + 1.0, cz - 0.15, ROPE));
+  parts.push(box(scene, 0.08, 0.1, 0.04, cx + 1.05, F + 0.66, cz - 0.15, "#4c5a66"));
+  barrel(scene, parts, cx + 0.25, F, cz - 0.05, 0.22); barrel(scene, parts, cx + 0.5, F, cz + 0.15, 0.22); barrel(scene, parts, cx + 0.75, F, cz + 0.4, 0.2);
+  for (const sx of [-1, 1]) bollard(scene, parts, cx + sx * (w / 2 - 0.2), F, cz - d / 2 + 0.15, "#8a3f33");
+  const lantern = bracketLantern(scene, parts, cx - 0.3 + 0.3, F + 0.6, cz + 0.35 - 0.46, 0, -1);
+  return { root: mergeFlat("whalingStation", parts, scene), lantern };
+}
+
+/** Iron mine: a timbered adit into the hill, rails out to a tipping cart, a spoil heap and a lamp on the frame. */
+function ironMine(scene: Scene, b: Building): BuildingMeshes {
+  const { cx, cz, w, d } = bounds(b.cells, b.rot);
+  const F = b.floorY;
+  const parts: Mesh[] = [];
+  deck(scene, parts, cx, cz, w, d, F, 0.15);
+  // The adit: a dark mouth framed in heavy timber, set into a rock face.
+  parts.push(rock(scene, cx - 0.4, F + 0.35, cz + 0.45, 1.1, STONE, 3));
+  parts.push(box(scene, 0.6, 0.62, 0.3, cx - 0.4, F + 0.31, cz + 0.05, "#1c1a1a"));
+  for (const sx of [-0.33, 0.33]) parts.push(box(scene, 0.08, 0.7, 0.1, cx - 0.4 + sx, F + 0.35, cz - 0.05, PALETTE.wood));
+  parts.push(box(scene, 0.8, 0.09, 0.12, cx - 0.4, F + 0.72, cz - 0.05, PALETTE.wood));
+  // Rails and the cart.
+  for (const sz of [-0.09, 0.09]) parts.push(box(scene, 1.4, 0.02, 0.03, cx + 0.1, F + 0.02, cz - 0.3 + sz, "#4c5a66"));
+  parts.push(box(scene, 0.34, 0.2, 0.24, cx + 0.5, F + 0.16, cz - 0.3, "#4c5a66"));
+  parts.push(box(scene, 0.3, 0.06, 0.2, cx + 0.5, F + 0.28, cz - 0.3, "#8a6a5a"));
+  // Spoil heap and a stack of ore.
+  parts.push(rock(scene, cx + 0.65, F + 0.05, cz + 0.5, 0.6, "#5d5854", 5));
+  parts.push(rock(scene, cx + 0.3, F + 0.02, cz + 0.7, 0.35, "#7a5a4a", 2));
+  const lantern = bracketLantern(scene, parts, cx - 0.4, F + 0.62, cz - 0.12, 0, -1);
+  return { root: mergeFlat("ironMine", parts, scene), lantern };
+}
+
+/** Ice house: a squat stone store with a turf roof and a low door; sawdust barrels and blocks of ice by the step. */
+function iceHouse(scene: Scene, b: Building): BuildingMeshes {
+  const { x, z } = cellCenter(b.cells[0]);
+  const F = b.floorY;
+  const parts: Mesh[] = [];
+  deck(scene, parts, x, z, 1, 1, F);
+  parts.push(box(scene, 0.7, 0.42, 0.62, x, F + 0.21, z, STONE));
+  parts.push(box(scene, 0.72, 0.03, 0.64, x, F + 0.2, z, STONE_LIGHT));
+  hip(scene, parts, x, z, 0.7, 0.62, F + 0.42, 0.24, "#3f7346", 0.12);
+  parts.push(box(scene, 0.2, 0.26, 0.03, x - 0.1, F + 0.13, z - 0.32, PALETTE.wood));
+  for (const [dx, dz] of [[0.42, -0.2], [0.42, 0.1]]) parts.push(box(scene, 0.16, 0.16, 0.16, x + dx, F + 0.08, z + dz, "#d5e6ea"));
+  barrel(scene, parts, x - 0.4, F, z + 0.2, 0.18);
+  return { root: mergeFlat("iceHouse", parts, scene) };
+}
+
+/** Ice-breaker pier: the pier with an iron-shod prow at its seaward end, a brazier, and a heavier pile every bay. */
+function iceBreakerPier(scene: Scene, b: Building): BuildingMeshes {
+  const base = pier(scene, b);
+  const a = cellCenter(b.cells[0]), s = cellCenter(b.cells[b.cells.length - 1]);
+  const alongX = a.z === s.z;
+  const dir = Math.sign(alongX ? s.x - a.x : s.z - a.z) || 1;
+  const F = b.floorY;
+  const parts: Mesh[] = [base.root];
+  // The prow: an iron wedge past the end of the deck, pointing seaward, down to the water.
+  const px = alongX ? s.x + dir * 0.6 : s.x, pz = alongX ? s.z : s.z + dir * 0.6;
+  const prow = MeshBuilder.CreateCylinder("prow", { diameterTop: 0, diameterBottom: 0.7, height: 0.9, tessellation: 3 }, scene);
+  prow.rotation.z = alongX ? -dir * Math.PI / 2 : 0;
+  prow.rotation.x = alongX ? 0 : dir * Math.PI / 2;
+  prow.position.set(px, F - 0.35, pz);
+  parts.push(tint(prow, "#4c5a66"));
+  for (let k = 0; k < b.cells.length; k++) {
+    const c = cellCenter(b.cells[k]);
+    parts.push(box(scene, alongX ? 0.9 : 0.06, 0.06, alongX ? 0.06 : 0.9, c.x, F + 0.03, c.z + (alongX ? 0.44 : 0), "#4c5a66"));
+  }
+  // A brazier on the root end keeps the crew's hands warm: a stone bowl with an ember cone.
+  parts.push(cyl(scene, 0.22, 0.16, a.x - (alongX ? dir * 0.2 : 0.3), F + 0.08, a.z - (alongX ? 0.3 : dir * 0.2), STONE, 6));
+  parts.push(cyl(scene, 0.14, 0.1, a.x - (alongX ? dir * 0.2 : 0.3), F + 0.2, a.z - (alongX ? 0.3 : dir * 0.2), "#ff6a2a", 5, 0));
+  return { root: mergeFlat("iceBreakerPier", parts, scene) };
+}
+
+// ---------- the Atoll's kinds (BIOMES.md §3.2) ----------
+
+/** Dive platform: a small raft deck on four poles in the lagoon, a ladder down, a diving rope and a basket of shell. */
+function divePlatform(scene: Scene, b: Building): BuildingMeshes {
+  const { x, z } = cellCenter(b.cells[0]);
+  const F = b.floorY;
+  const parts: Mesh[] = [box(scene, 0.86, 0.08, 0.86, x, F - 0.04, z, PALETTE.planks)];
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) parts.push(stilt(scene, x + sx * 0.36, z + sz * 0.36, F - 0.06, 0.08, 5));
+  railing(scene, parts, x - 0.4, z - 0.4, x + 0.4, z - 0.4, F, 0.24);
+  railing(scene, parts, x - 0.4, z - 0.4, x - 0.4, z + 0.4, F, 0.24);
+  for (let k = 0; k < 3; k++) parts.push(box(scene, 0.04, 0.03, 0.2, x + 0.44, F - 0.12 - k * 0.14, z + 0.15, PALETTE.wood));
+  parts.push(box(scene, 0.06, 0.6, 0.06, x + 0.3, F + 0.3, z + 0.3, PALETTE.wood));
+  parts.push(box(scene, 0.015, 0.5, 0.015, x + 0.3, F + 0.05, z + 0.42, ROPE));
+  crate(scene, parts, x - 0.25, F, z + 0.2, 0.2);
+  parts.push(rock(scene, x - 0.25, F + 0.2, z + 0.2, 0.16, "#f7f1e3", 4));
+  const lantern = postLantern(scene, parts, x - 0.32, z - 0.3, F);
+  return { root: mergeFlat("divePlatform", parts, scene), lantern };
+}
+
+/** Pearl house: a thatched shed with a wide grading table under an awning, shell heaps, and a strongbox. */
+function pearlHouse(scene: Scene, b: Building): BuildingMeshes {
+  const { cx, cz, w, d } = bounds(b.cells, b.rot);
+  const F = b.floorY;
+  const parts: Mesh[] = [];
+  deck(scene, parts, cx, cz, w, d, F);
+  parts.push(box(scene, 0.9, 0.7, 0.7, cx - 0.4, F + 0.35, cz, PALETTE.walls[0]));
+  gable(scene, parts, cx - 0.4, cz, 0.9, 0.7, F + 0.7, 0.45, PALETTE.roofs[0], true, 0.18);
+  door(scene, parts, cx - 0.4, F, cz - 0.355, false, 0.2, 0.36);
+  // The awning and the table: pearls are graded in the shade.
+  for (const sz of [-0.3, 0.3]) parts.push(box(scene, 0.05, 0.62, 0.05, cx + 0.55, F + 0.31, cz + sz, PALETTE.wood));
+  parts.push(box(scene, 0.7, 0.03, 0.8, cx + 0.35, F + 0.64, cz, PALETTE.roofs[0]));
+  parts.push(box(scene, 0.5, 0.04, 0.5, cx + 0.4, F + 0.3, cz, PALETTE.planks));
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) parts.push(box(scene, 0.04, 0.3, 0.04, cx + 0.4 + sx * 0.22, F + 0.15, cz + sz * 0.22, PALETTE.wood));
+  for (let k = 0; k < 5; k++) parts.push(rock(scene, cx + 0.3 + (k % 3) * 0.1, F + 0.34, cz - 0.15 + Math.floor(k / 3) * 0.14, 0.05, "#f7f1e3", k));
+  parts.push(rock(scene, cx + 0.05, F + 0.05, cz + 0.55, 0.28, "#e6dccb", 6));
+  parts.push(box(scene, 0.22, 0.14, 0.16, cx - 0.05, F + 0.07, cz - 0.55, "#4c5a66"));
+  const lantern = bracketLantern(scene, parts, cx - 0.05, F + 0.55, cz - 0.31, 0, -1);
+  return { root: mergeFlat("pearlHouse", parts, scene), lantern };
+}
+
+/** Coconut grove: an open shelter of poles with a thatch, baskets of coconuts, a husking spike. */
+function coconutGrove(scene: Scene, b: Building): BuildingMeshes {
+  const { cx, cz, w, d } = bounds(b.cells); // cell-oriented, like the clam camp
+  const F = b.floorY;
+  const parts: Mesh[] = [];
+  deck(scene, parts, cx, cz, w, d, F);
+  const a = cellCenter(b.cells[0]), s = cellCenter(b.cells[b.cells.length - 1]);
+  for (const sx of [-0.3, 0.3]) for (const sz of [-0.3, 0.3]) parts.push(box(scene, 0.05, 0.8, 0.05, a.x + sx, F + 0.4, a.z + sz, PALETTE.wood));
+  hip(scene, parts, a.x, a.z, 0.85, 0.85, F + 0.8, 0.3, PALETTE.roofs[0], 0.12);
+  for (const [dx, dz] of [[-0.2, 0.1], [0.15, -0.15], [0.2, 0.2]]) {
+    parts.push(cyl(scene, 0.24, 0.16, s.x + dx, F + 0.08, s.z + dz, "#b9a377", 6));
+    for (let k = 0; k < 3; k++) parts.push(rock(scene, s.x + dx + (k - 1) * 0.06, F + 0.2, s.z + dz + (k % 2) * 0.05, 0.07, "#a98a55", k));
+  }
+  const spike = box(scene, 0.04, 0.5, 0.04, s.x - 0.3, F + 0.25, s.z - 0.3, PALETTE.wood);
+  parts.push(spike);
+  parts.push(box(scene, 0.02, 0.12, 0.02, s.x - 0.3, F + 0.55, s.z - 0.3, "#4c5a66"));
+  return { root: mergeFlat("coconutGrove", parts, scene) };
+}
+
+/** Reef nursery: a floating frame of racks with coral fragments in the lagoon, buoys at the corners. */
+function reefNursery(scene: Scene, b: Building): BuildingMeshes {
+  const { x, z } = cellCenter(b.cells[0]);
+  const F = b.floorY;
+  const parts: Mesh[] = [];
+  for (const sx of [-0.35, 0.35]) parts.push(box(scene, 0.06, 0.06, 0.86, x + sx, F - 0.02, z, PALETTE.wood));
+  for (const sz of [-0.35, 0.35]) parts.push(box(scene, 0.86, 0.06, 0.06, x, F - 0.02, z + sz, PALETTE.wood));
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) parts.push(cyl(scene, 0.12, 0.12, x + sx * 0.38, F + 0.03, z + sz * 0.38, "#e0705a", 6));
+  // Racks of fragments: three bars across, with small branching bits standing up.
+  for (const sz of [-0.2, 0, 0.2]) {
+    parts.push(box(scene, 0.7, 0.03, 0.03, x, F + 0.02, z + sz, PALETTE.planks));
+    for (let k = 0; k < 4; k++) parts.push(box(scene, 0.04, 0.12, 0.04, x - 0.27 + k * 0.18, F + 0.09, z + sz, k % 2 ? "#e0705a" : "#f7f1e3"));
+  }
+  parts.push(box(scene, 0.04, 0.5, 0.04, x - 0.4, F + 0.2, z - 0.4, PALETTE.wood));
+  parts.push(box(scene, 0.12, 0.08, 0.02, x - 0.34, F + 0.4, z - 0.4, "#f7f1e3"));
+  return { root: mergeFlat("reefNursery", parts, scene) };
+}
+
 export function createBuildingMeshes(scene: Scene, b: Building, grid: Grid): BuildingMeshes {
   const m = buildMeshes(scene, b, grid);
   if (b.rot && !CELL_ORIENTED.has(b.kind)) turn(m, b);
@@ -1077,6 +1349,16 @@ function buildMeshes(scene: Scene, b: Building, grid: Grid): BuildingMeshes {
     case "smokehouse": return smokehouse(scene, b);
     case "netLoft": return netLoft(scene, b);
     case "warehouse": return warehouse(scene, b);
+    case "toolworks": return toolworks(scene, b);
+    case "stockfishRacks": return stockfishRacks(scene, b);
+    case "whalingStation": return whalingStation(scene, b);
+    case "ironMine": return ironMine(scene, b);
+    case "iceHouse": return iceHouse(scene, b);
+    case "iceBreakerPier": return iceBreakerPier(scene, b);
+    case "divePlatform": return divePlatform(scene, b);
+    case "pearlHouse": return pearlHouse(scene, b);
+    case "coconutGrove": return coconutGrove(scene, b);
+    case "reefNursery": return reefNursery(scene, b);
   }
 }
 

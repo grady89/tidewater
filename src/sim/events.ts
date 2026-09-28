@@ -6,9 +6,10 @@
 import { SIZE } from "../config";
 import {
   BUILDINGS, DRAWDOWN_LEVEL, DRAWDOWN_SECONDS, SHELTER_RADIUS, SHIELD_RANGE, STORM_CHANCE, STORM_FIRST_CYCLE,
-  STORM_LOSS_CHANCE, TSUNAMI_CHANCE, TSUNAMI_COOLDOWN, TSUNAMI_FIRST_CYCLE, WAVE_HEIGHT, WAVE_SETTLE_SECONDS,
+  STORM_LOSS_CHANCE, TSUNAMI_CHANCE, TSUNAMI_COOLDOWN, TSUNAMI_FIRST_CYCLE, WAVE_SETTLE_SECONDS,
   WAVE_SPEED,
 } from "./balance";
+import { biomeFor } from "./biomes";
 import { cellIndex, Grid, HALF, inBounds } from "./grid";
 import { rand } from "./rng";
 import { Building, buildingList, Cell, notify, SimState } from "./state";
@@ -68,13 +69,15 @@ export function startStorm(state: SimState, grid: Grid): void {
   s.active = true;
   s.lastCycle = state.tide.cycle;
   s.count++;
-  notify(state, "A storm is coming: the boats stay in");
+  const profile = biomeFor(state).storm;
+  notify(state, profile ? `A ${profile.name} is coming: the boats stay in` : "A storm is coming: the boats stay in");
   // Boats out of shelter are at the sea's mercy; a lighthouse sees them all home.
   if (hasLighthouse(state)) return;
+  const lossChance = STORM_LOSS_CHANCE * (profile?.loss ?? 1);
   for (const h of buildingList(state).sort((a, b) => a.id - b.id)) {
     if ((BUILDINGS[h.kind].slots ?? 0) === 0 || h.boats === 0 || sheltered(grid, h)) continue;
     let lost = 0;
-    for (let k = 0; k < h.boats; k++) if (rand(state) < STORM_LOSS_CHANCE) lost++;
+    for (let k = 0; k < h.boats; k++) if (rand(state) < lossChance) lost++;
     if (lost > 0) {
       h.boats -= lost;
       h.atSea = false;
@@ -167,7 +170,7 @@ function strike(state: SimState, grid: Grid): void {
       trimCrew(state, b);
     }
     if (b.kind === "seaWall" || b.kind === "breakwater") continue;
-    if (b.floorY >= WAVE_HEIGHT || b.damaged) continue;
+    if (b.floorY >= grid.tides.waveHeight || b.damaged) continue;
     if (b.cells.some(c => shielded(grid, t.dir, c))) continue;
     b.damaged = true;
     b.fire = 0;

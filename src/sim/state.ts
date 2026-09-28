@@ -2,6 +2,8 @@
 import { TIDE_HI } from "../config";
 import { BuildingKind, FISH_CAP, ResourceKind, SERVICE_KINDS, ServiceKind, STARTING_FISH, STARTING_MONEY } from "./balance";
 import { filled, zeros } from "./fields";
+import { emptyStock, GoodId } from "./goods";
+import { BiomeId, tideScaleOf } from "./biomes";
 import { initialTrees, TreeSite } from "./trees";
 
 export function emptyCoverage(): Record<ServiceKind, number[]> {
@@ -77,6 +79,8 @@ export interface Fields {
   shark: number[];
   /** Fire risk per cell. */
   fire: number[];
+  /** Coral bleaching per lagoon cell, 0..1 (the Atoll); zero everywhere else. */
+  bleach: number[];
 }
 
 export interface TideState {
@@ -92,6 +96,8 @@ export interface TideState {
   peaked: boolean;
   /** Debug/test hook: when set, the water is held at this level while the clock keeps running. */
   override: number | null;
+  /** The biome's multiplier on every level (tides.ts); 1 for Tidewater. */
+  scale: number;
 }
 
 export interface Assignment { home: number; work: number; n: number }
@@ -143,17 +149,17 @@ export interface TradeState {
   nextVisit: number;
   /** Cycle of the current or last visit; the view shows the ship through that high water. */
   shipCycle: number;
-  /** Planks ordered for the next ship, delivered and paid on arrival. */
-  plankOrder: number;
+  /** The order book: units of each good queued for the next ship, delivered and paid on arrival. */
+  orders: Partial<Record<GoodId, number>>;
   /** Visits so far. */
   visits: number;
 }
 
 export interface SimState {
-  version: 2;
+  version: 3;
   seed: number;
-  /** The island: the seed the player asked for (0 = the original island); island.ts turns it into ground. */
-  world: { seed: number };
+  /** The island: the seed the player asked for (0 = the original island) and the biome; island.ts turns them into ground. */
+  world: { seed: number; biome: BiomeId };
   /** RNG stream state (see rng.ts). */
   rng: number;
   /** Game seconds elapsed. */
@@ -202,27 +208,29 @@ export interface SimState {
   last: CycleStats;
   /** Newest last; capped. */
   log: string[];
+  /** The biome's own counters (whale season, sea ice, …): a flat bag of numbers so every biome saves the same way. */
+  biomeState: Record<string, number>;
 }
 
-export function createState(seed = 1, islandSeed = 0): SimState {
+export function createState(seed = 1, islandSeed = 0, biome: BiomeId = "tidewater"): SimState {
   return {
-    version: 2,
+    version: 3,
     seed,
-    world: { seed: islandSeed | 0 },
+    world: { seed: islandSeed | 0, biome },
     rng: seed | 0,
     time: 0,
     tick: 0,
-    tide: { phase: Math.PI * 0.5, level: TIDE_HI, wetLevel: 0, cycle: 0, peaked: false, override: null },
+    tide: { phase: Math.PI * 0.5, level: TIDE_HI * tideScaleOf(biome), wetLevel: 0, cycle: 0, peaked: false, override: null, scale: tideScaleOf(biome) },
     phase: "high",
-    resources: { money: STARTING_MONEY, fish: STARTING_FISH, shellfish: 0, smoked: 0, timber: 0, planks: 0 },
+    resources: { money: STARTING_MONEY, ...emptyStock(), fish: STARTING_FISH },
     buildings: {},
     nextId: 1,
     assignments: [],
-    trees: initialTrees(islandSeed),
+    trees: initialTrees(islandSeed, biome),
     extraTrees: [],
     landfill: [],
     loan: { owed: 0, perCycle: 0, taken: 0 },
-    fields: { pollution: zeros(), fish: filled(FISH_CAP), coverage: emptyCoverage(), shark: zeros(), fire: zeros() },
+    fields: { pollution: zeros(), fish: filled(FISH_CAP), coverage: emptyCoverage(), shark: zeros(), fire: zeros(), bleach: zeros() },
     emitters: [],
     sharkEmitters: [],
     fireEmitters: [],
@@ -232,13 +240,14 @@ export function createState(seed = 1, islandSeed = 0): SimState {
     swimmers: [],
     incidents: 0,
     achievements: [],
-    trade: { nextVisit: -1, shipCycle: -1, plankOrder: 0, visits: 0 },
+    trade: { nextVisit: -1, shipCycle: -1, orders: {}, visits: 0 },
     tourists: 0,
     storm: { active: false, lastCycle: -99, count: 0 },
     tsunami: { stage: null, t: 0, dir: { x: 0, z: 1 }, front: 0, lastCycle: -99, due: -1, struck: [], count: 0 },
     happiness: 1,
     last: { cycle: 0, fishCaught: 0, fishSold: 0, shellfishSold: 0, income: 0, expenses: 0, immigrants: 0, tourism: 0, trade: 0 },
     log: [],
+    biomeState: {},
   };
 }
 

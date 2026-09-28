@@ -1,7 +1,7 @@
 // The trade ship: one mesh that sails in from the open sea through the visit's high water, lies at the harbor
 // around the peak, and sails out again. Position is a function of ledger + view time. View only.
 import { Mesh, MeshBuilder, Scene, Vector3 } from "@babylonjs/core";
-import { HIGH_WATER_MARK, LOW_WATER_MARK, SIZE } from "../config";
+import { SIZE } from "../config";
 import { cellCenter, Grid } from "../sim/grid";
 import { seaEntry, seaPath } from "../sim/sea";
 import { Building, SimState } from "../sim/state";
@@ -84,7 +84,7 @@ export class Ship {
       const rising = isRising(state.tide);
       const visiting = rising ? state.tide.cycle + 1 === t.nextVisit : state.tide.cycle === t.shipCycle;
       if (visiting) {
-        const u = phaseProgress(state.tide, HIGH_WATER_MARK, LOW_WATER_MARK);
+        const u = phaseProgress(state.tide, this.grid.tides.highMark, this.grid.tides.lowMark);
         leg = u < IN_END ? "in" : u < OUT_START ? "berthed" : "out";
         const path = this.path(harbor);
         if (path.length > 2) {

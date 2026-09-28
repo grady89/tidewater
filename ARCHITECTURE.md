@@ -25,6 +25,12 @@ one engine renders: the globe of twelve seas the game launches into, or the isla
 src/config.ts            sizes, tide constants (TIDE_*, SPRING_*), stilt rule constants, day length, terrain seed
 src/sim/
   balance.ts             every tunable and the building catalog (BUILDINGS: footprint, class, cost, floor, network role…)
+  goods.ts               the goods registry: every stockpiled good with a role, a cap and the company's prices
+  materials.ts           cell materials beside the classes (lagoon, mangrove, lava, dune, oasis, vent, spring, fertile)
+  tides.ts               the tide's numbers per biome: tidesFor(scale) rederives every level, mark, flood line and floor
+  food.ts                food variety (any food feeds, eaten in proportion), the luxury rule, the favourite
+  biomes/                registry.ts (the Biome interface and registry), index.ts (imports every biome), tidewater.ts,
+                         fjord.ts, atoll.ts — each a delta on the catalog: tide, goods, kinds, shaper, validation, hooks
   state.ts               SimState, Building, Fields; createState; notify (+ onNotify hook); population
   cells.ts               the 64×64 lattice helpers: HALF, DIRS, inBounds, cellIndex, cellCenter, worldToCell
   heightfield.ts         islandHeight(seed): the analytic terrain; terrainHeight = seed 0; cellClass(h)
@@ -49,7 +55,8 @@ src/sim/
   land.ts                landfill, plant, clear (the land tools)
   trees.ts               tree sites (from the island) and ages; felling and regrowth
   sea.ts                 sea BFS: grounds for boats, sea paths for the ship and the ferry
-  trade.ts               the trade ship, plank orders, tourists
+  trade.ts               the trade ship as the Trade Company's carrier: what it carries and buys here, sliding prices, the order book, tourists
+  lanes.ts               sea lanes v0 behind LANES_ENABLED (off): the World ledger (settlement-only ticks for inactive seas), cargo between adjacent harbors
   loan.ts                one loan at a time, repaid per settlement
   events.ts              storms and the tsunami (warning, drawdown, wave, strike, shielding)
   districts.ts           named clusters of buildings (view/info only)
@@ -75,6 +82,7 @@ src/view/
                          thin-instanced or pooled meshes driven by the ledger + view time; walkers ride the ferry
   ground.ts              the ground sampler every prop stands on (the rendered terrain, landfill included)
   roofs.ts               roof shape and colour per building (shared by the island's meshes and the World's miniatures)
+  biomes/                the looks: index.ts (BiomeLook, lookFor, Tidewater's look), fjord.ts, atoll.ts
   audio.ts               procedural Web Audio (surf, bell, thrum, pad, gulls, hammering)
 src/build/
   placement.ts           pointer → cell, ghost (fate tint, stilts, door tab), drag-to-paint, lift, turn, place/remove
@@ -91,7 +99,9 @@ test/
   sectors.test.ts / globe.test.ts   the sector model (budget, migration, export/import) and the World's pure parts
   fuzzCore.ts / fuzzWorker.ts / fuzz.ts   the sim fuzzer (invariants every cycle; worker threads)
   smoke.ts               headless Chrome launches into the World, dives into a sea, plays every milestone, comes back
-  monkey.ts / quality.ts / deploycheck.ts   random real input; preset fps (island and World); the built site under /tidewater/
+  monkey.ts / quality.ts / deploycheck.ts   random real input; preset fps (island, World, each coast); the built site under /tidewater/
+  fjord.test.ts / atoll.test.ts / biomes.test.ts / goods.test.ts   the coasts, the framework, the registry and the base additions
+  biomeShots.ts          shots/biomes/: every charted coast beside Tidewater, day and night, wide and close
 ```
 
 ## The World
@@ -143,11 +153,12 @@ through `deserialize`. Faces 0 and 11 are polar, 1–5 temperate, 6–10 tropica
    along the terrain flow (up while the tide rises, down while it falls); fire also burns and spreads.
 5. Phase change (`high` / `slack` / `low`): `shiftEnd` lands catches and shellfish, `shiftStart` sends boats and
    crews out, swimmers are counted at high water, shark incidents rolled as it ends.
-6. At the peak (`tide.peaked`): `settleCycle` — workers assigned, coverage rebuilt, residents eat and pay tax,
+6. At the peak (`tide.peaked`): `settleCycle` — workers assigned, coverage rebuilt, residents eat (every food kind in proportion) and pay tax,
    the market sells, land production, trees regrow, fields settle, waste routed, emitters rebuilt, ignitions,
    repairs, healing, upkeep and the loan instalment (`moveMoney`), trade and tourism, immigration, `state.last`.
    Then `rollStorm` and `rollTsunami` (which is why a storm can take boats right after crews were assigned —
-   `trimCrew` keeps the counts honest).
+   `trimCrew` keeps the counts honest). The biome's `settle` hook runs right after `settleCycle` (whale season, sea ice,
+   avalanches; bleaching, the turtles); its `tick` hook runs every tick before the peak check.
 7. Every 20 ticks: `checkAchievements`.
 
 The view loop (`main.ts`) accumulates real time × speed, ticks the ledger as many times as fit, autosaves at each
@@ -179,7 +190,8 @@ occupancy and the building's assignments) → the chunk's signature changes → 
 
 - The ledger: `SimState` only. Saves are `JSON.stringify(state)`; `deserialize` rejects saves missing fields and
   fills the ones that have safe defaults (`achievements`, `extraTrees`, `landfill`, `loan`, `tsunami.due`,
-  `world`, `rot`). The Grid is rebuilt from the state (`grid.attach`).
+  `world`, `rot`; version 2 → 3: every registry good at zero, `world.biome`, `trade.orders` from the plank order,
+  `tide.scale`, `biomeState`, `fields.bleach`). The Grid is rebuilt from the state (`grid.attach`), its tides from the biome.
 - Derived per-tick caches keyed on the terrain (the field flows) check `grid.terrainVersion`.
 - localStorage (view/UI only): the twelve sectors and their metadata, the active sector, the migration mark
   (the old autosave and slot keys are left in place), tutorial step, quality preset, playtest switch and notes.
@@ -193,4 +205,64 @@ every assignment's home and work exist and the counts agree with `workers`, `res
 match a fresh flood fill; every building stands on cells of its class, once, indexed, above its ground, with
 its counters in range; pollution, shark risk and every coverage layer within [0, 1], fish within [0, FISH_CAP],
 fire risk finite and ≥ 0 (it is meant to climb past its ignition threshold of 1.0); save → load → save is the
-same JSON. `test/fuzzCore.ts` is the list in code.
+same JSON; bleaching within [0, 1] and only on lagoon cells; every biome counter finite; the tide scale the coast's.
+Every fifth seed plays a generated island on the next charted coast. `test/fuzzCore.ts` is the list in code.
+
+## Biomes (docs/biomes, branch `biomes`)
+
+A biome is a delta on the one catalog, never a second one (BIOMES.md §0). The pieces, in the order the ledger
+meets them:
+
+- **The goods registry** (`sim/goods.ts`): every stockpiled good the World trades — the base five plus
+  BIOMES.md §2's foods, luxuries, industrials and sponges — with a role, a base cap and the Trade Company's
+  prices (`buys`: what it pays an island; `sells`: what it charges to deliver). `state.resources` is keyed by good
+  id (`GoodKind = GoodId`); `CAP_BASE` is derived from the registry; a warehouse raises every cap. The resource bar
+  shows what the coast makes plus anything it holds (`shownGoods`), grouped by role.
+- **Food variety and the luxury rule** (`sim/food.ts`): any food feeds; residents eat every kind in stock in
+  proportion; a home needs 2 food kinds in stock for level 2, 3 kinds plus one *foreign* luxury (one its biome
+  does not make) for level 3, and level-3 residents use a little of that luxury each cycle; the biome's favourite
+  luxury (BIOMES.md §2's ring) adds `HAPPY.favourite`. The market sells every food above the reserve, first kinds
+  first, the same arithmetic as the old fish-then-shellfish sale.
+- **The Toolworks** (base catalog): burns iron, ×1.2 output for producers within 8 (`toolBonus`).
+- **The Trade Company as carrier** (`sim/trade.ts`): the ship carries every registry good with a `sells` price
+  that the coast cannot make, plus planks; it buys the coast's own goods with a `buys` price (never its cargo
+  back), luxuries at prices that fall with the volume of one visit (`companyPays`); `trade.orders` is the order
+  book (the old plank order generalised), driven from the harbor's info panel.
+- **Cell materials** (`sim/materials.ts`): plain, lagoon, mangrove, lava, dune, oasis, vent, spring, fertile —
+  set by the island generator (`Island.materials`, one byte per cell), carried by the Grid, gating unique kinds
+  (`BuildingDef.material`), refusing anything on lava, and tinting the ground (the height texture's blue channel).
+  Classes stay deep / flat / high for every rule.
+- **Tides per biome** (`sim/tides.ts`): every tide constant in config.ts is Tidewater's; `tidesFor(scale)`
+  multiplies the levels about mean sea level and rederives the marks, the flood lines, the wave height, the beach
+  band, the landfill height and the fixed deck heights. `Grid.tides` is the active set (from the biome at
+  `attach`), `TideState.scale` rides in the save, and `cellClass`, `floodFate`, `phaseFor`, `floorFor`,
+  `terrainOk` and the placement ghost all read it. Tidewater is scale 1 and computes what it always did.
+- **The Biome interface** (`sim/biomes/registry.ts`, the files in `sim/biomes/`): id, bands, tide multiplier,
+  foods / luxury / industrials / minor, favourite, unique and excluded kinds, `shape(seed)` (a heightfield, a
+  material function, optional tree sites), `validate(stats)` and threshold overrides, `startNear`, and hooks:
+  `tick`, `settle` (after the base settlement), `frozen`, `happiness`, `seasonLabel`, `storm` (swell/loss/name),
+  `tourism`, `lanternDimmed`, `sharks`. `index.ts` imports every biome file (they register themselves) and
+  re-exports the registry; `island.ts` reads the registry directly (the biome files import `state.ts`, which
+  imports `trees.ts`, which needs `island()` at load). `catalogFor(biome)` = base ∪ unique − excluded, read by
+  `Grid.inCatalog` (inside `canPlace`), the HUD palette and the ghost. `island(seed, biome)` caches per pair.
+- **Per-biome state:** `state.biomeState` (a flat bag of numbers: whale season, sea ice, avalanches, bleached
+  cells, hatchings, the turtle bonus) and `fields.bleach` (a 0..1 field over lagoon cells). Save version 3;
+  version-2 saves are read with every new field backfilled.
+- **The looks** (`view/biomes/`): a `BiomeLook` per biome — water and terrain tints, material tints, sky fog and
+  aurora, walls, roofs, accents, the house / boat / hat / tree kits, fauna picks, ambience levels — read through
+  `lookFor(state)`. `main.applyLook` pushes it into the terrain and water materials (uniforms), the building
+  palette (`applyPalette`; chunks rebuild on `views.clear`), the roof palette, and `setLook` on walkers, boats,
+  trees, wildlife and audio, each of which rebuilds its base meshes only when its kit changes. The World's
+  miniatures read each sector's own look.
+- **Shader additions, uniforms only:** terrain bands (five vec3), `snowLine/snowColor`, `matTints[9]/matMix[9]`
+  read against the material code in the height texture's blue channel, `tideScale`; water `shallow/mid/deep`,
+  `lagoonTint/lagoonMix`, `depthScale`, `ice`, and the bleaching in the height texture's alpha; sky
+  `aurora/auroraTime`. With the defaults every fragment computes what the study computed.
+- **The Fjord** (`sim/biomes/fjord.ts`, `view/biomes/fjord.ts`) and **the Atoll** (`atoll.ts`): BIOMES.md §3.3
+  and §3.2 in full — see docs/biomes/decisions.md #16–#23 for every number the design left open.
+
+- **Sea lanes v0** (`sim/lanes.ts`, behind `LANES_ENABLED`, off): `settleWorld(store, activeFace, state)` at each
+  peak autosave settles every other built sea once (`settleOnly`, quiet) and moves cargo one hop along every lane
+  (both faces built with a harbor, sharing an edge); decisions.md #30, PROGRESS.md Stage 9 for where it stopped.
+
+`docs/biomes/PROGRESS.md` is the stage ledger, `decisions.md` the calls made where BIOMES.md was silent.

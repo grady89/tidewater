@@ -2,15 +2,21 @@
 import { ArcRotateCamera, Color4, DefaultRenderingPipeline, Engine, Matrix, Scene, Vector3 } from "@babylonjs/core";
 import { CameraControl } from "./build/cameraControl";
 import { Placement, Tool } from "./build/placement";
-import { SIM_TICK, SIZE, TIDE_PERIOD } from "./config";
-import { BUILDINGS, LANDFILL_HEIGHT, STORM_WAVE_AMP, WAVE_HEIGHT, WAVE_WIDTH } from "./sim/balance";
+import { LANES_ENABLED, SIM_TICK, SIZE, TIDE_PERIOD } from "./config";
+import { BUILDINGS, STORM_WAVE_AMP, WAVE_WIDTH } from "./sim/balance";
 import { districtOf } from "./sim/districts";
 import { startStorm, startTsunami } from "./sim/events";
 import { ignite } from "./sim/fire";
+import { biomeFor } from "./sim/biomes";
+import { hatching } from "./sim/biomes/atoll";
+import { seaIce, whaleSeason } from "./sim/biomes/fjord";
+import { materialCode } from "./sim/materials";
+import { GoodId } from "./sim/goods";
 import { Grid } from "./sim/grid";
 import { crossCommuters, ferryTerminals } from "./sim/network";
 import { deserialize, serialize } from "./sim/save";
-import { Biome, defaultName, deleteSector, exportSector, FACES, importSector, listMetas, migrateLegacy, readActive, readMeta, readSector, renameSector, SectorMeta, Store, writeActive, writeSector } from "./sim/sectors";
+import { settleWorld } from "./sim/lanes";
+import { Biome, biomeAllowed, defaultName, deleteSector, exportSector, FACES, importSector, listMetas, migrateLegacy, readActive, readMeta, readSector, renameSector, SectorMeta, Store, writeActive, writeSector } from "./sim/sectors";
 import { newGame } from "./sim/start";
 import { WorldUi } from "./globe/ui";
 import { Framing, World } from "./globe/world";
@@ -20,7 +26,7 @@ import { playtestFileName, PlaytestLog, readPlaytestEnabled, readPlaytestNotes, 
 import { advanceCycles, tick } from "./sim/tick";
 import { cycleFraction } from "./sim/tide";
 import { takeLoan } from "./sim/loan";
-import { orderPlanks } from "./sim/trade";
+import { orderGood, orderPlanks } from "./sim/trade";
 import { Hud } from "./ui/hud";
 import { InfoPanel } from "./ui/infoPanel";
 import { SaveMenu } from "./ui/saveMenu";
@@ -31,7 +37,8 @@ import { MarkerLabel } from "./ui/markerLabel";
 import { Tutorial } from "./ui/tutorial";
 import { Audio } from "./view/audio";
 import { Boats } from "./view/boats";
-import { roofShape } from "./view/buildings";
+import { BiomeLook, lookFor } from "./view/biomes";
+import { applyPalette, roofShape } from "./view/buildings";
 import { BuildingViews } from "./view/buildingViews";
 import { Effects } from "./view/effects";
 import { Ferry } from "./view/ferry";
@@ -110,25 +117,38 @@ const overlays = new Overlays(scene, grid);
 const effects = new Effects(scene);
 const ship = new Ship(scene, grid);
 const wildlife = new Wildlife(scene, grid);
+const audio = new Audio();
 const ferry = new Ferry(scene, grid);
 const pierMarker = new PierMarker(scene, grid);
 const placement = new Placement(scene, camera, grid, canvas);
 const hud = new Hud(document.getElementById("hud")!, document.getElementById("resources")!, document.getElementById("notes")!, grid, tool => placement.setTool(tool), kind => overlays.show(kind), () => orderPlanks(state), () => takeLoan(state));
-const info = new InfoPanel(document.getElementById("info")!, grid);
+const info = new InfoPanel(document.getElementById("info")!, grid, good => orderGood(state, good));
 const tutorial = new Tutorial(document.getElementById("tutorial")!);
 const achievements = new AchievementPopup(document.getElementById("achievement")!);
 const markerLabel = new MarkerLabel(document.getElementById("markerLabel")!, "Pier goes here");
 achievements.adopt(state);
 placement.onSelect = b => info.select(b);
-placement.onLandfill = c => { terrain.raise([c], LANDFILL_HEIGHT); trees.groundKey++; views.clear(); };
-if (state.landfill.length || state.world.seed !== 0) syncGround();
+placement.onLandfill = c => { terrain.raise([c], grid.tides.landfillHeight); trees.groundKey++; views.clear(); };
 cameraControl.onHome = () => api.frameTown(30);
 
-/** Swap the whole ledger (load, new town) and let every view rebuild from it. */
-/** The ground as the ledger has it: the heightfield plus every landfill cell. */
+/** The look the island wears now (view/biomes): everything that reads a palette reads it from here. */
+let look: BiomeLook = lookFor(state);
+function applyLook(): void {
+  look = lookFor(state);
+  terrain.setLook(look, grid.tides.scale);
+  water.setLook(look, grid.tides.scale);
+  applyPalette(look);
+  walkers.setLook(look);
+  boats.setLook(look);
+  trees.setLook(look);
+  wildlife.setLook(look);
+  audio.setLook(look);
+}
 function syncGround(): void {
-  terrain.reset(grid.island.height);
-  terrain.raise(state.landfill.map(k => ({ i: Math.floor(k / SIZE) - SIZE / 2, j: (k % SIZE) - SIZE / 2 })), LANDFILL_HEIGHT);
+  applyLook();
+  const mats = grid.materials;
+  terrain.reset(grid.island.height, (x, z) => { const i = Math.floor(x), j = Math.floor(z); return i < -SIZE / 2 || i >= SIZE / 2 || j < -SIZE / 2 || j >= SIZE / 2 ? 0 : mats[(i + SIZE / 2) * SIZE + (j + SIZE / 2)]; });
+  terrain.raise(state.landfill.map(k => ({ i: Math.floor(k / SIZE) - SIZE / 2, j: (k % SIZE) - SIZE / 2 })), grid.tides.landfillHeight);
   trees.groundKey++;
   views.clear();
 }
@@ -142,10 +162,12 @@ function adopt(next: SimState): void {
   achievements.adopt(state);
   syncView();
 }
+// The loaded ledger's ground and look, once every view exists (a seeded island, landfill, or another biome).
+if (state.landfill.length || state.world.seed !== 0 || state.world.biome !== "tidewater") syncGround();
 /** A fresh town on island `seed` (0 = the original island), replacing the active sector's town. */
 function newTown(seed = 0): void {
   tutorial.reset();
-  adopt(newGame(SEED, seed).state);
+  adopt(newGame(SEED, seed, state.world.biome).state); // the sector keeps its coast
   save();
 }
 function load(json: string): void {
@@ -180,7 +202,6 @@ const menu = new SaveMenu(document.getElementById("menu")!, {
   },
 });
 let speed: Speed = 1;
-const audio = new Audio();
 /** The reflections toggle flips the live setting; the quality preset decides what a launch starts with. */
 function setReflections(on: boolean): void {
   water.setReflections(on);
@@ -205,9 +226,10 @@ function download(name: string, text: string): void {
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-/** A fresh town on a face (not entered): island `seed`, named, Tidewater. */
+/** A fresh town on a face (not entered): island `seed`, named, on the chosen coast (an uncharted one falls back to Tidewater). */
 function newSector(face: number, seed: number, name: string, biome: Biome = "tidewater"): SectorMeta {
-  const meta = writeSector(store, face, newGame(SEED, seed).state, { name: name.trim() || defaultName(store), biome });
+  const coast: Biome = biomeAllowed(face, biome) ? biome : "tidewater";
+  const meta = writeSector(store, face, newGame(SEED, seed, coast).state, { name: name.trim() || defaultName(store), biome: coast });
   refreshFace(face);
   return meta;
 }
@@ -455,6 +477,9 @@ let acc = 0;
 let viewTime = 0;
 let lastLight: Lighting = MORNING;
 let stormMix = 0;
+let iceMix = 0;
+let lastBleachCycle = -1;
+let bleachShown = false;
 let lastFrameTime = 0;
 
 /** Everything the view derives from the ledger for one frame. */
@@ -464,17 +489,23 @@ function syncView(): void {
   const target = state.storm.active ? 1 : 0;
   stormMix += (target - stormMix) * Math.min(1, frameDt / 3);
   // A storm drags the light toward the study's dusk palette; the tsunami crest rides the water shader.
-  const light = computeLighting(Math.max(duskAt(state.time), stormMix * 0.95), dayFraction(state.time));
+  const light = computeLighting(Math.max(duskAt(state.time), stormMix * 0.95), dayFraction(state.time), { tint: look.sky.fogTint, mix: look.sky.fogMix });
   lastLight = light;
   lights.apply(light);
   terrain.setLighting(light);
   water.setLighting(light);
   sky.setLighting(light);
-  water.setSwell(1 + (STORM_WAVE_AMP - 1) * stormMix);
+  sky.setAurora(look.sky.aurora * (1 - stormMix), viewTime);
+  // The reef's bleaching reaches the water shader once a cycle (it only changes at the settlement).
+  if (state.tide.cycle !== lastBleachCycle) { lastBleachCycle = state.tide.cycle; if (look.lagoon.mix > 0 || bleachShown) { terrain.setBleach(look.lagoon.mix > 0 ? state.fields.bleach : null); bleachShown = look.lagoon.mix > 0; } }
+  const iceTarget = (state.biomeState.seaIce ?? 0) > 0 ? 1 : 0;
+  iceMix += (iceTarget - iceMix) * Math.min(1, frameDt / 4);
+  water.setIce(iceMix);
+  water.setSwell((1 + (STORM_WAVE_AMP * (biomeFor(state).storm?.swell ?? 1) - 1) * stormMix) * (1 - 0.9 * iceMix));
   const ts = state.tsunami;
-  water.setCrest(ts.dir, ts.stage === "wave" ? ts.front : -999, ts.stage === "wave" ? WAVE_HEIGHT : 0, WAVE_WIDTH);
+  water.setCrest(ts.dir, ts.stage === "wave" ? ts.front : -999, ts.stage === "wave" ? grid.tides.waveHeight : 0, WAVE_WIDTH);
   views.sync(state, light.lamp);
-  trees.sync(state);
+  trees.sync(state, stormMix);
   overlays.sync(state);
   boats.sync(state, viewTime);
   ferry.sync(state, viewTime, crossCommuters(state, grid));
@@ -520,7 +551,7 @@ engine.runRenderLoop(() => {
   while (acc >= SIM_TICK) {
     tick(state, grid);
     acc -= SIM_TICK;
-    if (state.tide.peaked) save();
+    if (state.tide.peaked) { save(); if (LANES_ENABLED) settleWorld(store, activeFace, state); }
   }
   if (probe) probeFrame();
   syncView();
@@ -591,6 +622,10 @@ const api = {
     state.resources.planks += planks;
     state.resources.timber += timber;
   },
+  /** Cheat: `n` units of any registry good (the company's cargo without the ship). */
+  grantGood(good: GoodId, n: number) {
+    state.resources[good] += n;
+  },
   /** View only: aim the camera at the town's centroid for screenshots. */
   frameTown(radius = 22) {
     const bs = Object.values(state.buildings);
@@ -630,7 +665,7 @@ const api = {
     sky: () => ({ day: dayFraction(state.time), sun: { x: lastLight.skySun.x, y: lastLight.skySun.y, z: lastLight.skySun.z }, moon: lastLight.moon, night: lastLight.night, lit: { x: lastLight.sunDir.x, y: lastLight.sunDir.y, z: lastLight.sunDir.z } }),
     stormMix: () => stormMix,
     drawCalls: () => scene.getActiveMeshes().length,
-    audio: () => ({ started: audio.started, state: audio.state, muted: audio.muted, cries: audio.cries, hammers: audio.hammers, bells: audio.bells }),
+    audio: () => ({ started: audio.started, state: audio.state, muted: audio.muted, cries: audio.cries, hammers: audio.hammers, bells: audio.bells, horns: audio.horns, creaks: audio.creaks, chirps: audio.chirps }),
     netFloats: () => ({ count: effects.netFloatCount, y: effects.netFloatY }),
     personScale: () => PERSON_SCALE,
     porters: () => ({ now: walkers.porters, spawned: walkers.portersSpawned }),
@@ -640,6 +675,10 @@ const api = {
     caustics: () => water.caustics,
     gulls: () => wildlife.gullCount,
     crabs: () => wildlife.crabCount,
+    /** Every fauna kit's live count (the coast's picks). */
+    fauna: () => ({ gulls: wildlife.gullCount, crabs: wildlife.crabCount, seals: wildlife.sealCount, puffins: wildlife.puffinCount, whales: wildlife.whaleCount, turtles: wildlife.turtleCount, shoals: wildlife.shoalCount }),
+    /** What the view shows of the coast: the look in use, sea ice, the aurora, the hatching's dark lanterns, the bleached count. */
+    biome: () => ({ look: look.id, ice: iceMix, aurora: look.sky.aurora, hatching: hatching(state), lanterns: views.lanternCounts, bleached: state.biomeState.bleached ?? 0, palms: look.trees.kit, boat: look.boat, hat: look.walker.hat, house: look.house }),
     ferry: () => ferry.pose,
     ferryTerminals: () => { const t = ferryTerminals(grid); return t ? { harbor: t.harbor.id, isle: t.isle.map(b => b.id) } : null; },
     commuters: () => crossCommuters(state, grid),
@@ -687,6 +726,10 @@ const api = {
   orderPlanks() {
     return orderPlanks(state);
   },
+  /** Queue ORDER_SIZE of any good the company carries here (the harbor panel's buttons, without the click). */
+  orderGood(good: GoodId, count?: number) {
+    return orderGood(state, good, count);
+  },
   takeLoan() {
     return takeLoan(state);
   },
@@ -698,6 +741,29 @@ const api = {
     if (b) ignite(state, b);
   },
   /** Force the weather: a storm through this cycle, or the tsunami sequence now. */
+  /** Force a coast's hazard or moment (the smoke): advances the clock to it, or starts it, and syncs the view. */
+  forceBiome(event: "whaleSeason" | "seaIce" | "avalanche" | "hatching" | "bleach" | "cyclone") {
+    const cycle0 = state.tide.cycle;
+    const until = (done: () => boolean) => { for (let k = 0; k < 40 && !done(); k++) advanceCycles(state, grid, 1); };
+    switch (event) {
+      case "whaleSeason": until(() => whaleSeason(state.tide.cycle)); break;
+      case "seaIce": until(() => seaIce(state.tide.cycle)); break;
+      case "avalanche": startStorm(state, grid); advanceCycles(state, grid, 2); break;
+      case "hatching": until(() => hatching(state)); break;
+      case "bleach": {
+        const lagoon = materialCode("lagoon");
+        const emitters: { k: number; rate: number }[] = [];
+        for (let k = 0; k < grid.materials.length; k++) if (grid.materials[k] === lagoon) { state.fields.pollution[k] = 0.6; if (k % 7 === 0) emitters.push({ k, rate: 0.02 }); }
+        state.emitters = emitters;
+        advanceCycles(state, grid, 3);
+        break;
+      }
+      case "cyclone": startStorm(state, grid); break;
+    }
+    viewTime += (state.tide.cycle - cycle0) * TIDE_PERIOD;
+    syncView();
+    return { event, cycle: state.tide.cycle, biomeState: { ...state.biomeState }, storm: state.storm.active, damaged: Object.values(state.buildings).filter(b => b.damaged).length, log: state.log.slice(-2) };
+  },
   forceStorm() {
     startStorm(state, grid);
     syncView();
@@ -714,6 +780,8 @@ const api = {
   get mode() { return mode; },
   /** A fresh town on face `n` (island `seed`, named), not entered. */
   newSector,
+  /** Clear a face without the confirm (the smoke). */
+  clearSector(face: number) { deleteSector(store, face); if (activeFace === face) activeFace = readActive(store); refreshFace(face); },
   /** Dive into face `n` (the sector must exist); `instant` skips the flight. Resolves true once the island is up. */
   enterSector,
   /** Back to the World from the island; `instant` skips the flight. */

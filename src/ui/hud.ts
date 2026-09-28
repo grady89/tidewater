@@ -1,8 +1,10 @@
 // The UI: resource bar, build menu by category, tide clock, last-cycle ledger, notifications. Plain DOM over the
 // canvas, read-only over the sim.
-import { Fate, Tool } from "../build/placement";
+import { Fate, isBuildingTool, Tool } from "../build/placement";
 import { BOAT_COST, BUILDING_KINDS, BuildingKind, BUILDINGS, CATEGORIES, Category, CLEAR_TIMBER, LANDFILL_COST, LANTERN_COST, LIFT_STEP, LOAN_AMOUNT, LOAN_INTEREST, LOAN_REPAY_CYCLES, PLANK_ORDER_SIZE, PLANT_COST, TRADE_PLANK_PRICE } from "../sim/balance";
+import { biomeFor, BiomeId, catalogFor, makesOf } from "../sim/biomes";
 import { canAfford } from "../sim/economy";
+import { GOOD_IDS, GOOD_ROLES, GoodId, GOODS, shownGoods } from "../sim/goods";
 import { Grid } from "../sim/grid";
 import { population, SimState } from "../sim/state";
 import { cycleFraction, cyclesToSpring, isRising, secondsToHighTide, secondsToLowTide, tideNormalized } from "../sim/tide";
@@ -53,7 +55,9 @@ const FATE_TEXT: Record<Fate | "line", string> = {
 };
 const LINE_TOOL_HINT: ReadonlySet<Tool> = new Set<Tool>(["walkway", "raisedWalkway", "path", "breakwater", "sharkNet", "seaWall"]);
 
-const RESOURCES = ["money", "fish", "shellfish", "smoked", "timber", "planks", "population", "tourists", "happiness"];
+/** The bar's fixed cells; the goods sit between money and population, grouped by role, per the island. */
+const RESOURCES_HEAD = ["money"];
+const RESOURCES_TAIL = ["population", "tourists", "happiness"];
 
 // Tide dial geometry (SVG units). The fill rect is clipped to the inner disc.
 const DIAL_R = 24, DIAL_TOP = 32 - DIAL_R, DIAL_H = DIAL_R * 2;
@@ -63,6 +67,8 @@ export class Hud {
   private readonly reasons = new Map<Tool, HTMLElement>();
   private readonly tabs = new Map<Category, HTMLButtonElement>();
   private readonly res: Record<string, HTMLElement> = {};
+  private readonly resources: HTMLElement;
+  private shownGoods: GoodId[] = [];
   private readonly tideLevel: SVGRectElement;
   private readonly tideMarker: SVGCircleElement;
   private readonly tideValue: HTMLElement;
@@ -86,8 +92,8 @@ export class Hud {
   private lastLogLen = -1;
 
   constructor(root: HTMLElement, resources: HTMLElement, notes: HTMLElement, private readonly grid: Grid, private readonly onTool: (tool: Tool) => void, onOverlay: (kind: OverlayKind | null) => void, onOrder: () => void, onLoan: () => void = () => {}) {
-    resources.innerHTML = RESOURCES.map(k => `<div class="res" data-res="${k}"><label>${k}</label><span>0</span></div>`).join("");
-    for (const el of resources.querySelectorAll<HTMLElement>(".res")) this.res[el.dataset.res!] = el.querySelector("span")!;
+    this.resources = resources;
+    this.layoutResources([]);
     this.notes = notes;
 
     root.innerHTML = `
@@ -173,9 +179,25 @@ export class Hud {
     this.showCategory("Streets");
   }
 
-  /** Tools of the active category, in palette order (number keys map onto these). */
+  /** Rebuild the resource bar for a set of goods: money, then the goods grouped by role, then the people. */
+  private layoutResources(goods: GoodId[]): void {
+    const cell = (k: string, label: string) => `<div class="res" data-res="${k}"><label>${label}</label><span>0</span></div>`;
+    const groups = GOOD_ROLES.map(role => goods.filter(g => GOODS[g].role === role)).filter(gs => gs.length)
+      .map(gs => `<div class="res-group" data-role="${GOODS[gs[0]].role}">${gs.map(g => cell(g, GOODS[g].name)).join("")}</div>`);
+    this.resources.innerHTML = [RESOURCES_HEAD.map(k => cell(k, k)).join(""), ...groups, RESOURCES_TAIL.map(k => cell(k, k)).join("")].join("");
+    for (const k of Object.keys(this.res)) delete this.res[k];
+    for (const el of this.resources.querySelectorAll<HTMLElement>(".res")) this.res[el.dataset.res!] = el.querySelector("span")!;
+    this.shownGoods = goods;
+  }
+
+  /** The island's biome, for the catalog: tools outside base ∪ unique − excluded are hidden. */
+  private biome: BiomeId = "tidewater";
+  private inCatalog(t: ToolDef): boolean {
+    return !isBuildingTool(t.tool) || catalogFor(this.biome).includes(t.tool);
+  }
+  /** Tools of the active category and the island's catalog, in palette order (number keys map onto these). */
   private visibleTools(): ToolDef[] {
-    return TOOLS.filter(t => t.category === this._category);
+    return TOOLS.filter(t => t.category === this._category && this.inCatalog(t));
   }
 
   get category(): Category { return this._category; }
@@ -234,6 +256,7 @@ export class Hud {
   update(s: HudState): void {
     const { state } = s;
     const r = state.resources;
+    if (state.world.biome !== this.biome) { this.biome = state.world.biome; this.showCategory(this._category); }
     // Follow the tool's category only when the tool changes; otherwise a clicked tab would snap straight back.
     if (s.tool !== this.lastTool) {
       this.lastTool = s.tool;
@@ -250,12 +273,13 @@ export class Hud {
 
     let jobs = 0;
     for (const b of Object.values(state.buildings)) jobs += jobsAt(b);
+    const goods = shownGoods(r, makesOf(state.world.biome));
+    if (goods.length !== this.shownGoods.length || goods.some((g, i) => g !== this.shownGoods[i])) this.layoutResources(goods);
     this.res.money.textContent = `${Math.floor(r.money)}$`;
-    this.res.fish.textContent = `${Math.floor(r.fish)}`;
-    this.res.shellfish.textContent = `${Math.floor(r.shellfish)}`;
-    this.res.smoked.textContent = `${Math.floor(r.smoked)}`;
-    this.res.timber.textContent = `${Math.floor(r.timber)}`;
-    this.res.planks.textContent = `${Math.floor(r.planks)}`;
+    for (const g of goods) {
+      const text = `${Math.floor(r[g])}`;
+      if (this.res[g].textContent !== text) this.res[g].textContent = text;
+    }
     this.res.population.textContent = `${population(state)} / ${jobs} jobs`;
     this.res.tourists.textContent = `${state.tourists}`;
     this.res.happiness.textContent = `${Math.round(state.happiness * 100)}%`;
@@ -275,7 +299,9 @@ export class Hud {
     this.tideSpring.classList.toggle("now", toSpring === 1);
     const toShip = cyclesToShip(state);
     this.tideShip.textContent = toShip < 0 ? "" : toShip === 0 ? "Trade ship in port" : `Trade ship in ${toShip} high tide${toShip > 1 ? "s" : ""}`;
-    this.tradeStatus.textContent = state.trade.plankOrder > 0 ? `${state.trade.plankOrder} planks on order` : "";
+    const orders = GOOD_IDS.filter(g => (state.trade.orders[g] ?? 0) > 0).map(g => `${state.trade.orders[g]} ${GOODS[g].name}`);
+    const orderText = orders.length ? `On order: ${orders.join(", ")}` : "";
+    if (this.tradeStatus.textContent !== orderText) this.tradeStatus.textContent = orderText;
     this.orderButton.hidden = toShip < 0;
     const loan = state.loan;
     const loanText = loan.owed > 0 ? `Loan: ${Math.ceil(loan.owed)}$ owed · ${Math.round(loan.perCycle)}$ a tide` : "";
@@ -283,7 +309,8 @@ export class Hud {
     this.loanButton.hidden = loan.owed > 0;
     const ts = state.tsunami.stage;
     const uneasy = ts === null && state.tsunami.due >= 0;
-    this.tideEvent.textContent = ts === "drawdown" ? "The sea is pulling back" : ts === "wave" ? "A wave is coming in" : ts === "settle" ? "The water returns" : uneasy ? "The sea is uneasy: a wave at the next peak" : state.storm.active ? "Storm: the boats stay in" : "";
+    const season = biomeFor(state).seasonLabel?.(state) ?? "";
+    this.tideEvent.textContent = ts === "drawdown" ? "The sea is pulling back" : ts === "wave" ? "A wave is coming in" : ts === "settle" ? "The water returns" : uneasy ? "The sea is uneasy: a wave at the next peak" : state.storm.active ? "Storm: the boats stay in" : season;
     this.tideEvent.classList.toggle("now", ts !== null || state.storm.active || uneasy);
 
     const lineText = s.line ? `${s.line.count} × ${TOOLS.find(t => t.tool === s.tool)?.label.toLowerCase() ?? s.tool} · ${s.line.cost}$ — release to lay them` : null;

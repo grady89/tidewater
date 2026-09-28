@@ -6,7 +6,9 @@ import { Assignment, Building, SimState } from "./state";
 
 /** Jobs a building offers right now. */
 export function jobsAt(b: Building): number {
-  return (BUILDINGS[b.kind].slots ?? 0) > 0 ? b.boats * BOAT_CREW : BUILDINGS[b.kind].workers;
+  const def = BUILDINGS[b.kind];
+  // Piers and docks offer crew per boat; a kind with hands of its own and a berth (the whaling station) offers both.
+  return (def.slots ?? 0) > 0 ? b.boats * BOAT_CREW + def.workers : def.workers;
 }
 
 export function assignWorkers(state: SimState, grid: Grid): void {

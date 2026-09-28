@@ -239,7 +239,7 @@ describe("trade and tourism (M9)", () => {
     expect(state.resources.planks).toBeGreaterThanOrEqual(PLANK_ORDER_SIZE);
     expect(state.last.trade).toBeLessThan(0);
     expect(state.resources.money).toBeLessThan(money + state.last.income); // the planks were paid for
-    expect(state.trade.plankOrder).toBe(0);
+    expect(state.trade.orders.planks ?? 0).toBe(0);
     // Lighthouse: the interval drops to 2.
     let placed: Building | null = null;
     for (let i = -32; i < 32 && !placed; i++) for (let j = -32; j < 32 && !placed; j++) {

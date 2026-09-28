@@ -1,6 +1,6 @@
 // The World's DOM: the title, the hint, the sector card (built: facts and actions; empty: the new-sector flow),
 // the import control and the notice line. It calls back into main; it holds no ledger.
-import { agoLabel, bandOf, Biome, BIOME_LABEL, biomesFor, SectorMeta } from "../sim/sectors";
+import { agoLabel, bandOf, Biome, biomeBlurb, BIOME_LABEL, biomesFor, SectorMeta } from "../sim/sectors";
 
 const BAND_LABEL = { polar: "Polar", temperate: "Temperate", tropical: "Tropical" } as const;
 
@@ -70,7 +70,7 @@ export class WorldUi {
       <div class="card-kicker">Uncharted sea · ${BAND_LABEL[bandOf(face)]}</div>
       <h2 class="card-name">A new sea</h2>
       <label class="card-field">Island seed <span class="seed-row"><input class="seed" type="number" min="0" step="1" inputmode="numeric"><button type="button" class="random">Random</button></span></label>
-      <div class="card-field">Coast<div class="biomes">${biomes.map(b => `<button type="button" class="biome${b.charted ? "" : " uncharted"}" data-biome="${b.biome}" ${b.charted ? "" : "disabled"}>${BIOME_LABEL[b.biome]}${b.charted ? "" : "<span>uncharted</span>"}</button>`).join("")}</div></div>
+      <div class="card-field">Coast<div class="biomes">${biomes.map(b => `<button type="button" class="biome${b.charted ? "" : " uncharted"}" data-biome="${b.biome}" ${b.charted ? "" : "disabled"} title="${b.charted ? biomeBlurb(b.biome) : "Uncharted: not yet in this build"}">${BIOME_LABEL[b.biome]}${b.charted ? "" : "<span>uncharted</span>"}</button>`).join("")}</div><div class="biome-blurb"></div></div>
       <label class="card-field">Name <input class="name" type="text" maxlength="40"></label>
       <div class="card-actions"><button type="button" class="begin primary">Begin</button></div>`;
     const seed = this.card.querySelector<HTMLInputElement>(".seed")!, name = this.card.querySelector<HTMLInputElement>(".name")!;
@@ -79,9 +79,11 @@ export class WorldUi {
     name.addEventListener("input", () => { this.nameValue = name.value; });
     for (const el of [seed, name]) el.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); this.begin(face); } });
     this.card.querySelector(".random")!.addEventListener("click", () => { seed.value = String(Math.floor(Math.random() * 999999) + 1); this.seedValue = seed.value; });
+    const blurb = this.card.querySelector<HTMLElement>(".biome-blurb")!;
+    blurb.textContent = biomeBlurb(this.biomeValue);
     for (const b of this.card.querySelectorAll<HTMLButtonElement>(".biome")) {
       b.classList.toggle("active", b.dataset.biome === this.biomeValue);
-      b.addEventListener("click", () => { this.biomeValue = b.dataset.biome as Biome; for (const o of this.card.querySelectorAll(".biome")) o.classList.toggle("active", o === b); });
+      b.addEventListener("click", () => { this.biomeValue = b.dataset.biome as Biome; blurb.textContent = biomeBlurb(this.biomeValue); for (const o of this.card.querySelectorAll(".biome")) o.classList.toggle("active", o === b); });
     }
     this.card.querySelector(".begin")!.addEventListener("click", () => this.begin(face));
     if (!same) this.reveal();

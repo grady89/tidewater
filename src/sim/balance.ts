@@ -1,5 +1,7 @@
 // Every tunable number in the economy, and the building catalog. No system may hard-code a value that lives here.
 import { CLEARANCE, DRY_TERRAIN, RAISED_FLOOR, SPRING_HI } from "../config";
+import { GoodId, GOOD_IDS, GOODS } from "./goods";
+import { Material } from "./materials";
 
 export type BuildingKind =
   | "hut" | "house" | "tallHouse"
@@ -9,7 +11,10 @@ export type BuildingKind =
   | "outfall" | "treatmentPlant" | "well" | "bathhouse" | "tavern" | "shrine" | "marketSquare"
   | "clinic" | "lifeguard" | "sharkNet"
   | "harbor" | "inn" | "lighthouse" | "fireWatch"
-  | "breakwater" | "seaWall";
+  | "breakwater" | "seaWall"
+  | "toolworks"
+  | "stockfishRacks" | "whalingStation" | "ironMine" | "iceHouse" | "iceBreakerPier"
+  | "divePlatform" | "pearlHouse" | "coconutGrove" | "reefNursery";
 
 /** Service coverage layers; each building that provides one writes its staffed fraction within `radius`. */
 export type ServiceKind = "water" | "leisure" | "night" | "treatment" | "lifeguard" | "firewatch";
@@ -23,8 +28,9 @@ export const CATEGORIES: Category[] = ["Homes", "Streets", "Sea", "Production", 
  * a walkway on stilts is the street; paths take over on dry ground above it.
  */
 export type PlacementClass = "flat" | "deep" | "high" | "flatOrHigh" | "flatOrDeep" | "shore" | "edge" | "beach" | "highOrEdge" | "street";
-export type ResourceKind = "money" | "fish" | "shellfish" | "smoked" | "timber" | "planks";
-export type GoodKind = Exclude<ResourceKind, "money">;
+export type ResourceKind = "money" | GoodId;
+/** A stockpiled good: any id in the goods registry (sim/goods.ts). */
+export type GoodKind = GoodId;
 
 export interface Cost { money: number; planks?: number; timber?: number }
 
@@ -36,6 +42,8 @@ export interface BuildingDef {
   cls: PlacementClass;
   /** Extra terrain-height window on top of the class (oyster beds: covered at high, exposed at low). */
   terrain?: { min: number; max: number };
+  /** A cell material every footprint cell must have (the biomes' pieces: a dive platform on the lagoon). */
+  material?: Material;
   /** Must touch a flat cell that carries a walkway (lumber camps on the hill). */
   needsWalkway?: boolean;
   /** Must touch a pier, dock, harbor or walkway (docks: crew walk in over a pier or a raised walkway). */
@@ -82,6 +90,18 @@ export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
   smokehouse: { name: "Smokehouse", category: "Production", w: 2, d: 1, cls: "flat", cost: { money: 160 }, workers: 3, residents: 0, upkeep: 2, floor: "stilts", network: "leaf", desc: "Fish → smoked goods; fire risk" },
   netLoft: { name: "Net loft", category: "Production", w: 1, d: 1, cls: "flat", cost: { money: 90 }, workers: 0, residents: 0, upkeep: 0.5, floor: "stilts", network: "leaf", desc: "+15% catch for boats within 8" },
   warehouse: { name: "Warehouse", category: "Production", w: 2, d: 2, cls: "flat", cost: { money: 120 }, workers: 0, residents: 0, upkeep: 1, floor: "stilts", network: "leaf", desc: "+100 storage for every good" },
+  toolworks: { name: "Toolworks", category: "Production", w: 2, d: 2, cls: "flatOrHigh", cost: { money: 220, planks: 10 }, workers: 3, residents: 0, upkeep: 2, floor: "ground", network: "leaf", desc: "Burns a little iron: +20% output for producers within 8" },
+  // Fjord (BIOMES.md §3.3)
+  stockfishRacks: { name: "Stockfish racks", category: "Production", w: 2, d: 1, cls: "flat", cost: { money: 110 }, workers: 2, residents: 0, upkeep: 1, floor: "stilts", network: "leaf", desc: "Fish + salt → stockfish; plain dried fish at half value without salt" },
+  whalingStation: { name: "Whaling station", category: "Sea", w: 3, d: 2, cls: "edge", cost: { money: 400, planks: 30 }, workers: 6, residents: 0, upkeep: 4, floor: 1.0, network: "leaf", slots: 1, desc: "Whale oil and meat in whale season; needs a boat" },
+  ironMine: { name: "Iron mine", category: "Production", w: 2, d: 2, cls: "high", cost: { money: 260 }, workers: 4, residents: 0, upkeep: 3, floor: "ground", network: "leaf", desc: "Iron from the ridge; fire risk" },
+  iceHouse: { name: "Ice house", category: "Production", w: 1, d: 1, cls: "flat", cost: { money: 90 }, workers: 0, residents: 0, upkeep: 0.5, floor: "stilts", network: "leaf", desc: "Keeps fish from spoiling: doubles the fish cap" },
+  iceBreakerPier: { name: "Ice-breaker pier", category: "Sea", w: 1, d: 2, cls: "edge", cost: { money: 300, planks: 20 }, workers: 0, residents: 0, upkeep: 4, floor: 1.0, network: "root", slots: 2, desc: "2 boats; keeps sailing through the sea ice" },
+  // Atoll (BIOMES.md §3.2)
+  divePlatform: { name: "Dive platform", category: "Sea", w: 1, d: 1, cls: "edge", material: "lagoon", needsLink: true, cost: { money: 140 }, workers: 2, residents: 0, upkeep: 1, floor: 1.0, network: "leaf", desc: "Pearls from the lagoon at low water; a pearl house within 8 grades them" },
+  pearlHouse: { name: "Pearl house", category: "Production", w: 2, d: 1, cls: "flat", cost: { money: 180 }, workers: 2, residents: 0, upkeep: 1.5, floor: "stilts", network: "leaf", desc: "Grades the divers' pearls for the trade ship" },
+  coconutGrove: { name: "Coconut grove", category: "Production", w: 2, d: 1, cls: "flatOrHigh", cost: { money: 90 }, workers: 3, residents: 0, upkeep: 1, floor: "stilts", network: "leaf", desc: "Gathers coconuts from palms within 6" },
+  reefNursery: { name: "Reef nursery", category: "Sea", w: 1, d: 1, cls: "deep", material: "lagoon", needsLink: true, cost: { money: 160 }, workers: 1, residents: 0, upkeep: 1, floor: 1.0, network: "leaf", desc: "Restores fish and coral within 5 while the water stays clean" },
   outfall: { name: "Sewage outfall", category: "Services", w: 1, d: 1, cls: "edge", cost: { money: 40 }, workers: 0, residents: 0, upkeep: 0.5, floor: 1.0, network: "leaf", desc: "Dumps the town's waste into the sea; the tide carries it" },
   treatmentPlant: { name: "Treatment plant", category: "Services", w: 2, d: 2, cls: "flatOrHigh", cost: { money: 350 }, workers: 4, residents: 0, upkeep: 3, floor: "ground", network: "leaf", service: { kind: "treatment", radius: 12 }, desc: "Neutralises waste from homes within 12" },
   well: { name: "Well", category: "Services", w: 1, d: 1, cls: "flat", cost: { money: 50 }, workers: 0, residents: 0, upkeep: 0.5, floor: "stilts", network: "leaf", service: { kind: "water", radius: 8 }, desc: "Drinking water for homes within 8" },
@@ -184,8 +204,6 @@ export const REPAIR_TIMBER_PER_100 = 5;
 // Trade and tourism
 export const TRADE_EVERY = 3;
 export const TRADE_EVERY_LIGHTHOUSE = 2;
-export const TRADE_PRICE_SMOKED = 9;
-export const TRADE_PRICE_FISH = 5;
 export const TRADE_PLANK_PRICE = 3;
 export const PLANK_ORDER_SIZE = 20;
 export const TOURISTS_PER_SHIP = 4;
@@ -285,6 +303,8 @@ export const HAPPY = {
   pollution: 0.5,
   injury: 0.2,
   damage: 0.15,
+  /** The biome's favourite luxury in stock (BIOMES.md §2). */
+  favourite: 0.05,
 };
 /** Homes above this for LEVEL_UP_CYCLES cycles in a row grow a level (1..3): +1 resident per level, a nicer roof. */
 export const LEVEL_UP_HAPPINESS = 0.8;
@@ -319,5 +339,83 @@ export const FISH_DEPLETE_PER_BOAT = 0.12;
 export const FISH_FLOOR = 0.05;
 
 // Stockpile caps before warehouses
-export const CAP_BASE: Record<GoodKind, number> = { fish: 100, shellfish: 100, smoked: 60, timber: 80, planks: 60 };
+export const CAP_BASE: Record<GoodKind, number> = Object.fromEntries(GOOD_IDS.map(g => [g, GOODS[g].cap])) as Record<GoodKind, number>;
 export const WAREHOUSE_CAP = 100;
+
+// Food variety and luxuries (BIOMES.md §2; sim/food.ts)
+/** Distinct food kinds in stock a home needs to hold each level (index = level). */
+export const LEVEL_FOODS: readonly number[] = [0, 1, 2, 3];
+/** Foreign luxury a level-3 resident uses per cycle. */
+export const LUXURY_PER_RESIDENT = 0.02;
+/** Market price of each food (fish and shellfish keep PRICE_FISH / PRICE_SHELLFISH). */
+export const FOOD_PRICE: Record<string, number> = { fish: PRICE_FISH, shellfish: PRICE_SHELLFISH, rice: 3, coconut: 3, dates: 3, crab: 4, stockfish: 6, taro: 3 };
+
+// Toolworks (BIOMES.md §2: iron)
+export const TOOLWORKS_RADIUS = 8;
+export const TOOLWORKS_BONUS = 0.20;
+/** Iron a fully staffed toolworks uses per cycle. */
+export const TOOLWORKS_IRON_PER_CYCLE = 0.5;
+
+// The Trade Company as carrier (BIOMES.md §4; sim/trade.ts)
+/** Units of a good the company buys at full price in one visit; beyond that the price slides. */
+export const COMPANY_FULL_PRICE_UNITS = 60;
+/** Units over which the price slides from full down to COMPANY_PRICE_FLOOR. */
+export const COMPANY_PRICE_SLOPE_UNITS = 120;
+export const COMPANY_PRICE_FLOOR = 0.5;
+/** Units per click of an order button. */
+export const ORDER_SIZE = PLANK_ORDER_SIZE;
+
+// Fjord (BIOMES.md §3.3)
+/** Fish a fully staffed rack dries per cycle, and the salt each unit takes. */
+export const STOCKFISH_RATE = 6;
+export const SALT_PER_STOCKFISH = 0.2;
+/** Without salt the racks make plain dried fish: this fraction of the stockfish. */
+export const STOCKFISH_UNSALTED = 0.6;
+/** Whale season: every WHALE_SEASON_EVERY cycles, for WHALE_SEASON_LENGTH cycles, from WHALE_SEASON_FIRST. */
+export const WHALE_SEASON_EVERY = 10;
+export const WHALE_SEASON_LENGTH = 3;
+export const WHALE_SEASON_FIRST = 4;
+/** A fully staffed, boated station's whale oil and meat (fish) per season cycle. */
+export const WHALE_OIL_PER_CYCLE = 6;
+export const WHALE_MEAT_PER_CYCLE = 10;
+export const IRON_PER_CYCLE = 3;
+export const FIRE_MINE = 4;
+/** The ice house doubles the fish cap. */
+export const ICE_HOUSE_CAP_FACTOR = 2;
+/** Sea ice: every ICE_EVERY-th cycle from ICE_FIRST the harbor freezes for one cycle. */
+export const ICE_EVERY = 6;
+export const ICE_FIRST = 6;
+/** After a storm, a building on the slope under trees is buried with this chance. */
+export const AVALANCHE_CHANCE = 0.5;
+export const AVALANCHE_MIN_HEIGHT = 2.0;
+export const AVALANCHE_RADIUS = 3;
+export const AVALANCHE_RISE = 1.0;
+/** Happiness on a clear night under the aurora (Fjord). */
+export const HAPPY_AURORA = 0.03;
+
+// Atoll (BIOMES.md §3.2)
+/** Pearls a fully staffed dive platform brings up per low-water shift, when a pearl house within PEARL_RADIUS grades them. */
+export const PEARLS_PER_SHIFT = 1.2;
+export const PEARL_RADIUS = 8;
+/** Coconuts a fully staffed grove gathers per grown palm within COCONUT_RADIUS, per cycle. */
+export const COCONUT_PER_TREE = 1.0;
+export const COCONUT_RADIUS = 6;
+/** Bleaching: lagoon cells whose pollution is above BLEACH_POLLUTION whiten by BLEACH_RATE a cycle and recover by BLEACH_RECOVER. */
+export const BLEACH_POLLUTION = 0.25;
+export const BLEACH_RATE = 0.2;
+export const BLEACH_RECOVER = 0.05;
+/** A staffed nursery in clean water recovers NURSERY_RECOVER a cycle within NURSERY_RADIUS. */
+export const NURSERY_RADIUS = 5;
+export const NURSERY_RECOVER = 0.15;
+export const NURSERY_POLLUTION_MAX = 0.3;
+/** Turtle hatching: lanterns this close to a beach cell go dark; each hatching adds HATCHING_BONUS to tourism, to a cap. */
+export const HATCHING_LANTERN_RADIUS = 4;
+export const HATCHING_BONUS = 0.1;
+export const HATCHING_BONUS_MAX = 0.5;
+
+// Sea lanes (BIOMES.md §4; sim/lanes.ts, behind LANES_ENABLED)
+export const CARGO_SHIPS_PER_HARBOR = 1;
+export const CARGO_HOLD = 20;
+/** Non-food goods keep this fraction of their cap before any sails; an island wants a good it cannot make up to this fraction of its cap. */
+export const LANE_RESERVE_FRACTION = 0.3;
+export const LANE_WANT_FRACTION = 0.5;

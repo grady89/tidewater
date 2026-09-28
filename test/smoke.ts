@@ -515,7 +515,12 @@ try {
     const tavern = sc.placeByWalkway(s, grid, "tavern", 1).length;
     let lanterns = 0;
     for (const w of (Object.values(s.buildings) as Building[]).filter(b => b.kind === "walkway" || b.kind === "raisedWalkway")) if (api.place("lanternPost", w.cells[0].i, w.cells[0].j)) lanterns++;
-    api.advance(8);
+    // Biomes: level 2 wants two foods, level 3 three and a foreign luxury (what the company carries).
+    // The market sells any food above the reserve at 30 a cycle, so the imported kinds are topped up half way.
+    api.grantGood("shellfish", 100); api.grantGood("rice", 100); api.grantGood("coffee", 10);
+    api.advance(4);
+    api.grantGood("shellfish", 100); api.grantGood("rice", 100);
+    api.advance(4);
     const best = town.huts.slice().sort((a, b) => b.level - a.level)[0];
     api.select(best.cells[0].i, best.cells[0].j);
     api.frameAt(best.cells[0].i + 0.5, best.cells[0].j + 0.5, 14);
@@ -820,7 +825,8 @@ try {
   assert(reflFps.on && reflFps.targets === 1, "reflections on: one mirror render target");
   assert(reflFps.fps >= 60, "60 fps with reflections on in the big town");
   assert(!reflOff.on && reflOff.targets === 0, "reflections button turns them off");
-  await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.save());
+  // What stands at the save is what must come back (an oyster bed can die between the build and the save).
+  const savedN = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; api.save(); return Object.keys(api.sim.buildings).length; });
   const t0 = Date.now();
   await page.reload();
   await waitReloaded(page);
@@ -828,7 +834,7 @@ try {
   const bigLoaded = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { n: Object.keys(api.sim.buildings).length, bootMs: api.bootMs, mode: api.mode, active: api.world.active(), roofs: api.world.miniatures().filter(m => m.built).map(m => m.roofs) }; });
   const enterMs = await enterActive(page);
   console.log(`M12 reload: ${loadMs} ms wall to the World (${bigLoaded.bootMs.toFixed(0)} ms boot, roofs on the face: ${bigLoaded.roofs}), ${enterMs.toFixed(0)} ms into the island, ${bigLoaded.n} buildings`);
-  assert(bigLoaded.n === m12.buildings, "big town survived the reload");
+  assert(bigLoaded.n === savedN && savedN >= 290, "big town survived the reload");
   assert(loadMs < 2000, "a 300-building town loads in under 2 s");
   assert(bigLoaded.mode === "world" && bigLoaded.active === 1 && bigLoaded.roofs.length === 1 && bigLoaded.roofs[0] > 50, "the reload lands in the World with the big town's roofs on its face");
   assert(enterMs < 2000, "the cut into the big town takes under 2 s");
@@ -868,6 +874,7 @@ try {
   // Backlog 2: caustics brighten the shallows over a beach at high water and add nothing when off.
   const b2 = await page.evaluate(async () => {
     const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    api.setQuality("high"); // the first-launch probe may have picked Low on a loaded machine, and Low turns caustics off
     api.setReflections(false);
     api.advanceTo(0);
     let beach: { i: number; j: number } | null = null;
@@ -879,7 +886,7 @@ try {
     api.setCaustics(false);
     const off = await api.brightness(440, 260, 400, 200);
     api.setCaustics(true);
-    return { beach, on, off, phase: api.sim.phase };
+    return { beach, on, off, phase: api.sim.phase, day: api.view.sky().day, dusk: api.view.dusk(), cycle: api.sim.tide.cycle, time: api.sim.time };
   });
   await page.screenshot({ path: "shots/b2-caustics.png" });
   console.log("B2 caustics:", JSON.stringify(b2));
@@ -1028,6 +1035,136 @@ try {
   assert(Math.abs(t4.h - t4before.h) > 0.05, "the rendered ground changed with the island");
   assert(t4after.seed === 7 && Math.abs(t4after.h - t4.h) < 1e-6, "the island survives a reload");
   assert(t4zero.seed === 0 && Math.abs(t4zero.h - t4before.h) < 1e-6, "seed 0 is the original island again");
+
+  // ---- Biomes (docs/biomes): the Fjord and the Atoll beside Tidewater ----
+  // Each coast: a sector of its own, the starter town positive over four cycles, every unique kind producing, its
+  // hazard and its moment forced through the console API and seen by the view, and shots by day and night.
+  for (const coast of [{ id: "fjord" as const, face: 0, seed: 2 }, { id: "atoll" as const, face: 6, seed: 2 }]) {
+    const founded = await page.evaluate(async ({ id, face, seed }) => {
+      const api = (window as unknown as { __tidewater: Api }).__tidewater;
+      const url = "/test/scenario.ts";
+      const sc = (await import(url)) as typeof import("./scenario");
+      await api.returnToWorld({ instant: true });
+      const meta = api.newSector(face, seed, `${id} smoke`, id);
+      const ok = await api.enterSector(face, { instant: true });
+      const s = api.sim, grid = api.grid;
+      let town: ReturnType<typeof sc.starterTown>;
+      try { town = sc.starterTown(s, grid); } catch (e) {
+        const hut = Object.values(s.buildings)[0];
+        const site = sc.pierSite(grid, hut.cells[0]);
+        const fp = grid.footprint("pier", site);
+        throw new Error(`${(e as Error).message} · money ${s.resources.money} biome ${s.world.biome} seed ${s.world.seed} hut ${JSON.stringify(hut.cells[0])} site ${JSON.stringify(site)} fp ${JSON.stringify(fp)} canPlace ${fp ? grid.canPlace("pier", fp) : null} inCatalog ${grid.inCatalog("pier")} classes ${JSON.stringify(fp?.map(c => grid.classAt(c)))} scale ${grid.tides.scale} island ${grid.island.seed} buildings ${Object.keys(s.buildings).length}`);
+      }
+      const money0 = s.resources.money; // after the starter is paid for
+      api.advance(4);
+      const money4 = s.resources.money;
+      const built = sc.biomeTown(s, grid, 4000, town); // the starter is already down: only the coast's own kinds go up
+      const bio = api.view.biome();
+      return { meta: { biome: meta.biome, seed: meta.seed }, ok, biome: s.world.biome, tide: s.tide.scale, money0, money4, spent: money0 - money4, huts: town.huts.length, extras: Object.keys(built.extras), look: bio.look, boat: bio.boat, hat: bio.hat, house: bio.house, palms: bio.palms, catalogHasOyster: grid.inCatalog("oysterBed"), goodsShown: [...document.querySelectorAll("#resources .res")].map(e => e.getAttribute("data-res")) };
+    }, coast);
+    console.log(`Biome ${coast.id} founded:`, JSON.stringify(founded));
+    assert(founded.ok && founded.meta.biome === coast.id && founded.biome === coast.id && founded.look === coast.id, `${coast.id}: the sector carries its coast and the view wears its look`);
+    assert(founded.money4 > founded.money0 && founded.spent < 0, `${coast.id}: the starter town nets positive money over four cycles`);
+    assert(!founded.catalogHasOyster && founded.extras.length >= 3, `${coast.id}: the catalog is the coast's own and its kinds went up: ${founded.extras.join(",")}`);
+    assert(founded.goodsShown.includes(coast.id === "fjord" ? "stockfish" : "coconut") && !founded.goodsShown.includes("shellfish"), `${coast.id}: the resource bar shows the coast's foods, not Tidewater's shellfish`);
+    if (coast.id === "fjord") {
+      assert(founded.tide === 1.6 && founded.boat === "longboat" && founded.hat === "hood" && founded.house === "stave" && founded.palms === "pine", "the Fjord's tide, longboats, hoods, stave houses and pines");
+      const fj = await page.evaluate(async () => {
+        const api = (window as unknown as { __tidewater: Api }).__tidewater;
+        const s = api.sim, grid = api.grid;
+        const kinds = (k: string) => (Object.values(s.buildings) as Building[]).filter(b => b.kind === k);
+        // Hands for every job (a few more houses: the mine is the farthest work and nearest-first fills it last), fish and salt for the racks, a boat for the station.
+        const url2 = "/test/scenario.ts";
+        const sc2 = (await import(url2)) as typeof import("./scenario");
+        api.grant(2000);
+        sc2.growStreet(s, grid, 3);
+        sc2.placeByWalkway(s, grid, "house", 4);
+        for (const b of Object.values(s.buildings) as Building[]) if (b.residents !== undefined && ["hut", "house"].includes(b.kind)) b.residents = grid.capacityOf(b);
+        for (const b of kinds("pier")) b.boats = 0;
+        api.grantGood("fish", 80); api.grantGood("salt", 30);
+        for (const b of kinds("whalingStation")) b.boats = 1;
+        api.advance(2);
+        const racks = kinds("stockfishRacks")[0], mine = kinds("ironMine")[0], ice = kinds("iceHouse")[0], station = kinds("whalingStation")[0];
+        const produced = { racks: racks?.output ?? -1, mine: mine?.output ?? -1, mineReached: mine?.reached, mineWorkers: mine?.workers, ice: !!ice, stockfish: s.resources.stockfish, iron: s.resources.iron, stationWorkers: station?.workers ?? -1 };
+        // Whale season: the station runs, spouts rise, a horn sounds; then the ice, then a storm's avalanche onto a slope hut.
+        const season = api.forceBiome("whaleSeason");
+        await new Promise(r => setTimeout(r, 700));
+        let whales = 0;
+        for (let k = 0; k < 6; k++) { whales = Math.max(whales, api.view.fauna().whales); await new Promise(r => setTimeout(r, 250)); }
+        api.advance(1);
+        const oil = s.resources.whaleOil, stationOut = station?.output ?? -1;
+        const ice0 = api.forceBiome("seaIce");
+        await new Promise(r => setTimeout(r, 300));
+        const iceView = api.view.biome().ice, iceLabel = document.querySelector("#hud .tide-event")?.textContent ?? "";
+        // A hut on the treed slope, then storms until the snow comes down.
+        let slopeHut = null;
+        const sites = grid.island.trees;
+        for (let i = -30; i < 30 && !slopeHut; i++) for (let j = -30; j < 30 && !slopeHut; j++) {
+          const c = { i, j };
+          if (grid.classAt(c) !== "high" || grid.heightAt(c) < 2.0 || grid.heightAt(c) > 3.6 || grid.buildingAt(c)) continue;
+          if (!sites.some(t => Math.abs(t.cell.i - i) <= 3 && Math.abs(t.cell.j - j) <= 3 && grid.heightAt(t.cell) > grid.heightAt(c) + 1.0)) continue;
+          slopeHut = api.place("hut", i, j);
+        }
+        let avalanche = null;
+        for (let k = 0; k < 6 && !(slopeHut && slopeHut.damaged); k++) avalanche = api.forceBiome("avalanche");
+        api.frameTown(26);
+        return { produced, season: { cycle: season.cycle, whaleSeason: season.biomeState.whaleSeason }, whales, oil, stationOut, horns: api.view.audio().horns ?? 0, ice: { seaIce: ice0.biomeState.seaIce, view: iceView, label: iceLabel }, slopeHut: !!slopeHut, buried: !!slopeHut?.damaged, avalanches: avalanche?.biomeState.avalanches ?? 0, aurora: api.view.biome().aurora, fauna: api.view.fauna() };
+      });
+      console.log("Biome fjord:", JSON.stringify(fj));
+      assert(fj.produced.racks > 0 && fj.produced.stockfish > 0 && fj.produced.mine > 0 && fj.produced.iron > 0 && fj.produced.ice, "Fjord: the racks dried fish and the mine dug iron; the ice house stands");
+      assert(fj.season.whaleSeason === 1 && fj.oil > 0, "Fjord: whale season came and the station made whale oil");
+      assert(fj.whales > 0, "Fjord: whales surface in season");
+      assert(fj.ice.seaIce === 1 && fj.ice.view > 0.5 && /frozen/.test(fj.ice.label), "Fjord: sea ice: the water whitens and the tide clock says so");
+      assert(fj.slopeHut && fj.buried && fj.avalanches > 0, "Fjord: a storm's avalanche buried the hut on the slope");
+      assert(fj.aurora === 1 && (fj.fauna.seals + fj.fauna.puffins) > 0, "Fjord: the aurora is on and seals or puffins are about");
+    } else {
+      assert(founded.tide === 0.6 && founded.boat === "outrigger" && founded.hat === "straw" && founded.house === "round" && founded.palms === "palm", "the Atoll's tide, outriggers, straw hats, round huts and palms");
+      const at = await page.evaluate(async () => {
+        const api = (window as unknown as { __tidewater: Api }).__tidewater;
+        const s = api.sim, grid = api.grid;
+        const kinds = (k: string) => (Object.values(s.buildings) as Building[]).filter(b => b.kind === k);
+        for (const b of Object.values(s.buildings) as Building[]) if (["hut", "house"].includes(b.kind)) b.residents = grid.capacityOf(b);
+        for (const b of kinds("pier")) b.boats = 0;
+        // Lanterns on every walkway for the hatching to darken.
+        let lanterns = 0;
+        for (const w of [...kinds("walkway"), ...kinds("raisedWalkway")]) if (api.place("lanternPost", w.cells[0].i, w.cells[0].j)) lanterns++;
+        api.advance(3);
+        const grove = kinds("coconutGrove")[0], platform = kinds("divePlatform")[0], house = kinds("pearlHouse")[0], nursery = kinds("reefNursery")[0];
+        const palmsNear = grove ? grid.island.trees.filter(t => grove.cells.some(c => Math.abs(t.cell.i - c.i) <= 6 && Math.abs(t.cell.j - c.j) <= 6)).length : 0;
+        const produced = { grove: grove?.output ?? -1, palmsNear, coconut: s.resources.coconut, platformWorkers: platform?.workers ?? -1, pearls: s.resources.pearls, house: !!house, nursery: !!nursery, lanterns };
+        // The cyclone, the reef bleaching and recovering, the turtles' night.
+        const storm = api.forceBiome("cyclone");
+        await new Promise(r => setTimeout(r, 400));
+        const cyclone = { log: storm.log, storm: storm.storm, swell: api.view.stormMix() };
+        const bleach = api.forceBiome("bleach");
+        await new Promise(r => setTimeout(r, 300));
+        const bleached = { count: bleach.biomeState.bleached, view: api.view.biome().bleached, shoals: api.view.fauna().shoals };
+        const hatch = api.forceBiome("hatching");
+        await new Promise(r => setTimeout(r, 500));
+        const hatching = { on: api.view.biome().hatching, lanterns: api.view.biome().lanterns, bonus: hatch.biomeState.turtleBonus, turtles: api.view.fauna().turtles, label: document.querySelector("#hud .tide-event")?.textContent ?? "" };
+        api.frameTown(26);
+        return { produced, cyclone, bleached, hatching, fauna: api.view.fauna() };
+      });
+      console.log("Biome atoll:", JSON.stringify(at));
+      assert((at.produced.coconut > 0 || at.produced.palmsNear === 0) && at.produced.pearls > 0 && at.produced.house && at.produced.nursery, "Atoll: the grove gathered coconuts (where palms stand near it), the divers brought up pearls, the pearl house and nursery stand");
+      assert(at.cyclone.storm && at.cyclone.log.some(m => /cyclone/.test(m)), "Atoll: the storm is a cyclone");
+      assert(at.bleached.count > 0 && at.bleached.view > 0, "Atoll: foul water bleached the lagoon");
+      assert(at.hatching.on && at.hatching.lanterns.dark > 0 && at.hatching.bonus > 0 && /hatching/i.test(at.hatching.label), "Atoll: the hatching darkens the beach lanterns and earns the tourism bonus");
+      assert(at.hatching.turtles > 0 && (at.fauna.shoals + at.fauna.gulls) >= 0, "Atoll: turtles cross the beach on the hatching night");
+    }
+    // Shots: noon and midnight, wide and close.
+    for (const [when, target] of [["day", 0.25], ["night", 0.75]] as const) {
+      await page.evaluate((t: number) => { const api = (window as unknown as { __tidewater: Api }).__tidewater; api.tickSeconds(t * 2 * 120 - (api.sim.time % (2 * 120)) + 2 * 120); api.frameTown(26); }, target);
+      await page.waitForTimeout(500);
+      await page.screenshot({ path: `shots/biomes/${coast.id}-${when}-wide.png` });
+      await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.frameTown(12));
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: `shots/biomes/${coast.id}-${when}-close.png` });
+    }
+    // Back to Tidewater's sea, the coast's sector cleared so the World checks below count what they expect.
+    await page.evaluate(async (face: number) => { const api = (window as unknown as { __tidewater: Api }).__tidewater; await api.returnToWorld({ instant: true }); api.clearSector(face); await api.enterSector(1, { instant: true }); }, coast.face);
+  }
+  await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.newTown());
 
   // ---- The World (docs/globe) ----
   // Back up to the globe: the town's roofs on its face, the card with its counts, the shots wide and narrow.

@@ -1,5 +1,7 @@
 // Save/load is JSON.stringify of the ledger. The grid index is rebuilt from the pieces on load.
-import { Building, createState, SimState } from "./state";
+import { zeros } from "./fields";
+import { GOOD_IDS } from "./goods";
+import { Building, createState, SimState, TradeState } from "./state";
 
 export const AUTOSAVE_KEY = "tidewater.autosave";
 
@@ -14,11 +16,24 @@ export function serialize(state: SimState): string {
  */
 export function deserialize(json: string): SimState {
   const s = JSON.parse(json) as Partial<SimState>;
-  if (s.version !== 2) throw new Error(`unsupported save version ${String(s.version)}`);
+  const version = s.version as number | undefined;
+  if (version !== 2 && version !== 3) throw new Error(`unsupported save version ${String(s.version)}`);
+  // Version 2 → 3 (biomes): stockpiles keyed by the goods registry, a biome on the world, the ship's order book.
+  if (s.resources) for (const g of GOOD_IDS) (s.resources as Record<string, number>)[g] ??= 0;
+  if (s.world && (s.world as { biome?: unknown }).biome === undefined) (s.world as { biome?: string }).biome = "tidewater";
+  if (s.trade) {
+    const t = s.trade as Partial<TradeState> & { plankOrder?: number };
+    t.orders ??= {};
+    if (t.plankOrder !== undefined) { if (t.plankOrder > 0) t.orders.planks = (t.orders.planks ?? 0) + t.plankOrder; delete t.plankOrder; }
+  }
+  if (s.tide && (s.tide as { scale?: number }).scale === undefined) (s.tide as { scale?: number }).scale = 1;
+  s.biomeState ??= {};
+  if (s.fields && !(s.fields as Partial<SimState["fields"]>).bleach) (s.fields as SimState["fields"]).bleach = zeros();
+  s.version = 3;
   s.achievements ??= []; // saves from before backlog 7
   s.extraTrees ??= []; s.landfill ??= []; // saves from before the land tools
   s.loan ??= { owed: 0, perCycle: 0, taken: 0 };
-  s.world ??= { seed: 0 }; // saves from before seeded islands: the original island
+  s.world ??= { seed: 0, biome: "tidewater" }; // saves from before seeded islands: the original island
   for (const b of Object.values(s.buildings ?? {})) (b as Partial<Building>).rot ??= 0; // saves from before rotation
   if (s.tsunami && s.tsunami.due === undefined) s.tsunami.due = -1; // saves from before the warning cycle
   const fresh = createState();

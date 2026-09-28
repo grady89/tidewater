@@ -33,6 +33,8 @@ export const DAY_CYCLES = 2;
  */
 /** The World: when true, the Tidewater biome may only be founded on temperate faces; when false, on any face. */
 export const BAND_GATING = false;
+/** Sea lanes (BIOMES.md §4, sim/lanes.ts): the World ledger and cargo between adjacent harbors. Off until it is finished. */
+export const LANES_ENABLED = false;
 
 export const STILT_MIN = 0.5;
 export const CLEARANCE = 0.1;

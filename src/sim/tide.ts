@@ -2,6 +2,7 @@
 // SPRING_EVERY-th cycle uses the spring extremes, so the shape stays continuous through a spring tide.
 import { SPRING_EVERY, SPRING_HI, SPRING_LO, TIDE_HI, TIDE_LO, TIDE_PERIOD, WET_SAND_DRY_RATE } from "../config";
 import { TideState } from "./state";
+import { BASE_TIDES, Tides } from "./tides";
 
 const TAU = Math.PI * 2;
 
@@ -9,11 +10,12 @@ const TAU = Math.PI * 2;
 export function isSpringCycle(k: number): boolean {
   return k > 0 && k % SPRING_EVERY === 0;
 }
-export function peakLevel(k: number): number {
-  return isSpringCycle(k) ? SPRING_HI : TIDE_HI;
+/** Levels scale with the biome (TideState.scale; tides.ts). */
+export function peakLevel(k: number, scale = 1): number {
+  return (isSpringCycle(k) ? SPRING_HI : TIDE_HI) * scale;
 }
-export function troughLevel(k: number): number {
-  return isSpringCycle(k) ? SPRING_LO : TIDE_LO;
+export function troughLevel(k: number, scale = 1): number {
+  return (isSpringCycle(k) ? SPRING_LO : TIDE_LO) * scale;
 }
 
 /** 0 at high tide, 0.5 at low tide, wrapping at the next high tide. */
@@ -25,8 +27,9 @@ export function cycleFraction(t: TideState): number {
 export function levelAt(t: TideState): number {
   const f = cycleFraction(t);
   let a: number, b: number, u: number;
-  if (f < 0.5) { a = peakLevel(t.cycle); b = troughLevel(t.cycle + 1); u = f / 0.5; }
-  else { a = troughLevel(t.cycle + 1); b = peakLevel(t.cycle + 1); u = (f - 0.5) / 0.5; }
+  const s = t.scale ?? 1;
+  if (f < 0.5) { a = peakLevel(t.cycle, s); b = troughLevel(t.cycle + 1, s); u = f / 0.5; }
+  else { a = troughLevel(t.cycle + 1, s); b = peakLevel(t.cycle + 1, s); u = (f - 0.5) / 0.5; }
   return a + (b - a) * (0.5 - 0.5 * Math.cos(Math.PI * u));
 }
 
@@ -41,7 +44,8 @@ export function tickTide(t: TideState, dt: number): void {
 
 /** 0 at the ordinary low tide, 1 at the ordinary high tide (spring tides go outside 0..1). */
 export function tideNormalized(t: TideState): number {
-  return (t.level - TIDE_LO) / (TIDE_HI - TIDE_LO);
+  const s = t.scale ?? 1;
+  return (t.level - TIDE_LO * s) / ((TIDE_HI - TIDE_LO) * s);
 }
 
 export function isRising(t: TideState): boolean {
@@ -93,8 +97,8 @@ export function phaseProgress(t: TideState, highMark: number, lowMark: number): 
 }
 
 /** Fate of a deck at `floorY`: which tides put it under water. */
-export function floodFate(floorY: number): "safe" | "spring" | "always" {
-  if (floorY <= TIDE_HI) return "always";
-  if (floorY <= SPRING_HI) return "spring";
+export function floodFate(floorY: number, tides: Tides = BASE_TIDES): "safe" | "spring" | "always" {
+  if (floorY <= tides.hi) return "always";
+  if (floorY <= tides.springHi) return "spring";
   return "safe";
 }

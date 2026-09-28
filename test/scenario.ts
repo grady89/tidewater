@@ -52,13 +52,16 @@ export function layWalkways(state: SimState, grid: Grid, pier: Cell, target: Cel
 export function growStreet(state: SimState, grid: Grid, n: number): number {
   let laid = 0;
   for (let k = 0; k < n; k++) {
-    const links = buildingList(state).filter(b => b.kind === "walkway" || b.kind === "raisedWalkway");
+    const links = buildingList(state).filter(b => b.kind === "walkway" || b.kind === "raisedWalkway" || b.kind === "path");
     let best: Cell | null = null, bs = -1;
-    for (const l of links) for (const c of grid.neighbors(l.cells[0])) {
+    const consider = (cells: Cell[]) => { for (const l of cells) for (const c of grid.neighbors(l)) {
       if (grid.classAt(c) !== "flat" || grid.buildingAt(c)) continue;
       const free = grid.neighbors(c).filter(x => grid.classAt(x) === "flat" && !grid.buildingAt(x)).length;
       if (free > bs) { bs = free; best = c; }
-    }
+    } };
+    consider(links.map(l => l.cells[0]));
+    // Boxed in (a starter whose huts ring its two walkways): grow off the market's edge, itself a street link.
+    if (!best) consider(buildingList(state).filter(b => b.kind === "market").flatMap(m => m.cells));
     if (!best || !tryPlace(state, grid, "raisedWalkway", best)) break;
     laid++;
   }
@@ -69,7 +72,7 @@ export function growStreet(state: SimState, grid: Grid, n: number): number {
 export function placeByWalkway(state: SimState, grid: Grid, kind: BuildingKind, count = 1): Building[] {
   const out: Building[] = [];
   const { w, d } = BUILDINGS[kind];
-  const walkways = buildingList(state).filter(b => b.kind === "walkway" || b.kind === "raisedWalkway");
+  const walkways = buildingList(state).filter(b => b.kind === "walkway" || b.kind === "raisedWalkway" || b.kind === "path"); // a path is a street too (the motu, the hill)
   for (const wk of walkways) {
     if (out.length >= count) break;
     for (const n of grid.neighbors(wk.cells[0])) {
@@ -331,9 +334,121 @@ export function starterTown(state: SimState, grid: Grid): { pier: Building; huts
   buyBoat(state, pier);
   buyBoat(state, pier);
   const walkways = layWalkways(state, grid, site, hut0.cells[0]);
+  // On a coast where the greedy walk stalls short of the hut (the Fjord's banks), finish with an L of walkways.
+  if (!grid.touchesWalkway(hut0.cells) && walkways.length) {
+    const last = walkways[walkways.length - 1], to = hut0.cells[0];
+    let c = { ...last };
+    while (c.i !== to.i || c.j !== to.j) {
+      if (c.i !== to.i) c = { i: c.i + Math.sign(to.i - c.i), j: c.j }; else c = { i: c.i, j: c.j + Math.sign(to.j - c.j) };
+      if (c.i === to.i && c.j === to.j) break;
+      if (grid.buildingAt(c)) continue;
+      const w = tryPlace(state, grid, "walkway", c) ?? tryPlace(state, grid, "raisedWalkway", c);
+      if (w) walkways.push(c);
+    }
+  }
   const huts = [hut0, ...placeByWalkway(state, grid, "hut", 2)];
-  const market = placeByWalkway(state, grid, "market", 1)[0] ?? null;
+  let market = placeByWalkway(state, grid, "market", 1)[0] ?? null;
+  // A narrow shore (the Fjord's ledges) may leave no 2×2 by the first walkways: grow the street until one fits.
+  for (let k = 0; k < 6 && !market; k++) { if (!growStreet(state, grid, 1)) break; market = placeByWalkway(state, grid, "market", 1)[0] ?? null; }
   // The change from the 500$ buys the outfall, so waste doesn't pile up while the town grows.
   placeEdge(state, grid, "outfall", site, 3);
   return { pier, huts, market, walkways };
+}
+
+/** The nearest cell to `near` where `kind` can go, or null. */
+export function placeNear(state: SimState, grid: Grid, kind: BuildingKind, near: Cell): Building | null {
+  const cells: Cell[] = [];
+  for (let i = -32; i < 32; i++) for (let j = -32; j < 32; j++) cells.push({ i, j });
+  cells.sort((a, b) => dist(a, near) - dist(b, near));
+  for (const c of cells) { const b = tryPlace(state, grid, kind, c); if (b) return b; }
+  return null;
+}
+
+/**
+ * Extend the street by `n` pieces over flats or dry land alike (a path where the ground is dry, a walkway below
+ * that), each on the free land cell next to the street with the most free land neighbours: the biome towns use it
+ * where the flats run out (the Atoll's motu, the Fjord's ledges). Tidewater's scripts keep growStreet.
+ */
+export function growStreetAny(state: SimState, grid: Grid, n: number): number {
+  let laid = 0;
+  const land = (c: Cell) => grid.classAt(c) === "flat" || grid.classAt(c) === "high";
+  for (let k = 0; k < n; k++) {
+    const links = buildingList(state).filter(b => b.kind === "walkway" || b.kind === "raisedWalkway" || b.kind === "path");
+    let best: Cell | null = null, bs = -1;
+    const consider = (cells: Cell[]) => { for (const l of cells) for (const c of grid.neighbors(l)) {
+      if (!land(c) || grid.buildingAt(c)) continue;
+      const free = grid.neighbors(c).filter(x => land(x) && !grid.buildingAt(x)).length;
+      if (free > bs) { bs = free; best = c; }
+    } };
+    consider(links.map(l => l.cells[0]));
+    if (!best) consider(buildingList(state).filter(b => b.kind === "market").flatMap(m => m.cells));
+    if (!best || !layLink(state, grid, best)) break;
+    laid++;
+  }
+  return laid;
+}
+
+/** Lay whichever street piece fits on a cell: a path on dry ground, a walkway on the flats, a raised one over water. */
+function layLink(state: SimState, grid: Grid, c: Cell): Building | null {
+  return tryPlace(state, grid, "path", c) ?? tryPlace(state, grid, "walkway", c) ?? tryPlace(state, grid, "raisedWalkway", c);
+}
+const isLink = (b: Building | null) => !!b && (b.kind === "walkway" || b.kind === "raisedWalkway" || b.kind === "path" || b.kind === "market" || b.kind === "pier" || b.kind === "dock" || b.kind === "harbor");
+
+/**
+ * Join a building to the street: a straight run of street pieces from `from` toward `to` (whatever fits on each
+ * free cell), then, if the target still touches no link (a house sat in the way), the shortest free route from the
+ * target's footprint to any link, up to eight cells out. Returns how many pieces went down.
+ */
+export function joinByLine(state: SimState, grid: Grid, from: Cell, to: Cell): number {
+  const steps = Math.max(Math.abs(to.i - from.i), Math.abs(to.j - from.j));
+  let laid = 0;
+  for (let k = 1; k < steps; k++) {
+    const c = { i: Math.round(from.i + (to.i - from.i) * k / steps), j: Math.round(from.j + (to.j - from.j) * k / steps) };
+    if (grid.buildingAt(c)) continue;
+    if (layLink(state, grid, c)) laid++;
+  }
+  const target = grid.buildingAt(to);
+  if (!target || target.cells.some(c => grid.neighbors(c).some(n => isLink(grid.buildingAt(n))))) return laid;
+  // BFS over free cells from the footprint's neighbours to the first cell that touches a link; lay the route back.
+  const key = (c: Cell) => c.i + "," + c.j;
+  const prev = new Map<string, Cell | null>();
+  const queue: Cell[] = [];
+  for (const c of target.cells) for (const n of grid.neighbors(c)) if (!grid.buildingAt(n) && !prev.has(key(n))) { prev.set(key(n), null); queue.push(n); }
+  let end: Cell | null = null;
+  for (let head = 0; head < queue.length && !end && head < 400; head++) {
+    const c = queue[head];
+    if (grid.neighbors(c).some(n => isLink(grid.buildingAt(n)))) { end = c; break; }
+    for (const n of grid.neighbors(c)) if (!grid.buildingAt(n) && !prev.has(key(n)) && dist(n, to) < 9) { prev.set(key(n), c); queue.push(n); }
+  }
+  for (let c: Cell | null = end; c; c = prev.get(key(c)) ?? null) if (layLink(state, grid, c)) laid++;
+  return laid;
+}
+
+/**
+ * The starter town plus the coast's own kinds, wherever the catalog has them: the Fjord's racks, ice house,
+ * mine and whaling station; the Atoll's grove, pearl house, dive platform and nursery; a toolworks anywhere.
+ * `grant` is added to the purse first (the base starter spends the 650$); pass an existing starter town to build on it.
+ */
+export function biomeTown(state: SimState, grid: Grid, grant = 3000, town: ReturnType<typeof starterTown> = starterTown(state, grid)): { town: ReturnType<typeof starterTown>; extras: Partial<Record<BuildingKind, Building>> } {
+  state.resources.money += grant; state.resources.planks += 100;
+  growStreet(state, grid, 8);
+  const extras: Partial<Record<BuildingKind, Building>> = {};
+  const flats: BuildingKind[] = ["stockfishRacks", "iceHouse", "coconutGrove", "pearlHouse", "toolworks"];
+  for (const kind of flats) {
+    if (!grid.inCatalog(kind)) continue;
+    let b = placeByWalkway(state, grid, kind, 1)[0];
+    for (let k = 0; k < 6 && !b; k++) { if (!growStreet(state, grid, 2) && !growStreetAny(state, grid, 2)) break; b = placeByWalkway(state, grid, kind, 1)[0]; } // narrow ledges and motu: more street, over dry land too
+    if (b) extras[kind] = b;
+  }
+  placeByWalkway(state, grid, "house", 3);
+  if (grid.inCatalog("ironMine")) {
+    const mine = placeNear(state, grid, "ironMine", town.market?.cells[0] ?? town.pier.cells[0]);
+    if (mine) { extras.ironMine = mine; joinByLine(state, grid, town.market?.cells[0] ?? town.pier.cells[0], mine.cells[0]); }
+  }
+  if (grid.inCatalog("whalingStation")) {
+    const station = placeEdge(state, grid, "whalingStation", town.pier.cells[0], 6);
+    if (station) { extras.whalingStation = station; bridgeTo(state, grid, station); }
+  }
+  for (const kind of ["divePlatform", "reefNursery"] as const) if (grid.inCatalog(kind)) { const b = placeNear(state, grid, kind, town.pier.cells[0]); if (b) extras[kind] = b; }
+  return { town, extras };
 }

@@ -1,19 +1,21 @@
 // A new game: fresh ledger, grid index, and the free starting hut on the best of the flats.
+import { biomeFor, BiomeId } from "./biomes";
 import { Cell, createState, notify, SimState } from "./state";
 import { Grid } from "./grid";
 
-/** Flats high enough that ordinary and spring tides leave a standard walkway dry, but not the dry hill. */
+/** Flats high enough that ordinary and spring tides leave a standard walkway dry, but not the dry hill (Tidewater's window, scaled with the tide). */
 const START_TERRAIN = { min: 0.36, max: 0.58 };
 
-/** The starting hut goes on a comfortable flat cell nearest the island centre with the sea within reach. */
+/** The starting hut goes on a comfortable flat cell nearest the island centre (or the coast's own spot) with the sea within reach. */
 export function startCell(grid: Grid): Cell {
+  const near = biomeFor(grid.state).startNear ?? { i: 0, j: 0 };
   let best: Cell | null = null, bd = Infinity;
   for (let i = -32; i < 32; i++) for (let j = -32; j < 32; j++) {
     const c = { i, j };
     if (grid.classAt(c) !== "flat" || grid.onIsle([c])) continue;
     const h = grid.heightAt(c);
-    if (h < START_TERRAIN.min || h > START_TERRAIN.max) continue;
-    const d = Math.hypot(i, j);
+    if (h < START_TERRAIN.min * grid.tides.scale || h > START_TERRAIN.max * grid.tides.scale) continue;
+    const d = Math.hypot(i - near.i, j - near.j);
     if (d < bd) { bd = d; best = c; }
   }
   if (!best) {
@@ -21,7 +23,7 @@ export function startCell(grid: Grid): Cell {
     for (let i = -32; i < 32; i++) for (let j = -32; j < 32; j++) {
       const c = { i, j };
       if (grid.classAt(c) !== "flat" || grid.onIsle([c])) continue;
-      const d = Math.hypot(i, j);
+      const d = Math.hypot(i - near.i, j - near.j);
       if (d < bd) { bd = d; best = c; }
     }
   }
@@ -54,8 +56,8 @@ export function seedTown(state: SimState, grid: Grid): void {
 }
 
 /** A fresh ledger and grid: `seed` drives the RNG, `islandSeed` the ground (0 = the original island). */
-export function newGame(seed = 1, islandSeed = 0): { state: SimState; grid: Grid } {
-  const state = createState(seed, islandSeed);
+export function newGame(seed = 1, islandSeed = 0, biome: BiomeId = "tidewater"): { state: SimState; grid: Grid } {
+  const state = createState(seed, islandSeed, biome);
   const grid = new Grid(state);
   seedTown(state, grid);
   return { state, grid };
