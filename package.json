@@ -13,7 +13,8 @@
     "monkey": "node test/monkey.ts",
     "quality": "node test/quality.ts",
     "check:dist": "node test/deploycheck.ts",
-    "shots:biomes": "node test/biomeShots.ts"
+    "shots:biomes": "node test/biomeShots.ts",
+    "assets": "node tools/assets/run.ts"
   },
   "dependencies": {
     "@babylonjs/core": "^7.54.3"

@@ -5,3 +5,6 @@ dist/
 .vite/
 
 scratch/
+
+# the resolved Blender path (tools/assets/run.ts)
+tools/assets/blender.json
