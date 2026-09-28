@@ -340,6 +340,19 @@ export function settleWorld(store: Store, active: number | null, activeState: Si
 
 /** The ledger itself, flag or no flag (tests). `order` is the order the other seas settle in: it never changes the result. */
 export function settleWorldNow(store: Store, active: number | null, activeState: SimState | null, activeGrid: Grid | null = null, opts: { now?: number; order?: number[] } = {}): WorldSettlement {
+  const steps = settleWorldSteps(store, active, activeState, activeGrid, opts);
+  let r = steps.next();
+  while (!r.done) r = steps.next();
+  return r.value;
+}
+
+/** The World settlement as a job main can run a slice a frame: it yields after each stored sea is settled and after each is written back. */
+export function worldJob(store: Store, active: number | null, activeState: SimState | null, activeGrid: Grid | null = null): Generator<void, WorldSettlement, void> | null {
+  return LANES_ENABLED ? settleWorldSteps(store, active, activeState, activeGrid, {}) : null;
+}
+
+/** The settlement itself, step by step (settleWorldNow runs it to the end). */
+export function* settleWorldSteps(store: Store, active: number | null, activeState: SimState | null, activeGrid: Grid | null = null, opts: { now?: number; order?: number[] } = {}): Generator<void, WorldSettlement, void> {
   const now = opts.now ?? Date.now();
   const L = readLedger(store);
   const out: WorldSettlement = { settled: [], moved: [], flow: { loaded: {}, landed: {}, returned: {}, dropped: {} }, ledger: L };
@@ -363,6 +376,7 @@ export function settleWorldNow(store: Store, active: number | null, activeState:
     names.set(f, rec.meta.name);
     metas.set(f, { name: rec.meta.name, biome: rec.meta.biome, created: rec.meta.created });
     out.settled.push(f);
+    yield;
   }
   out.settled.sort((a, b) => a - b);
   const faces = [...states.keys()].sort((a, b) => a - b);
@@ -587,7 +601,7 @@ export function settleWorldNow(store: Store, active: number | null, activeState:
   for (const f of faces) {
     if (f === active) continue;
     const m = metas.get(f);
-    if (m) writeSector(store, f, states.get(f)!, m, now);
+    if (m) { writeSector(store, f, states.get(f)!, m, now); yield; }
   }
   writeLedger(store, L);
   return out;

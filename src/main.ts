@@ -15,7 +15,7 @@ import { GoodId, GOODS } from "./sim/goods";
 import { Grid } from "./sim/grid";
 import { crossCommuters, ferryTerminals } from "./sim/network";
 import { deserialize, serialize } from "./sim/save";
-import { applyPending, forgetFace, lanesFromMetas, readLedger, settleWorld, shipsAtSea } from "./sim/lanes";
+import { applyPending, forgetFace, lanesFromMetas, readLedger, shipsAtSea, worldJob, WorldSettlement } from "./sim/lanes";
 import { Biome, biomeAllowed, defaultName, deleteSector, exportSector, FACES, importSector, listMetas, migrateLegacy, readActive, readMeta, readSector, renameSector, SectorMeta, Store, writeActive, writeSector } from "./sim/sectors";
 import { newGame } from "./sim/start";
 import { CardTrade, TradePanel, WorldUi } from "./globe/ui";
@@ -232,13 +232,41 @@ function refreshLanes(): void {
 refreshLanes();
 /** Seconds the World has been up since its last settlement (its clock: a settlement every TIDE_PERIOD). */
 let worldIdle = 0;
+/**
+ * The World settlement runs as a job, a slice of at most WORLD_SLICE_MS a frame (sim/lanes.ts worldJob: it yields
+ * after each stored sea), so a peak never stalls the frame however many seas are built. Anything else that reads or
+ * writes the stored seas or the World ledger finishes the running job first.
+ */
+let worldRun: { job: Generator<void, WorldSettlement, void>; done: (out: WorldSettlement) => void } | null = null;
+const WORLD_SLICE_MS = 4;
+function startWorldJob(active: number | null, done: (out: WorldSettlement) => void): void {
+  finishWorldJob();
+  const job = active !== null ? worldJob(store, active, state, grid) : worldJob(store, null, null, null);
+  if (job) worldRun = { job, done };
+}
+function stepWorldJob(budgetMs = WORLD_SLICE_MS): void {
+  const t0 = performance.now();
+  while (worldRun) {
+    const r = worldRun.job.next();
+    if (r.done) { const run = worldRun; worldRun = null; run.done(r.value); return; }
+    if (performance.now() - t0 >= budgetMs) return;
+  }
+}
+function finishWorldJob(): void { stepWorldJob(Infinity); }
+window.addEventListener("pagehide", () => finishWorldJob());
 /** One World cycle while the World itself is up: every built sea settles, cargo sails, the globe and the card follow. */
 function settleIdleWorld(): void {
-  const out = settleWorld(store, null, null);
-  if (!out) return;
-  refreshLanes();
-  if (worldUi.shownFace !== null && faceMeta(worldUi.shownFace)) worldUi.showCard(worldUi.shownFace, faceMeta(worldUi.shownFace));
-  worldUi.refreshTrade();
+  startWorldJob(null, () => {
+    refreshLanes();
+    if (mode === "world" && worldUi.shownFace !== null && faceMeta(worldUi.shownFace)) worldUi.showCard(worldUi.shownFace, faceMeta(worldUi.shownFace));
+    worldUi.refreshTrade();
+  });
+}
+/** One World cycle at the played sea's peak: its changes (cargo landed and loaded) are saved when the job lands. */
+function settleAtPeak(): void {
+  const face = activeFace;
+  if (face === null) return;
+  startWorldJob(face, () => { if (activeFace === face) save(); });
 }
 function goodsLine(g: Partial<Record<GoodId, number>> | undefined): string {
   const parts = Object.entries(g ?? {}).filter(([, u]) => (u as number) >= 1).map(([k, u]) => `${Math.round(u as number)} ${GOODS[k as GoodId].name}`);
@@ -279,6 +307,7 @@ function download(name: string, text: string): void {
 }
 /** A fresh town on a face (not entered): island `seed`, named, on the chosen coast (an uncharted one falls back to Tidewater). */
 function newSector(face: number, seed: number, name: string, biome: Biome = "tidewater"): SectorMeta {
+  finishWorldJob();
   const coast: Biome = biomeAllowed(face, biome) ? biome : "tidewater";
   const meta = writeSector(store, face, newGame(SEED, seed, coast).state, { name: name.trim() || defaultName(store), biome: coast });
   refreshFace(face);
@@ -286,6 +315,7 @@ function newSector(face: number, seed: number, name: string, biome: Biome = "tid
 }
 async function importSectorFile(file: File, face: number | null): Promise<void> {
   const text = await file.text();
+  finishWorldJob();
   let target = face !== null && !faceMeta(face) ? face : listMetas(store).findIndex(m => !m);
   if (face !== null && faceMeta(face)) {
     const ok = await confirmDialog(`Replace ${faceMeta(face)!.name} with the imported sea?`, { ok: "Replace", danger: true });
@@ -311,6 +341,7 @@ const worldUi = new WorldUi(worldRoot, {
     const name = await promptDialog("Name this sea", m.name, { ok: "Rename" });
     if (name === null) return;
     renameSector(store, face, name);
+    if (face === activeFace) hud.setTitle(faceMeta(face)?.name ?? name);
     worldUi.showCard(face, faceMeta(face));
   },
   remove: async face => {
@@ -318,6 +349,7 @@ const worldUi = new WorldUi(worldRoot, {
     if (!m) return;
     const ok = await confirmDialog(`Clear ${m.name}? The town on it is gone for good.`, { ok: "Clear the sea", danger: true });
     if (!ok || mode !== "world") return; // the World's actions only land in the World
+    finishWorldJob();
     deleteSector(store, face);
     forgetFace(store, face);
     refreshLanes();
@@ -439,12 +471,14 @@ let transition: Promise<void> | null = null;
 /** The dive: adopt the sector's town in the resident island, fly the World camera into its face, cut, settle. */
 async function enterSector(face: number, opts: { instant?: boolean } = {}): Promise<boolean> {
   if (transition || mode !== "world" || dialogOpen()) return false;
+  finishWorldJob();
   const rec = readSector(store, face);
   if (!rec) return false;
   const run = async () => {
     activeFace = face;
     writeActive(store, face);
     adopt(rec.state);
+    hud.setTitle(rec.meta.name);
     if (LANES_ENABLED) applyPending(store, face, state, grid); // what the World sent while it was away (an eruption's wave)
     if (rec.state.tide.cycle === 0) tutorial.reset(); // a fresh sea gets the walkthrough, whatever an earlier town did
     const framing = townFraming();
@@ -469,6 +503,7 @@ async function returnToWorld(opts: { instant?: boolean } = {}): Promise<boolean>
   // A town with no sea to save into (its sea was cleared under it) still gets back to the World: a cut.
   const face = activeFace ?? world.frontFace;
   const homeless = activeFace === null;
+  finishWorldJob();
   const run = async () => {
     if (!homeless) { save(); refreshFace(face); }
     refreshLanes();
@@ -693,7 +728,8 @@ engine.runRenderLoop(() => {
     // The World's clock: while it is up, every built sea settles once per TIDE_PERIOD (sim/lanes.ts).
     worldIdle += realDt;
     world.laneClock = Math.min(1, worldIdle / TIDE_PERIOD);
-    if (LANES_ENABLED && worldIdle >= TIDE_PERIOD && !transition) { worldIdle = 0; settleIdleWorld(); }
+    if (LANES_ENABLED && worldIdle >= TIDE_PERIOD && !transition && !worldRun) { worldIdle = 0; settleIdleWorld(); }
+    stepWorldJob();
     world.setSelected(worldUi.shownFace);
     world.render(realDt);
     if (cardAfterEntrance !== null && world.entranceDone) { worldUi.showCard(cardAfterEntrance, faceMeta(cardAfterEntrance)); cardAfterEntrance = null; }
@@ -708,11 +744,12 @@ engine.runRenderLoop(() => {
     tick(state, grid);
     acc -= SIM_TICK;
     if (state.tide.peaked) {
-      // The World settles on the sea's peaks while it is played (before the autosave, which then holds what sailed).
-      if (LANES_ENABLED && activeFace !== null) settleWorld(store, activeFace, state, grid);
       save();
+      // The World settles on the sea's peaks while it is played; the sea is saved again when that lands.
+      if (LANES_ENABLED) settleAtPeak();
     }
   }
+  stepWorldJob();
   if (probe) probeFrame();
   syncView();
   scene.render();
@@ -954,7 +991,7 @@ const api = {
   /** A fresh town on face `n` (island `seed`, named), not entered. */
   newSector,
   /** Clear a face without the confirm (the smoke). */
-  clearSector(face: number) { deleteSector(store, face); forgetFace(store, face); if (activeFace === face) activeFace = readActive(store); refreshFace(face); refreshLanes(); },
+  clearSector(face: number) { finishWorldJob(); deleteSector(store, face); forgetFace(store, face); if (activeFace === face) activeFace = readActive(store); refreshFace(face); refreshLanes(); },
   /** Dive into face `n` (the sector must exist); `instant` skips the flight. Resolves true once the island is up. */
   enterSector,
   /** Back to the World from the island; `instant` skips the flight. */
@@ -971,7 +1008,9 @@ const api = {
     lanes: () => ({ lanes: world.lanes.laneCount, ships: world.lanes.shipCount, storms: world.lanes.stormCount }),
     ledger: () => readLedger(store),
     /** A World settlement now: from inside a sea, as at its peak (the sea being played takes part); from the World, as its clock would. */
-    settle: () => { if (mode === "island" && activeFace !== null) { settleWorld(store, activeFace, state, grid); save(); syncView(); } else settleIdleWorld(); },
+    settle: () => { if (mode === "island" && activeFace !== null) { settleAtPeak(); finishWorldJob(); syncView(); } else { settleIdleWorld(); finishWorldJob(); } },
+    /** Is a World settlement still running a slice a frame? */
+    settling: () => worldRun !== null,
     openTrade: () => { const b = document.querySelector<HTMLButtonElement>("#world .trade-toggle"); if (b && !worldUi.tradeOpen) b.click(); return [...document.querySelectorAll("#world .trade-line")].map(e => e.textContent ?? ""); },
     cardText: () => document.querySelector("#world .world-card")?.textContent ?? "",
     /** Open a face's card (as a click would) and return its text. */

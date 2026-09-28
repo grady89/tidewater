@@ -167,6 +167,7 @@ export class Hud {
     this.tideSpring = root.querySelector<HTMLElement>(".tide-spring")!;
     this.tideShip = root.querySelector<HTMLElement>(".tide-ship")!;
     this.tideEvent = root.querySelector<HTMLElement>(".tide-event")!;
+    this.title = root.querySelector<HTMLElement>("h1")!;
     this.hint = root.querySelector<HTMLElement>(".hint")!;
     this.ledgerLabel = root.querySelector<HTMLElement>(".score label")!;
     this.ledgerValue = root.querySelector<HTMLElement>(".score-value")!;
@@ -252,6 +253,13 @@ export class Hud {
       return "no timber";
     }
     return null;
+  }
+
+  private readonly title: HTMLElement;
+  /** The panel's heading: the sea being played (the World's name for it). */
+  setTitle(name: string): void {
+    const h = this.title;
+    if (h && h.textContent !== name) h.textContent = name;
   }
 
   update(s: HudState): void {

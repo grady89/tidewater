@@ -128,7 +128,7 @@ export class LaneView {
       const { pos, dir } = along(pts, t);
       const up = V(FACES[t < 0.5 ? leg.from : leg.to].normal);
       const bob = 0.08 * Math.sin(time * 1.6 + i);
-      Matrix.ComposeToRef(new Vector3(1.7, 1.7, 1.7), orient(dir, up), pos.add(up.scale(bob)), m);
+      Matrix.ComposeToRef(new Vector3(2.2, 2.2, 2.2), orient(dir, up), pos.add(up.scale(bob)), m);
       for (let k = 0; k < 16; k++) ships.push(m.m[k]);
     });
     this.ships.thinInstanceSetBuffer("matrix", new Float32Array(ships.length ? ships : new Array(16).fill(0)), 16, false);

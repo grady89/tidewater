@@ -73,7 +73,8 @@ export function dunesHeight(seed: number): HeightFn {
     if (z > LAGOON_TO - 1) h = Math.max(h, barH * smooth(LAGOON_TO - 1, LAGOON_TO + 1, z));
     // The headland: the only high rock.
     const hd = Math.hypot(x - HEADLAND.x, z - HEADLAND.z) / HEADLAND.r;
-    if (hd < 1) h = Math.max(h, (HEADLAND.h + n) * (1 - smooth(0.2, 1, hd)));
+    // A rock plateau with cliffs all round (the steep sides and the high top take the rock band), broken on top.
+    if (hd < 1) h = Math.max(h, (HEADLAND.h + n + 0.8 * (fbm(x * 0.9 + 3, z * 0.9 - 8, 3, 1 / 5) - 0.5)) * (1 - smooth(0.62, 1, hd)));
     // The oases: shallow hollows with water at the bottom.
     for (const o of oases) { const d = Math.max(Math.abs(x - o.x), Math.abs(z - o.z)); if (d < 3.4) h = h + (0.72 - h) * (1 - smooth(1.8, 3.4, d)); }
     // The island's outline: a rounded box (a superellipse) with a ragged edge; sea past the bars and round the ends.

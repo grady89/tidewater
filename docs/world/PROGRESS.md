@@ -5,7 +5,7 @@ whenever unsure: re-read CLAUDE.md, BIOMES.md and this file, then continue from 
 DONE. Update after every step. Build + test + smoke green before every commit; commit per step; push `world`
 after each stage; never push `main`. Calls BIOMES.md leaves open go in `docs/world/decisions.md`.
 
-Last thing that worked: Stage 5 — lanes carry food variety and luxuries, background seas work their shifts, timberless harbors, the Dunes' first oasis and cistern; build, test and smoke green.
+Last thing that worked: Stage 6 — review and audit (shots, sheets, the four-sea World, the faster packer, the World job, the sea's name on the HUD); build, test, smoke green.
 
 ## Stages
 
@@ -28,7 +28,7 @@ Last thing that worked: Stage 5 — lanes carry food variety and luxuries, backg
 | 4g | LANES_ENABLED = true (flag kept) | TODO | |
 | 4h | Tests (multi-hop + hub limit, migration, storm drift, eruption across faces, company route, idle World), smoke (adjacent harbors trade within three cycles, the lane and a ship on the World, an eruption warns its neighbour), fuzzer World mode (goods conserved across a hop, no negative stock, hash-stable ordering) | DONE | test/lanes.test.ts (15), fuzz.test.ts World run (two orderings, one hash), fuzzWorker plays a three-sea World on every seventh seed; the smoke's lanes section |
 | 5 | Balance: each new coast's starter positive in 4 cycles, level 2 ~8, level 3 ~15 with a company purchase; two connected seas reach level 3 without purchases by ~20; a hub without a warehouse throttles; NOTES.md | DONE | decisions #31–#34; test/balance.test.ts (BALANCE=1) is the probe; the numbers are in NOTES.md (Session F) |
-| 6 | Review and audit: each new coast beside Tidewater at noon and dusk (biomeShots.ts), cohesion audit, the World with four seas, two lanes and a ship; fixes; monkey 5 min from the World with lanes on | TODO | |
+| 6 | Review and audit: each new coast beside Tidewater at noon and dusk (biomeShots.ts), cohesion audit, the World with four seas, two lanes and a ship; fixes; monkey 5 min from the World with lanes on | DONE | shots/biomes/ (noon, dusk, night per coast; sheet-noon.png and sheet-dusk.png beside Tidewater), shots/globe/world-four-seas.png; the packer 10× faster and the World settlement a job (#35–#36); audit fixes #37; monkey 5 min from the World: one run passed (worst slow run 1.84 s), one flagged 2.08 s at a forced reload (pre-existing boot stall, #37), one lost its page to a dev-server reload while I edited |
 | 7 | Docs: ARCHITECTURE.md, HANDOFF.md (World section), BIOMES.md deviations, NOTES.md, this file | TODO | |
 | 8 | Only if everything above is DONE and nothing BLOCKED: pirates v0 behind PIRATES_ENABLED = false | TODO | |
 
@@ -46,3 +46,4 @@ Last thing that worked: Stage 5 — lanes carry food variety and luxuries, backg
 - 3b: Dunes view; smoke green (153 s)
 - 4: sea lanes; the first smokes failed on the card (it showed the wrong face) and on a ship hidden under the miniature's water; green
 - 5: balance; smoke green (154 s)
+- 6: review and audit; smoke green (154 s); monkey 5 min: 8806 actions (2.08 s slow run at a reload), rerun seed 2: 5798 actions, pass

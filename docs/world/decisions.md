@@ -166,3 +166,17 @@ wins and is noted). Numbered as they came up; the code cites them.
     so the dates are the first thing a new town can reach; the draft's oases were 12 cells back and the line to
     them cost more than the grove. The great cistern is 200$ (was 300): at 300 a town without it could not afford
     it before its second drought. Level 2 on the Dunes now lands at cycles 10–11.
+35. **The packer, faster (Stage 6 audit):** a World settlement with eleven stored seas took ~2 s, nearly all of it
+    in `compress` building phrase strings. The LZW dictionary is now keyed by (phrase code, next character) —
+    the same phrases, the same codes, byte-identical output (checked against the old packer on random text and
+    real saves), about ten times faster. The same settlement now takes ~100 ms.
+36. **The World settlement runs as a job** (`worldJob`, a generator that yields after each stored sea is settled
+    and after each is written): main runs it at most 4 ms a frame, so a peak never stalls the frame however many
+    seas are built. Anything that reads or writes the stored seas or the ledger (entering or leaving a sea,
+    founding, importing or clearing one, the console's `settle`, the page closing) finishes it first; the played
+    sea is saved again when the job lands (what sailed from and to it).
+37. **Audit fixes (Stage 6):** the island HUD's heading was the old game name on every coast; it is now the sea's
+    name (set on entry and on rename). The Dunes' headland is a plateau with cliffs round it (the rock band takes
+    the steep sides; its rock is the palette's sandy `#b9a98a`, so it stays pale). The globe's cargo ships are a
+    little larger. A reload with twelve seas stalls one frame for ~2.2 s on this branch and on the original main
+    alike (measured both); the monkey's slow runs near its forced reloads come from it — noted, not fixed here.
