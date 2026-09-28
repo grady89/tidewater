@@ -80,3 +80,12 @@ One line each, in the order they were made. The reasoning is "most consistent wi
     on the face (roofless, water at mean sea level, surfacing over 0.5 s), following the seed field with a
     150 ms debounce, Random and the coast buttons; founding the sea replaces it with the real miniature. The
     hover lift: 5 units and +25 % light (review.md had noted 2 units barely read at the orbit).
+25. **The dive's hand-over** (Grady: "very blocky and then it just switches to the higher fidelity view"). The flight
+    no longer ends on the miniature: the island's camera follows the flight (`CameraControl.follow`, outside the
+    player's pitch and distance limits, restored by the next `jumpTo`) and the scenes dissolve across 90 → 40
+    units from the town, the World copied into a 2D veil canvas over the game canvas each frame and the island drawn
+    under it. For the two pictures to match, the flight's aim (look-at and up) finishes turning in the first 45 % and
+    its approach is paced on log distance, so the dissolve lasts about 0.4 s head-on (0.27 s from a face at the
+    globe's edge, which comes in faster). The island's fog is pushed back by the camera's distance beyond 30 while it
+    follows, or the island would haze out against the miniature. The landing is Home's radius 30 with no settle,
+    instead of 22 easing back out to 30. The 2D copy costs one canvas blit per frame for about 25 frames.

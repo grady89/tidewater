@@ -78,6 +78,13 @@ const ATMOS_R = SOLID_CIRCUMRADIUS + 5, ATMOS_COLOR = "#9cc3e6", ATMOS_RIM = 0.7
 const SAND_RISE = 0.45;
 /** A seed preview surfaces over this long; its water sits at mean sea level. */
 const PREVIEW_RISE = 0.5, PREVIEW_LEVEL = 0;
+/**
+ * The share of a flight in which its aim (the look-at point and the up vector) turns. A dive turns first and then
+ * comes straight in; a return leaves straight out and turns last. So while the town is near, the flight camera looks
+ * at the town with the face's up — a pose the island's own camera can take, which is what lets the two scenes
+ * dissolve into each other mid-flight (main.ts, the hand-over).
+ */
+const AIM_SHARE = 0.45;
 
 const outCubic = (t: number) => 1 - Math.pow(1 - Math.min(1, Math.max(0, t)), 3);
 const inOutCubic = (t: number) => { t = Math.min(1, Math.max(0, t)); return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
@@ -165,7 +172,11 @@ export class World {
   private entrance = 0;
   private lighting: Lighting = computeLighting(DUSK_MIN, 0.25);
   /** Flights and the entrance run on the wall clock, so a tab that stalls or throttles its frames lands them on its next frame. */
-  private flightAnim: { from: Pose; to: Pose; start: number; seconds: number; done: () => void } | null = null;
+  private flightAnim: { from: Pose; to: Pose; start: number; seconds: number; aimFirst: boolean; near: number; far: number; done: () => void } | null = null;
+  /** The pose the flight camera was last given (world space). */
+  private flightPose: Pose | null = null;
+  /** A test hold: the running flight stays at this fraction of its time (null runs it on the clock). */
+  private flightHold: number | null = null;
   private entranceStart = 0;
   private orbitPose: { alpha: number; beta: number; radius: number } | null = null;
   entranceDone = true;
@@ -779,6 +790,7 @@ export class World {
   }
 
   private applyPose(p: Pose): void {
+    this.flightPose = { position: p.position.clone(), target: p.target.clone(), up: p.up.clone() };
     this.flight.upVector = p.up.clone();
     this.flight.position = p.position.clone();
     this.flight.setTarget(p.target);
@@ -798,7 +810,7 @@ export class World {
     return new Promise(resolve => {
       const done = () => { this.applyPose(to); this.phase = "away"; resolve(); };
       if (seconds <= 0 || this.opts.reducedMotion()) { done(); return; }
-      this.flightAnim = { from, to, start: performance.now(), seconds, done };
+      this.flightAnim = { from, to, start: performance.now(), seconds, aimFirst: true, far: Vector3.Distance(from.position, to.target), near: Vector3.Distance(to.position, to.target), done };
     });
   }
 
@@ -824,8 +836,51 @@ export class World {
         resolve();
       };
       if (seconds <= 0 || this.opts.reducedMotion()) { done(); return; }
-      this.flightAnim = { from, to, start: performance.now(), seconds, done };
+      this.flightAnim = { from, to, start: performance.now(), seconds, aimFirst: false, far: Vector3.Distance(to.position, from.target), near: Vector3.Distance(from.position, from.target), done };
     });
+  }
+
+  /** Whether a flight is running. */
+  get flying(): boolean { return this.flightAnim !== null; }
+
+  /**
+   * Advance the running flight to now. The position runs along the straight line between the poses, paced so the
+   * distance to the town changes by the same factor in equal times (eased in and out): a zoom that reads evenly, fast
+   * through the sky and slow over the island, where the hand-over dissolves the scenes. The aim turns on its own over
+   * the first (dive) or last (return) AIM_SHARE of the flight. render() calls it; the hand-over calls it on frames
+   * the World is not drawn.
+   */
+  stepFlight(): void {
+    const a = this.flightAnim;
+    if (!a) return;
+    const t = this.flightHold !== null ? this.flightHold * a.seconds : (performance.now() - a.start) / 1000;
+    const u = t / a.seconds;
+    const s = smooth(0, 1, u);
+    const [d0, d1] = a.aimFirst ? [a.far, a.near] : [a.near, a.far];
+    const k = Math.abs(d0 - d1) < 1e-6 ? s : (d0 - d0 * Math.pow(d1 / d0, s)) / (d0 - d1);
+    const ka = a.aimFirst ? inOutCubic(u / AIM_SHARE) : inOutCubic((u - (1 - AIM_SHARE)) / AIM_SHARE);
+    this.applyPose({ position: Vector3.Lerp(a.from.position, a.to.position, k), target: Vector3.Lerp(a.from.target, a.to.target, ka), up: Vector3.Lerp(a.from.up, a.to.up, ka).normalize() });
+    if (u >= 1 && this.flightHold === null) { this.flightAnim = null; a.done(); }
+  }
+
+  /** Hold the running flight at a fraction of its time (tests and shots); null lets it run on from there. */
+  holdFlight(u: number | null): void {
+    const a = this.flightAnim;
+    if (a && u === null && this.flightHold !== null) a.start = performance.now() - this.flightHold * a.seconds * 1000;
+    this.flightHold = u;
+  }
+
+  /**
+   * The flight camera in a face's own frame (island units): where the island's camera stands to see the same
+   * picture. Measured through the face node as it is now, so it matches what the World draws this frame.
+   */
+  flightInFace(face: number): Pose | null {
+    const p = this.flightPose;
+    if (!p) return null;
+    const node = this.faces[face].node;
+    node.computeWorldMatrix(true);
+    const inv = Matrix.Invert(node.getWorldMatrix());
+    return { position: Vector3.TransformCoordinates(p.position, inv), target: Vector3.TransformCoordinates(p.target, inv), up: Vector3.TransformNormal(p.up, inv).normalize() };
   }
 
   /** Where the World camera is, for probes. */
@@ -888,14 +943,8 @@ export class World {
     }
     const fogT = this.phase === "entering" ? outCubic(this.entrance / RISE_SECONDS) : 1;
     // Flights.
-    if (this.flightAnim) {
-      const a = this.flightAnim;
-      const t = (performance.now() - a.start) / 1000;
-      const k = inOutCubic(t / a.seconds);
-      const pose: Pose = { position: Vector3.Lerp(a.from.position, a.to.position, k), target: Vector3.Lerp(a.from.target, a.to.target, k), up: Vector3.Lerp(a.from.up, a.to.up, k).normalize() };
-      this.applyPose(pose);
-      if (t >= a.seconds) { this.flightAnim = null; a.done(); }
-    } else if (this.scene.activeCamera === this.flight && this.phase !== "away") {
+    if (this.flightAnim) this.stepFlight();
+    else if (this.scene.activeCamera === this.flight && this.phase !== "away") {
       // Watchdog: a flight camera left active with no flight running is a bug elsewhere; the orbit is the safe place.
       this.scene.activeCamera = this.camera;
       this.camera.attachControl(this.canvas, true);

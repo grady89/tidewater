@@ -15,8 +15,8 @@ Values are what the code uses (src/globe/*). Easings by name: `outCubic` 1−(1�
 | Clouds on a flight | alpha 0.97 → 0 as the camera passes 175 → 115 units from the centre (through their layer); the atmosphere's rim 0.75 → 0 over 150 → 95 | smoothstep |
 | Cloud over the hovered / selected face | alpha 1 → 0.2 and back, rate 9/s (about a tenth of a second) | exponential |
 | Seed preview | the island surfaces from 6 units under over 0.5 s; the seed field is followed after 150 ms at rest | outCubic |
-| Dive | 1.4 s camera flight to the face framing, 250 ms DOM crossfade, then the island eases radius 22 → 30 (its camera's easing, ~0.3 s) | inOutCubic (flight), exponential (settle) |
-| Return | mirror of the dive: 1.2 s flight from the face framing back to the orbit | inOutCubic |
+| Dive | 1.8 s flight from the orbit to the town framing at radius 30; the aim turns over the first 45 %, then the camera comes straight in, paced so the distance to the town shrinks by equal factors in equal times; the island's camera shadows it and the two scenes dissolve across 90 → 40 units from the town (about 0.4 s head-on); 250 ms DOM crossfade out, the HUD fades in over 450 ms on landing | smoothstep on log distance (position), inOutCubic (aim), smoothstep (dissolve) |
+| Return | mirror of the dive: 1.6 s from wherever the island's camera is back to the orbit, the dissolve across 40 → 90 units, the aim turning over the last 45 % | as the dive |
 | Keyboard rotate | arrows turn the globe 0.4 rad about the camera's up (left/right) or right (up/down) axis, eased (rate 10/s) | exponential ease |
 
 **Pointer, trackpad, touch.** Left drag spins; wheel and trackpad scroll zoom (Babylon's wheel input, precision

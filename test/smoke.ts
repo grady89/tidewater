@@ -79,16 +79,56 @@ try {
     const minis = api.world.miniatures().filter(m => m.built);
     if (api.world.preview() !== null) throw new Error("founding the sea should replace its preview");
     const t0 = performance.now();
+    // The hand-over on every frame: the World's share of the picture, and whether the veil carried it.
+    const shares: [number, number, boolean][] = [];
+    let watching = true;
+    const watch = () => { const h = api.world.handover(); if (h) shares.push([performance.now() - t0, h.worldShare, h.veil]); if (watching) requestAnimationFrame(watch); };
+    requestAnimationFrame(watch);
     const ok = await api.enterSector(1);
-    return { meta: { face: meta.face, name: meta.name, seed: meta.seed, buildings: meta.buildings }, minis, ok, ms: performance.now() - t0, mode: api.mode, active: api.world.active(), pose: api.world.pose(), cam: api.view.camera(), buildings: Object.keys(api.sim.buildings).length, hudShown: getComputedStyle(document.getElementById("hud")!).display !== "none", worldHidden: document.getElementById("world")!.hidden };
+    watching = false;
+    const blended = shares.filter(([, w, veil]) => w > 0 && w < 1 && veil);
+    const handover = { frames: shares.length, blended: blended.length, ms: blended.length ? blended[blended.length - 1][0] - blended[0][0] : 0, first: shares[0]?.[1], last: shares[shares.length - 1]?.[1], after: api.world.handover(), veil: !document.getElementById("veil")!.hidden };
+    return { meta: { face: meta.face, name: meta.name, seed: meta.seed, buildings: meta.buildings }, minis, ok, ms: performance.now() - t0, mode: api.mode, active: api.world.active(), pose: api.world.pose(), cam: api.view.camera(), buildings: Object.keys(api.sim.buildings).length, hudShown: getComputedStyle(document.getElementById("hud")!).display !== "none", worldHidden: document.getElementById("world")!.hidden, handover };
   });
   console.log("World dive:", JSON.stringify(dive));
   assert(dive.meta.face === 1 && dive.meta.name === "Smoke" && dive.meta.seed === 0 && dive.meta.buildings === 1, "newSector wrote a fresh town onto face 1");
   assert(dive.minis.length === 1 && dive.minis[0].face === 1 && dive.minis[0].roofs === 1, "the face's miniature carries the starting hut's roof");
-  assert(dive.ok && dive.mode === "island" && dive.active === 1 && dive.ms >= 1000 && dive.ms < 6000 && dive.pose.phase === "away", "the dive flew for ~1.4 s and landed on the island");
-  assert(Math.abs(dive.cam.dist - 22) < 0.5 && Math.abs(dive.cam.yaw + 0.8) < 0.01 && dive.buildings === 1 && dive.hudShown && dive.worldHidden, "the island is up at the town framing with its HUD");
+  assert(dive.ok && dive.mode === "island" && dive.active === 1 && dive.ms >= 1000 && dive.ms < 6000 && dive.pose.phase === "away", "the dive flew for ~1.8 s and landed on the island");
+  assert(Math.abs(dive.cam.dist - 30) < 0.5 && Math.abs(dive.cam.yaw + 0.8) < 0.01 && dive.buildings === 1 && dive.hudShown && dive.worldHidden, "the island is up at the town framing (Home's distance) with its HUD");
+  assert(dive.handover.first === 1 && dive.handover.last === 0 && dive.handover.blended >= 5 && dive.handover.ms >= 200, `the dive dissolved the World into the island over ${Math.round(dive.handover.ms)} ms (${dive.handover.blended} blended frames): it starts all World and lands all island`);
+  assert(dive.handover.after === null && !dive.handover.veil, "the hand-over is over and its veil hidden once the island is up");
   await page.waitForTimeout(400);
   await page.screenshot({ path: "shots/globe/island-after-dive.png" });
+  // The hand-over held halfway, both ways: the island's own camera stands where the World's flight camera stands,
+  // so the town sits in the same place in both pictures while one dissolves into the other.
+  for (const way of ["return", "dive"] as const) {
+    const held = await page.evaluate(async way => {
+      const api = (window as unknown as { __tidewater: Api; __flight?: Promise<boolean> }).__tidewater;
+      const w = window as unknown as { __flight?: Promise<boolean> };
+      w.__flight = way === "dive" ? api.enterSector(1) : api.returnToWorld();
+      api.world.holdFlight(0);
+      const frame = () => new Promise(res => requestAnimationFrame(() => requestAnimationFrame(res)));
+      let best: { u: number; share: number } | null = null;
+      for (let u = 0.2; u <= 0.8; u += 0.02) {
+        api.world.holdFlight(u);
+        await frame();
+        const share = api.world.handover()?.worldShare ?? -1;
+        if (share > 0 && share < 1 && (!best || Math.abs(share - 0.5) < Math.abs(best.share - 0.5))) best = { u, share };
+      }
+      if (best) { api.world.holdFlight(best.u); await frame(); await frame(); }
+      return { best, veil: api.world.handover()?.veil ?? false };
+    }, way);
+    await page.screenshot({ path: `shots/globe/${way}-handover.png` });
+    const landed = await page.evaluate(async () => {
+      const api = (window as unknown as { __tidewater: Api }).__tidewater;
+      api.world.holdFlight(null);
+      const ok = await (window as unknown as { __flight: Promise<boolean> }).__flight;
+      return { ok, mode: api.mode };
+    });
+    console.log(`World ${way} held:`, JSON.stringify(held), JSON.stringify(landed));
+    assert(held.best !== null && held.best.share > 0.2 && held.best.share < 0.8 && held.veil, `the ${way} holds halfway through its dissolve, the veil up`);
+    assert(landed.ok && landed.mode === (way === "dive" ? "island" : "world"), `the held ${way} runs on and lands when released`);
+  }
   await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.newTown());
 
   // M2: the starter town, four cycles, positive net money; cutting the market's walkway stops sales.

@@ -145,11 +145,24 @@ export class CameraControl {
   }
 
   jumpTo(x: number, z: number, dist: number, yaw: number, beta: number): void {
+    this.camera.lowerBetaLimit = MIN_BETA; this.camera.upperBetaLimit = MAX_BETA; this.camera.upperRadiusLimit = MAX_DIST; // after a follow()
     this.goal = { x, z, yaw, dist: clamp(dist, MIN_DIST, MAX_DIST) };
     this.clampTarget();
     this.tilt = clamp(beta, MIN_BETA, MAX_BETA) - autoBeta(this.goal.dist);
     this.camera.target.set(this.goal.x, GROUND_Y, this.goal.z);
     this.camera.alpha = yaw; this.camera.radius = this.goal.dist; this.camera.beta = clamp(beta, MIN_BETA, MAX_BETA);
+  }
+
+  /**
+   * Stand exactly at a pose, outside the player's limits: the World's hand-over, where the island's camera shadows a
+   * flight that comes in from overhead and from further out. The next jumpTo brings the limits back.
+   */
+  follow(x: number, z: number, dist: number, yaw: number, beta: number): void {
+    this.camera.lowerBetaLimit = 0.001; this.camera.upperBetaLimit = Math.PI / 2; this.camera.upperRadiusLimit = 1e4;
+    this.goal = { x, z, yaw, dist };
+    this.tilt = beta - autoBeta(dist);
+    this.camera.target.set(x, GROUND_Y, z);
+    this.camera.alpha = yaw; this.camera.radius = dist; this.camera.beta = beta;
   }
 
   get pose(): CameraPose {

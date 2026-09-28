@@ -49,9 +49,11 @@ Then the card fades in. Reduced motion: everything at its final value on the fir
 25 %; the edges around it brighten. Leaving reverses over 240 ms.
 
 **Dive.** 1) `adopt(sector.state)` in the resident island scene (silent, off-screen). 2) The World camera
-detaches from its orbit and flies (1.4 s, easeInOutCubic) to the pose that equals the island's `frameTown`
-framing (target = the town's centroid, radius 22, yaw −0.8, beta 0.95) expressed in the face's frame — so the
-miniature fills the viewport exactly as the island would. 3) Cut: the island scene renders with its camera at
-that same framing and the same tide level; the water is the same shader at the same level, so it reads as
-continuous. 4) The island eases out to radius 30 (its camera's own easing, ~0.3 s) and the HUD fades in. **Return** is the reverse:
-the island camera's pose is mapped into the face's frame, the World cuts to it, then flies back to the orbit.
+detaches from its orbit and flies (1.8 s) to the pose that equals the island's Home framing (target = the town's
+centroid, radius 30, yaw −0.8, beta 0.95) expressed in the face's frame. It turns to the town first, then comes
+straight in, slowing as it nears. 3) The hand-over: from 90 units out the island's own camera stands where the
+flight camera stands (the flight's pose mapped into the face's frame), and the two scenes dissolve — the World
+drawn and copied into a veil canvas over the game, the island drawn under it, the veil's opacity falling to 0 by
+40 units. The coarse miniature never fills the screen, and nothing cuts. 4) The flight lands on the framing, and
+the HUD fades in. **Return** is the reverse: from wherever the island's camera is, the same path back out, the
+island dissolving into the World between 40 and 90 units, then the turn back to the orbit.

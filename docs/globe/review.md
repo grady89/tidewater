@@ -54,12 +54,13 @@ face turned from the sun, the dive at 0.35 / 0.8 / 1.25 s, the island after the 
 
 - **Entrance**: the rise from −60 over 1.6 s, the fog pulling out, the swell settling 3 → 1, built seas
   surfacing 0.25 s apart, last played last. At t = 0 the frame is the empty horizon; the globe comes up out of it.
-- **Dive**: 1.4 s flight (inOutCubic) from the orbit to the pose that equals the island's frameTown framing in
-  the face's frame; the cut lands the island camera at radius 22, yaw −0.8, beta 0.95 and it settles to 30. The
-  settle uses the camera's own easing (~0.3 s), not the 0.8 s motion.md planned; it reads as an arrival and is
-  kept. At the end of the flight the miniature is blocky for a few frames before the cut — accepted.
-- **Return**: the island camera's pose mapped into the face's frame, 1.2 s back to the remembered orbit, the
-  card back on the sea.
+- **Dive**: 1.8 s from the orbit to the town framing at radius 30 in the face's frame. The first build flew all the
+  way down to radius 22 over the miniature and cut to the island there, which Grady saw as blocky and then a
+  sudden flip to the real island; the miniature's 2-unit cells cannot hold up at that distance. Now the island's
+  camera shadows the flight from 90 units out and the scenes dissolve by 40 (shots/globe/dive-handover.png is
+  held halfway), and the flight lands at Home's distance with no settle.
+- **Return**: the same path out from wherever the island's camera is, 1.6 s, the dissolve the other way
+  (shots/globe/return-handover.png), the card back on the sea.
 - **Reduced motion**: cuts (78 / 22 ms in the smoke), no drift, no rise, hover without easing.
 - **Keyboard**: arrows step 0.4 rad, Enter opens the front face's card and dives, Escape hides the card on the
   World and returns from the island's top level (a change from the Town menu opening there; the speed bar's
@@ -123,6 +124,6 @@ empty faces rebuilds a preview each time (an island is 3–9 ms, a miniature one
 | Boot into the World | 393 ms empty · 558 ms with twelve towns · 325 ms with the 300-building town |
 | Draw calls | 15 empty · 39 with twelve one-hut towns · at most 63 (a miniature and three roof meshes per face) |
 | Frame rate | 165 fps (the display cap) with twelve towns |
-| Dive / return | 1416 ms / 1200 ms; 78 / 22 ms with reduced motion |
+| Dive / return | 1922 ms / 1627 ms (the dissolve 443 ms over 70 frames head-on); 81 / 25 ms with reduced motion |
 | Heap after 20 round trips (3 seas, after GC) | −1.4 % (69.6 → 68.7 MB) |
 | Twelve sectors in localStorage | 25 keys; twelve fresh towns 20 k UTF-16 units; twelve 300-building towns < 2.6 M packed |

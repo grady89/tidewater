@@ -116,10 +116,14 @@ design notes, decisions and the build ledger). Two things make it cheap to keep 
   and shows `#world`; `CameraControl.enabled` and `Placement.enabled` gate the island's pointer handlers because
   both scenes share the canvas. Nothing is created or disposed on a switch.
 - **The dive is `adopt(state)`.** Entering a sea reads its record, `adopt`s the state into the resident island
-  (the same path a load takes), flies the World's camera to the pose that equals the island's `frameTown`
-  framing expressed in the face's frame, cuts, and puts the island camera at that framing. The return saves the
-  town into its sector, refreshes the face's miniature, cuts to the World at the island camera's pose and flies
-  back to the orbit. With `prefers-reduced-motion` both are cuts.
+  (the same path a load takes) and flies the World's camera to the pose that equals the island's Home framing
+  expressed in the face's frame. The return saves the town into its sector, refreshes the face's miniature and
+  flies the same path out from the island camera's pose. Both run through the hand-over (`handoverFrame` in
+  main.ts): while a flight runs the loop steps it (`World.stepFlight`), maps its pose into the face's frame
+  (`World.flightInFace`) and, within 90 units of the town, stands the island's camera there (`CameraControl.follow`)
+  and draws the island too; between 90 and 40 units the World is drawn first and copied into `#veil`, a 2D canvas
+  over the game canvas whose opacity is the World's share, so the two scenes dissolve. With
+  `prefers-reduced-motion` both are cuts.
 
 **Rendering.** Each face is the game's water `ShaderMaterial` on a pentagon disc in the face's own frame with its
 own 128² heightmap; the shaders take a `frame` matrix (the inverse of the mesh's world matrix) so their

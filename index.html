@@ -186,6 +186,10 @@
       body[data-mode="world"] #c { cursor: grab; }
       body[data-mode="world"] #c.hovering { cursor: pointer; }
       body[data-mode="world"] #c.dragging { cursor: grabbing; }
+      #veil { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+      #veil[hidden] { display: none; }
+      body.arriving #resources, body.arriving #notes, body.arriving #tutorial, body.arriving #speed, body.arriving #hud { animation: arrive 450ms ease-out; }
+      @keyframes arrive { from { opacity: 0; } to { opacity: 1; } }
       #world[hidden] { display: none; }
       #world { position: fixed; inset: 0; pointer-events: none; }
       #world .glass, #world button, #world input { pointer-events: auto; }
