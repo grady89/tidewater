@@ -5,7 +5,7 @@ whenever unsure: re-read CLAUDE.md, BIOMES.md and this file, then continue from 
 DONE. Update after every step. Build + test + smoke green before every commit; commit per step; push `world`
 after each stage; never push `main`. Calls BIOMES.md leaves open go in `docs/world/decisions.md`.
 
-Last thing that worked: Stage 7 — the docs. Stage 8 (pirates v0 behind PIRATES_ENABLED = false) next: everything above is DONE and nothing is BLOCKED.
+Last thing that worked: Stage 8 — pirates v0 behind PIRATES_ENABLED = false; 176 unit tests, build and smoke green. Every stage is DONE; nothing BLOCKED.
 
 ## Stages
 
@@ -30,7 +30,7 @@ Last thing that worked: Stage 7 — the docs. Stage 8 (pirates v0 behind PIRATES
 | 5 | Balance: each new coast's starter positive in 4 cycles, level 2 ~8, level 3 ~15 with a company purchase; two connected seas reach level 3 without purchases by ~20; a hub without a warehouse throttles; NOTES.md | DONE | decisions #31–#34; test/balance.test.ts (BALANCE=1) is the probe; the numbers are in NOTES.md (Session F) |
 | 6 | Review and audit: each new coast beside Tidewater at noon and dusk (biomeShots.ts), cohesion audit, the World with four seas, two lanes and a ship; fixes; monkey 5 min from the World with lanes on | DONE | shots/biomes/ (noon, dusk, night per coast; sheet-noon.png and sheet-dusk.png beside Tidewater), shots/globe/world-four-seas.png; the packer 10× faster and the World settlement a job (#35–#36); audit fixes #37; monkey 5 min from the World: one run passed (worst slow run 1.84 s), one flagged 2.08 s at a forced reload (pre-existing boot stall, #37), one lost its page to a dev-server reload while I edited |
 | 7 | Docs: ARCHITECTURE.md, HANDOFF.md (World section), BIOMES.md deviations, NOTES.md, this file | DONE | ARCHITECTURE.md "The later coasts and the World ledger" (+ the module map), HANDOFF.md "The connected World", BIOMES.md §8 "As built", NOTES.md "Session F" |
-| 8 | Only if everything above is DONE and nothing BLOCKED: pirates v0 behind PIRATES_ENABLED = false | TODO | |
+| 8 | Only if everything above is DONE and nothing BLOCKED: pirates v0 behind PIRATES_ENABLED = false | DONE (v0) | sim only, behind the flag (decision #38): presence beside busy lanes, raids on cargo, the fort (gated out of every catalog), tests. Stopped before: patrol ships, the Haven and the company's reputation, anything on the World or in the UI, a balance pass |
 
 ## Blocked
 (none)
@@ -48,3 +48,4 @@ Last thing that worked: Stage 7 — the docs. Stage 8 (pirates v0 behind PIRATES
 - 5: balance; smoke green (154 s)
 - 6: review and audit; smoke green (154 s); monkey 5 min: 8806 actions (2.08 s slow run at a reload), rerun seed 2: 5798 actions, pass
 - 7: docs
+- 8: pirates v0 (flag off); smoke green

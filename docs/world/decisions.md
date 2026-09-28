@@ -180,3 +180,11 @@ wins and is noted). Numbered as they came up; the code cites them.
     the steep sides; its rock is the palette's sandy `#b9a98a`, so it stays pale). The globe's cargo ships are a
     little larger. A reload with twelve seas stalls one frame for ~2.2 s on this branch and on the original main
     alike (measured both); the monkey's slow runs near its forced reloads come from it — noted, not fixed here.
+38. **Pirates v0 (Stage 8), behind `PIRATES_ENABLED = false`:** the World ledger keeps a presence (0..1) on every
+    unbuilt face beside a lane (a neighbour of either end that nobody has built); each cycle it fades ×0.9 and grows
+    by 0.004 per unit of cargo that sailed the lane. A hop's raid chance is the strongest presence beside it × 0.35,
+    × 0.5 for a staffed fort at either end; a raid takes the whole consignment (the flow counts it as `raided`, so
+    the conservation check still holds) and both seas hear of it. The fort is a base kind (2×2, flats or hill,
+    300$, 3 workers) kept out of every catalog while the flag is off. **Where it stops:** no patrol ships, no Haven
+    and no company reputation, nothing drawn on the World (presence, raids), no UI, no balance pass; the presence
+    rules and numbers are first guesses. `settleWorldNow(…, { pirates: true })` runs it for tests.

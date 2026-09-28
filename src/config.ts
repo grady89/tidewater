@@ -41,6 +41,8 @@ export const DAY_CYCLES = 2;
 export const BAND_GATING = false;
 /** Sea lanes (BIOMES.md §4, sim/lanes.ts): the World ledger and cargo between adjacent harbors. Off until it is finished. */
 export const LANES_ENABLED = true;
+/** Pirates on the lanes (BIOMES.md §4, sim/lanes.ts): v0, off — presence beside busy lanes, raids on cargo, the fort. */
+export const PIRATES_ENABLED = false;
 
 export const STILT_MIN = 0.5;
 export const CLEARANCE = 0.1;

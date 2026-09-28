@@ -1,5 +1,6 @@
 // The Biome interface and the registry, apart from the biome files so those can register themselves without an
 // import cycle (index.ts imports every biome file and re-exports this). See index.ts for what a biome is.
+import { PIRATES_ENABLED } from "../../config";
 import { BUILDING_KINDS, BUILDINGS, BuildingKind, Cost, ServiceKind } from "../balance";
 import type { GoodId } from "../goods";
 import type { HeightFn } from "../heightfield";
@@ -162,7 +163,7 @@ export function catalogOf(biome: BiomeId, all: readonly BuildingKind[], baseKind
 export function baseKinds(): ReadonlySet<BuildingKind> {
   const owned = new Set<BuildingKind>();
   for (const b of REGISTRY.values()) for (const k of b.unique) owned.add(k);
-  return new Set(BUILDING_KINDS.filter(k => !owned.has(k)));
+  return new Set(BUILDING_KINDS.filter(k => !owned.has(k) && (PIRATES_ENABLED || k !== "fort"))); // the fort is the pirates' (off)
 }
 const catalogCache = new Map<string, readonly BuildingKind[]>();
 /** The catalog an island of this biome builds from (cached per biome and registry size, so a late registration refreshes it). */

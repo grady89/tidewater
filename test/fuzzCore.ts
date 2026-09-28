@@ -343,10 +343,10 @@ export function checkWorld(store: Store, states: Map<number, SimState>, before: 
     for (let k = 0; k + 1 < c.path.length; k++) if (!neighboursOf(c.path[k]).includes(c.path[k + 1])) bad.push(`consignment #${c.id} path ${c.path.join(">")} jumps`);
   }
   const after = inTransit(L);
-  const keys = new Set([...before.keys(), ...after.keys(), ...Object.keys(out.flow.loaded), ...Object.keys(out.flow.landed), ...Object.keys(out.flow.returned), ...Object.keys(out.flow.dropped)]);
+  const keys = new Set([...before.keys(), ...after.keys(), ...Object.keys(out.flow.loaded), ...Object.keys(out.flow.landed), ...Object.keys(out.flow.returned), ...Object.keys(out.flow.dropped), ...Object.keys(out.flow.raided)]);
   for (const k of keys) {
     const lhs = (before.get(k) ?? 0) + (out.flow.loaded[k] ?? 0);
-    const rhs = (out.flow.landed[k] ?? 0) + (out.flow.returned[k] ?? 0) + (out.flow.dropped[k] ?? 0) + (after.get(k) ?? 0);
+    const rhs = (out.flow.landed[k] ?? 0) + (out.flow.returned[k] ?? 0) + (out.flow.dropped[k] ?? 0) + (out.flow.raided[k] ?? 0) + (after.get(k) ?? 0);
     if (Math.abs(lhs - rhs) > 1e-6) bad.push(`cargo ${k} not conserved across the hop: ${lhs.toFixed(3)} in, ${rhs.toFixed(3)} out`);
   }
   if (JSON.stringify(JSON.parse(JSON.stringify(L))) !== JSON.stringify(L)) bad.push("the World ledger is not plain JSON");

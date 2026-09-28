@@ -11,11 +11,11 @@
 // A lane joins two built faces that share an edge and both have a harbor. Events for a sea that is not being
 // played wait in the ledger (`pending`) until it is entered. Sim-only: sectors and the ledger are read and written
 // through the injected Store; face adjacency is the dodecahedron's own table.
-import { LANES_ENABLED } from "../config";
+import { LANES_ENABLED, PIRATES_ENABLED } from "../config";
 import { FACES as FACE_LIST } from "../globe/geometry";
 import {
   BUILDINGS, CARGO_HOLD, CARGO_SHIPS_PER_HARBOR, COMPANY_SLIDE_RECOVERY, COMPANY_SLIDE_UNITS,
-  HUB_BASE_PASS, IMMIGRATION_HAPPINESS, LANE_FOOD_SHARE, LANE_RESERVE_FRACTION, LANE_WANT_FRACTION, MIGRANTS_PER_CYCLE, WAREHOUSE_CAP,
+  FORT_RAID_FACTOR, HUB_BASE_PASS, IMMIGRATION_HAPPINESS, PIRATE_DECAY, PIRATE_GROWTH_PER_UNIT, PIRATE_RAID_CHANCE, LANE_FOOD_SHARE, LANE_RESERVE_FRACTION, LANE_WANT_FRACTION, MIGRANTS_PER_CYCLE, WAREHOUSE_CAP,
   WORLD_STORM_CHANCE, WORLD_STORM_FIRST, WORLD_STORM_LIFE,
 } from "./balance";
 import { biomeFor } from "./biomes";
@@ -65,12 +65,14 @@ export interface WorldLedger {
   company: { at: Record<string, number>; sold: Partial<Record<GoodId, number>>; visits: Record<string, number> };
   /** Last settlement's traffic, by face. */
   last: Record<string, FaceTrade>;
+  /** Pirate presence (0..1) on unbuilt faces beside the lanes (v0, PIRATES_ENABLED). */
+  pirates: Record<string, number>;
 }
 
 export const WORLD_KEY = "tidewater.world";
 
 export function newLedger(): WorldLedger {
-  return { version: 1, cycle: 0, rng: 0x9e3779b9, nextId: 1, consignments: [], storms: [], pending: {}, company: { at: {}, sold: {}, visits: {} }, last: {} };
+  return { version: 1, cycle: 0, rng: 0x9e3779b9, nextId: 1, consignments: [], storms: [], pending: {}, company: { at: {}, sold: {}, visits: {} }, last: {}, pirates: {} };
 }
 export function readLedger(store: Store): WorldLedger {
   try {
@@ -323,8 +325,8 @@ export interface WorldSettlement {
   settled: number[];
   /** Goods and people landed this settlement: from → to. */
   moved: { from: number; to: number; goods: Partial<Record<GoodId, number>>; people: number }[];
-  /** Units by good (and "people") that boarded, landed, sailed back to their first sea, or went down with a cleared one: in transit before + loaded = landed + returned + dropped + in transit after. */
-  flow: Record<"loaded" | "landed" | "returned" | "dropped", Partial<Record<string, number>>>;
+  /** Units by good (and "people") that boarded, landed, sailed back to their first sea, went down with a cleared one, or were taken by pirates: in transit before + loaded = landed + returned + dropped + raided + in transit after. */
+  flow: Record<"loaded" | "landed" | "returned" | "dropped" | "raided", Partial<Record<string, number>>>;
   ledger: WorldLedger;
 }
 const acc = (m: Partial<Record<string, number>>, k: string, n: number) => { m[k] = (m[k] ?? 0) + n; };
@@ -339,7 +341,7 @@ export function settleWorld(store: Store, active: number | null, activeState: Si
 }
 
 /** The ledger itself, flag or no flag (tests). `order` is the order the other seas settle in: it never changes the result. */
-export function settleWorldNow(store: Store, active: number | null, activeState: SimState | null, activeGrid: Grid | null = null, opts: { now?: number; order?: number[] } = {}): WorldSettlement {
+export function settleWorldNow(store: Store, active: number | null, activeState: SimState | null, activeGrid: Grid | null = null, opts: { now?: number; order?: number[]; pirates?: boolean } = {}): WorldSettlement {
   const steps = settleWorldSteps(store, active, activeState, activeGrid, opts);
   let r = steps.next();
   while (!r.done) r = steps.next();
@@ -352,10 +354,11 @@ export function worldJob(store: Store, active: number | null, activeState: SimSt
 }
 
 /** The settlement itself, step by step (settleWorldNow runs it to the end). */
-export function* settleWorldSteps(store: Store, active: number | null, activeState: SimState | null, activeGrid: Grid | null = null, opts: { now?: number; order?: number[] } = {}): Generator<void, WorldSettlement, void> {
+export function* settleWorldSteps(store: Store, active: number | null, activeState: SimState | null, activeGrid: Grid | null = null, opts: { now?: number; order?: number[]; pirates?: boolean } = {}): Generator<void, WorldSettlement, void> {
   const now = opts.now ?? Date.now();
   const L = readLedger(store);
-  const out: WorldSettlement = { settled: [], moved: [], flow: { loaded: {}, landed: {}, returned: {}, dropped: {} }, ledger: L };
+  const out: WorldSettlement = { settled: [], moved: [], flow: { loaded: {}, landed: {}, returned: {}, dropped: {}, raided: {} }, ledger: L };
+  const pirates = opts.pirates ?? PIRATES_ENABLED;
   const states = new Map<number, SimState>();
   const grids = new Map<number, Grid>();
   const names = new Map<number, string>();
@@ -411,6 +414,18 @@ export function* settleWorldSteps(store: Store, active: number | null, activeSta
     if (can < 1) { keep.push(c); continue; }
     let go = c;
     if (can < c.units) { go = { ...c, id: L.nextId++, path: c.path.slice(), units: can }; c.units -= can; keep.push(c); }
+    // Pirates (v0): the hop may be raided; the hold is lost.
+    if (pirates && go.good !== "people") {
+      const chance = raidChance(states, L, from, to);
+      if (chance > 0 && worldRand(L) < chance) {
+        used.set(lane, (used.get(lane) ?? 0) + go.units);
+        if (go.at > 0) { const k = `${from}:${go.good}`; atHub.set(k, (atHub.get(k) ?? 0) - go.units); }
+        acc(out.flow.raided, go.good, go.units);
+        const line = `Pirates took ${Math.round(go.units)} ${GOODS[go.good].name} off the cargo ship between ${nameOf(from)} and ${nameOf(to)}`;
+        notify(states.get(from)!, line); notify(states.get(to)!, line);
+        continue;
+      }
+    }
     if (go.good !== "people") {
       used.set(lane, (used.get(lane) ?? 0) + go.units);
       if (!last) atHub.set(`${to}:${go.good}`, (atHub.get(`${to}:${go.good}`) ?? 0) + go.units);
@@ -420,6 +435,14 @@ export function* settleWorldSteps(store: Store, active: number | null, activeSta
     if (last) landed.push(go); else keep.push(go);
   }
   keep.sort((a, b) => a.id - b.id);
+  // Pirates (v0): presence fades, then grows on the unbuilt faces beside every lane that carried cargo this cycle.
+  if (pirates) {
+    for (const k of Object.keys(L.pirates)) { const v = L.pirates[k] * PIRATE_DECAY; if (v > 0.001) L.pirates[k] = v; else delete L.pirates[k]; }
+    for (const [lane, units] of [...used.entries()].sort()) {
+      const [a, b] = lane.split(">").map(Number);
+      for (const n of pirateFaces(states, a, b)) L.pirates[n] = Math.min(1, (L.pirates[n] ?? 0) + units * PIRATE_GROWTH_PER_UNIT);
+    }
+  }
   L.consignments = keep;
   for (const c of landed) {
     const origin = c.path[0], dest = c.path[c.path.length - 1];
@@ -605,6 +628,20 @@ export function* settleWorldSteps(store: Store, active: number | null, activeSta
   }
   writeLedger(store, L);
   return out;
+}
+
+/** The unbuilt faces beside a lane (neighbours of either end nobody has built): where pirates gather. */
+export function pirateFaces(states: Map<number, SimState>, a: number, b: number): number[] {
+  return [...new Set([...neighboursOf(a), ...neighboursOf(b)])].filter(n => n !== a && n !== b && !states.has(n)).sort((x, y) => x - y);
+}
+
+/** A hop's raid chance (v0): the strongest presence beside the lane × PIRATE_RAID_CHANCE, halved by a staffed fort at either end. */
+export function raidChance(states: Map<number, SimState>, L: WorldLedger, from: number, to: number): number {
+  let p = 0;
+  for (const n of pirateFaces(states, from, to)) p = Math.max(p, L.pirates[n] ?? 0);
+  if (p <= 0) return 0;
+  const fort = (f: number) => buildingList(states.get(f)!).some(b => b.kind === "fort" && b.reached && !b.damaged && b.workers > 0);
+  return p * PIRATE_RAID_CHANCE * (fort(from) ? FORT_RAID_FACTOR : 1) * (fort(to) ? FORT_RAID_FACTOR : 1);
 }
 
 function stormFrom(names: Map<number, string>, face: number): string {

@@ -223,4 +223,7 @@ raising all six is the long game.
   send a wave to every built neighbour (a stored one gets it on entry). The company visits one harbor a cycle along
   each connected group; its price slide is World-wide and lasting (×1 / (1 + recently bought / 60), fading ×0.85 a
   cycle); the favourite premium is ×1.5 for a luxury sold by the coast whose favourite it is.
-- **Not built:** pirates, the capstones, one treasury.
+- **Pirates** are a v0 in the World ledger behind `PIRATES_ENABLED` (off): presence on unbuilt faces beside busy
+  lanes, raids that take a cargo ship's hold, and the Fort (half the chance at either end). No patrol ships, Haven or
+  reputation yet.
+- **Not built:** the capstones, one treasury.

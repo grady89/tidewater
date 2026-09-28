@@ -260,7 +260,8 @@ Three things next:
    and enter the neighbour. Everything has only been driven headless.
 2. **Tune level 3 against real play**: the lanes now carry variety and luxuries; the pace is the base happiness.
    Consider showing, on the info panel, which of "three foods" and "a foreign luxury" a home is missing.
-3. **Merge `world`** once played: CI deploys `main`. Pirates (Stage 8) were not started.
+3. **Merge `world`** once played: CI deploys `main`. Pirates exist as a v0 in the ledger behind `PIRATES_ENABLED`
+   (off; decisions #38 lists what it lacks: patrol ships, the Haven, reputation, anything on screen).
 
 ## Balance observations from the playtests
 

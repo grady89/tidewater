@@ -17,7 +17,8 @@ export type BuildingKind =
   | "divePlatform" | "pearlHouse" | "coconutGrove" | "reefNursery"
   | "ricePaddy" | "crabPots" | "saltPan" | "indigoVats" | "wardenTower" | "crocNet"
   | "taroTerrace" | "cocoaTerrace" | "glassworks" | "sulfurWorks" | "hotSpring"
-  | "dateGrove" | "coffeeTerrace" | "spongeDivers" | "greatCistern" | "dredger";
+  | "dateGrove" | "coffeeTerrace" | "spongeDivers" | "greatCistern" | "dredger"
+  | "fort";
 
 /** Service coverage layers; each building that provides one writes its staffed fraction within `radius`. */
 export type ServiceKind = "water" | "leisure" | "night" | "treatment" | "lifeguard" | "firewatch";
@@ -127,6 +128,8 @@ export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
   glassworks: { name: "Glassworks", category: "Production", w: 2, d: 2, cls: "flat", cost: { money: 240 }, workers: 4, residents: 0, upkeep: 2.5, floor: "stilts", network: "leaf", fireRisk: 5, desc: "Glass from the black sand; burns sulfur, or timber when there is none; fire risk" },
   sulfurWorks: { name: "Sulfur works", category: "Production", w: 1, d: 1, cls: "high", material: "vent", cost: { money: 120 }, workers: 2, residents: 0, upkeep: 1, floor: "ground", network: "leaf", desc: "Sulfur from a steam vent" },
   hotSpring: { name: "Hot-spring bathhouse", category: "Leisure", w: 2, d: 1, cls: "flat", material: "spring", cost: { money: 260 }, workers: 2, residents: 0, upkeep: 2, floor: "stilts", network: "leaf", service: { kind: "leisure", radius: 14 }, desc: "The strongest leisure on the World (within 14), on a hot spring; the tourists come for it" },
+  // Pirates (BIOMES.md §4; only in the catalog with PIRATES_ENABLED)
+  fort: { name: "Fort", category: "Sea", w: 2, d: 2, cls: "flatOrHigh", cost: { money: 300 }, workers: 3, residents: 0, upkeep: 3, floor: "ground", network: "leaf", desc: "Guns over the lanes: pirates raid this sea's cargo half as often" },
   // Dunes (BIOMES.md §3.6)
   dateGrove: { name: "Date grove", category: "Production", w: 2, d: 2, cls: "high", material: "oasis", cost: { money: 90 }, workers: 2, residents: 0, upkeep: 1, floor: "ground", network: "leaf", desc: "Dates from the palms of an oasis" },
   coffeeTerrace: { name: "Coffee terrace", category: "Production", w: 2, d: 1, cls: "high", nearMaterial: "oasis", cost: { money: 140 }, workers: 3, residents: 0, upkeep: 1.5, floor: "ground", network: "leaf", desc: "Coffee beside an oasis" },
@@ -534,6 +537,15 @@ export const WORLD_STORM_LIFE = 4;
 /** The company's World-wide price slide: a good's price is 1 / (1 + recently bought / COMPANY_SLIDE_UNITS); what it bought fades by this each World cycle. */
 export const COMPANY_SLIDE_UNITS = 60;
 export const COMPANY_SLIDE_RECOVERY = 0.85;
+/**
+ * Pirates (v0, behind PIRATES_ENABLED): an unbuilt face beside a lane gains presence from the cargo that sails it
+ * (per unit), fading a share a cycle, capped at 1; a hop's raid chance is the strongest presence beside the lane ×
+ * PIRATE_RAID_CHANCE, × FORT_RAID_FACTOR for a staffed fort at either end.
+ */
+export const PIRATE_GROWTH_PER_UNIT = 0.004;
+export const PIRATE_DECAY = 0.9;
+export const PIRATE_RAID_CHANCE = 0.35;
+export const FORT_RAID_FACTOR = 0.5;
 /** The company pays this much more for a luxury sold by the coast whose favourite it is. */
 export const FAVOURITE_PREMIUM = 1.5;
 /** Non-food goods keep this fraction of their cap before any sails; an island wants a good it cannot make up to this fraction of its cap. */
