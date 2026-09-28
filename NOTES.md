@@ -1077,3 +1077,42 @@ Grady's third pass (paths on the hill):
   ridge ran into the next face with no shore. The valley now climbs 3 m to a col between the ridges and the whole
   back falls to deep water between z −21.5 and −30.5, a slope like the flanks'. Thresholds still pass on every
   seed tried with no rerolls; a test holds every charted coast's rim below −2.
+
+## Session F (overnight, branch `world`): the Delta, the Cinder, the Dunes, and the sea lanes
+
+docs/world/PROGRESS.md is the stage ledger and docs/world/decisions.md the thirty-odd calls (numbered, cited from
+the code); ARCHITECTURE.md "The World ledger" and HANDOFF.md "The connected World" are the maps. What a future
+session should know that those only imply:
+
+- **Balance (Stage 5), measured with `test/balance.test.ts`** (`BALANCE=1 npx vitest run test/balance.test.ts`;
+  skipped otherwise). Its "natural player": the coast's second food as soon as affordable, a hut whenever there
+  are more jobs than hands, a well by the first hut (the coast's own water building when affordable), another
+  workplace for idle hands, lanterns, the coast's luxury maker, houses once every job is filled; it finishes any
+  line it could not pay for. A harbor is granted at cycle 9 and a third food and a foreign luxury ordered at 10.
+  Levels are the cycle the first home reached them (seeds 2 / 4 / 7; — = not within 30):
+
+  | coast | level 2 | level 3 (with the purchase) | notes |
+  |---|---|---|---|
+  | Tidewater | — / 8 / 11 | — / 11 / — | the base game: a home needs every resident employed and water for 0.8 |
+  | Delta | 15 / 15 / 4 | 23 / 22 / 21 | rice needs water; the king tide washes out low paddies |
+  | Cinder | 11 / 11 / 22 | 19 / — / — | the taro terrace is up the slope: its line is the first expense |
+  | Dunes | 10 / 11 / 10 | — | wells reach 3: only the great cistern (200$) waters the town; droughts at 10, 20, 30 |
+  | Atoll | — / 26 / 27 | — | the probe never affords a well early (the grove takes the purse) |
+  | Fjord | 8 / — / — | 21 / — / — | the racks want salt the probe never imports |
+
+  Two connected seas with harbors at cycle 6 and **no purchases** (the lanes only): Cinder ⇄ Dunes, level 2 at
+  10 / 9, level 3 allowed (three foods and a foreign luxury in stock) from 23 / 21, level 3 on the Dunes at **22**;
+  Delta ⇄ Tidewater, Tidewater level 3 at 28. The brief's ~8 / ~15 / ~20 are met on the Dunes' level 2 and the
+  connected Dunes' level 3; elsewhere the base game's 0.8 threshold (base 0.1 + fed 0.3 + jobs 0.3 + water 0.1)
+  sets the pace, as Session D found: nothing in the base happiness formula was changed.
+- **What the probe found and what changed** (decisions #31–#34): food never crossed a lane (the market sells every
+  food above the reserve first) and luxuries never did (the company bought a sea's whole stock each call); a sea
+  now sends a quarter of each food it grows and all of its own luxury, and on a route the company leaves half the
+  cap for the neighbours. Stored seas now work their shifts (they were starving of their own catch). The four
+  timberless coasts build their harbor for 780$ and no planks. The Dunes' first oasis moved behind the starting
+  flats and the great cistern came down to 200$.
+- **A hub without a warehouse throttles:** through-cargo is limited to what the hub holds overnight — 5 units of
+  a good a cycle on the quay, 105 with one warehouse (test/lanes.test.ts "multi-hop through a hub" shows at most 5
+  a cycle crossing a bare hub and more than that once it has a warehouse).
+- **Starter towns** on the Delta, the Cinder and the Dunes net positive money over their first four cycles
+  (smoke: +52$ on each coast at seed 2).

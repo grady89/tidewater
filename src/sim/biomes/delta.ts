@@ -7,7 +7,7 @@
 // where no clinic reaches; storms come more often.
 import {
   BUILDINGS, CRAB_POT_PER_SHIFT, FEVER_CLINIC_RADIUS, FEVER_EVERY, FEVER_FIRST, FEVER_SHARE, FRESH_RIVER_RADIUS, HARVEST_BONUS,
-  INDIGO_PER_CELL, INDIGO_RADIUS, RICE_CYCLES, RICE_PER_HARVEST, SALT_PER_CYCLE, SALT_STORM_FACTOR,
+  INDIGO_PER_CELL, INDIGO_RADIUS, RICE_CYCLES, RICE_PER_HARVEST, SALT_PER_CYCLE, SALT_STORM_FACTOR, TIMBERLESS_HARBOR,
 } from "../balance";
 import { cellIndex, HALF } from "../cells";
 import { HeightFn, noiseFor } from "../heightfield";
@@ -200,6 +200,7 @@ export const DELTA: Biome = registerBiome({
   industrials: ["salt"],
   minor: [],
   cannotMake: ["timber", "planks", "fish", "shellfish", "smoked", "iron"],
+  costs: { harbor: TIMBERLESS_HARBOR },
   favourite: "pearls",
   unique: ["ricePaddy", "crabPots", "saltPan", "indigoVats", "wardenTower", "crocNet"],
   excluded: ["oysterBed", "clamCamp", "lumberCamp", "sawmill", "smokehouse", "tallHouse", "lifeguard", "sharkNet"],

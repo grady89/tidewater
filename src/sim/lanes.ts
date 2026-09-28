@@ -14,12 +14,12 @@
 import { LANES_ENABLED } from "../config";
 import { FACES as FACE_LIST } from "../globe/geometry";
 import {
-  BUILDINGS, CARGO_HOLD, CARGO_SHIPS_PER_HARBOR, COMPANY_SLIDE_RECOVERY, COMPANY_SLIDE_UNITS, FOOD_PER_CYCLE, FOOD_RESERVE_CYCLES,
-  HUB_BASE_PASS, IMMIGRANTS_PER_CYCLE, IMMIGRATION_HAPPINESS, LANE_RESERVE_FRACTION, LANE_WANT_FRACTION, MIGRANTS_PER_CYCLE, WAREHOUSE_CAP,
+  BUILDINGS, CARGO_HOLD, CARGO_SHIPS_PER_HARBOR, COMPANY_SLIDE_RECOVERY, COMPANY_SLIDE_UNITS,
+  HUB_BASE_PASS, IMMIGRATION_HAPPINESS, LANE_FOOD_SHARE, LANE_RESERVE_FRACTION, LANE_WANT_FRACTION, MIGRANTS_PER_CYCLE, WAREHOUSE_CAP,
   WORLD_STORM_CHANCE, WORLD_STORM_FIRST, WORLD_STORM_LIFE,
 } from "./balance";
 import { biomeFor } from "./biomes";
-import { addCapped, capFor, settleCycle } from "./economy";
+import { addCapped, capFor, settleCycle, shiftEnd, shiftStart } from "./economy";
 import { startStorm, warnTsunami } from "./events";
 import { foodTotal } from "./food";
 import { GOOD_IDS, GoodId, GOODS } from "./goods";
@@ -27,7 +27,7 @@ import { Grid } from "./grid";
 import { updateNetwork } from "./network";
 import { readMeta, readSector, SectorMeta, Store, writeSector } from "./sectors";
 import { buildingList, notify, population, SimState, WorldEvent } from "./state";
-import { peakLevel } from "./tide";
+import { peakLevel, troughLevel } from "./tide";
 import { harborOf } from "./trade";
 
 /** Faces sharing an edge with `face`. */
@@ -96,9 +96,22 @@ function worldRand(L: WorldLedger): number {
 
 // ---------- one sea's quiet settlement ----------
 
-/** A settlement without the ticks between: the clock moves one cycle to its peak and the ledger settles, quietly. */
+/**
+ * A settlement without the ticks between: the cycle's two shifts run quietly (the boats fish the high water, the
+ * flats, pots and paddies are worked at low water; nothing is lost, no one swims), then the clock moves one cycle to
+ * its peak and the ledger settles.
+ */
 export function settleOnly(state: SimState, grid: Grid): void {
   const t = state.tide;
+  if (!state.storm.active) {
+    shiftStart(state, grid, "high");
+    shiftEnd(state, grid, "high");
+    const level = t.level;
+    t.level = troughLevel(t.cycle, t.scale);
+    shiftStart(state, grid, "low");
+    shiftEnd(state, grid, "low");
+    t.level = level;
+  }
   t.cycle++;
   t.phase = Math.PI / 2 + t.cycle * Math.PI * 2;
   t.level = peakLevel(t.cycle, t.scale, t.surge);
@@ -113,13 +126,19 @@ export function settleOnly(state: SimState, grid: Grid): void {
 
 // ---------- what a sea can spare and wants ----------
 
-/** What an island can spare of a good: stock above its reserve (food keeps the town's reserve; the rest a fraction of the cap). */
+/**
+ * What an island can spare of a good. Foods: a share of each food it grows itself (the market sells every food above
+ * the town's reserve at each settlement, so nothing is ever "left over"; the neighbours want the variety, and the
+ * market sells a little less). Everything else: the stock above a fraction of its cap.
+ */
 export function surplusOf(state: SimState, good: GoodId): number {
   const stock = state.resources[good];
-  const reserve = GOODS[good].role === "food"
-    ? (population(state) + IMMIGRANTS_PER_CYCLE) * FOOD_PER_CYCLE * FOOD_RESERVE_CYCLES
-    : LANE_RESERVE_FRACTION * capFor(state, good);
-  return Math.max(0, stock - reserve);
+  const b = biomeFor(state);
+  if (GOODS[good].role === "food") return b.foods.includes(good) || (b.catch ?? "fish") === good ? LANE_FOOD_SHARE * stock : 0;
+  // A luxury is only any use to a town that does not make it (level 3 wants a foreign one): the maker sends it all;
+  // a hub passes on only what is above its own want of it.
+  if (GOODS[good].role === "luxury") return b.luxury === good ? stock : Math.max(0, stock - LANE_WANT_FRACTION * capFor(state, good));
+  return Math.max(0, stock - LANE_RESERVE_FRACTION * capFor(state, good));
 }
 
 /** What an island wants of a good: room under its want line, for goods it does not make itself. */

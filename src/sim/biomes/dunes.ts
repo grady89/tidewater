@@ -6,7 +6,7 @@
 // on a clear night with a tavern and a market square, the night market doubles the tourists' spending.
 import {
   BUILDINGS, COFFEE_PER_CYCLE, DATES_PER_CYCLE, DROUGHT_CISTERN, DROUGHT_EVERY, DROUGHT_FIRST, DROUGHT_HAPPY, NIGHT_MARKET_TOURISM, OASIS_RADIUS,
-  SALT_PER_CYCLE, SILT_CYCLES, SILT_FACTOR, SPONGES_PER_SHIFT, WELL_RADIUS_DUNES,
+  SALT_PER_CYCLE, SILT_CYCLES, SILT_FACTOR, SPONGES_PER_SHIFT, WELL_RADIUS_DUNES, TIMBERLESS_HARBOR,
 } from "../balance";
 import { SIZE, TIDE_PERIOD } from "../../config";
 import { cellIndex, HALF } from "../cells";
@@ -41,11 +41,12 @@ const hash = (seed: number, k: number) => ((Math.sin(seed * 12.9898 + k * 78.233
 /** The oases: two or three sites on the mainland plain, clear of the headland. */
 export function oasisSites(seed: number): { x: number; z: number }[] {
   const n = 2 + (hash(seed, 9) < 0.5 ? 1 : 0);
-  const out: { x: number; z: number }[] = [];
+  // The first just behind the flats where the town starts (startNear), so its dates are the first thing a town can reach.
+  const out: { x: number; z: number }[] = [{ x: Math.round(-4 + hash(seed, 7) * 8) + 0.5, z: -7.5 }];
   for (let k = 0; out.length < n && k < 40; k++) {
-    const x = -20 + hash(seed, 10 + k) * 30, z = -20 + hash(seed, 50 + k) * 16;
+    const x = -20 + hash(seed, 10 + k) * 30, z = -12 + hash(seed, 50 + k) * 6; // a few cells back from the flats: the town can reach them
     if (Math.hypot(x - HEADLAND.x, z - HEADLAND.z) < HEADLAND.r + 4) continue;
-    if (out.some(o => Math.hypot(o.x - x, o.z - z) < 11)) continue;
+    if (out.some(o => Math.hypot(o.x - x, o.z - z) < 10)) continue;
     out.push({ x: Math.round(x) + 0.5, z: Math.round(z) + 0.5 });
   }
   return out;
@@ -136,6 +137,7 @@ export const DUNES: Biome = registerBiome({
   industrials: ["salt"],
   minor: ["sponges"],
   cannotMake: ["timber", "planks", "shellfish", "smoked", "rice", "iron"],
+  costs: { harbor: TIMBERLESS_HARBOR },
   favourite: "whaleOil",
   unique: ["dateGrove", "coffeeTerrace", "spongeDivers", "greatCistern", "dredger", "saltPan"],
   excluded: ["oysterBed", "clamCamp", "lumberCamp", "sawmill", "smokehouse", "tallHouse"],

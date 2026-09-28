@@ -131,7 +131,7 @@ export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
   dateGrove: { name: "Date grove", category: "Production", w: 2, d: 2, cls: "high", material: "oasis", cost: { money: 90 }, workers: 2, residents: 0, upkeep: 1, floor: "ground", network: "leaf", desc: "Dates from the palms of an oasis" },
   coffeeTerrace: { name: "Coffee terrace", category: "Production", w: 2, d: 1, cls: "high", nearMaterial: "oasis", cost: { money: 140 }, workers: 3, residents: 0, upkeep: 1.5, floor: "ground", network: "leaf", desc: "Coffee beside an oasis" },
   spongeDivers: { name: "Sponge divers' hut", category: "Production", w: 1, d: 1, cls: "edge", material: "lagoon", cost: { money: 70 }, workers: 2, residents: 0, upkeep: 1, floor: 1.0, network: "leaf", desc: "Sponges from the lagoon at each low water" },
-  greatCistern: { name: "Great cistern", category: "Services", w: 3, d: 3, cls: "flat", cost: { money: 300 }, workers: 2, residents: 0, upkeep: 3, floor: "stilts", network: "leaf", service: { kind: "water", radius: 16 }, desc: "Water for homes within 16 (wells here reach 3); holds half through a drought" },
+  greatCistern: { name: "Great cistern", category: "Services", w: 3, d: 3, cls: "flat", cost: { money: 200 }, workers: 2, residents: 0, upkeep: 3, floor: "stilts", network: "leaf", service: { kind: "water", radius: 16 }, desc: "Water for homes within 16 (wells here reach 3); holds half through a drought" },
   dredger: { name: "Dredger", category: "Sea", w: 1, d: 1, cls: "deep", touches: "harbor", cost: { money: 220 }, workers: 2, residents: 0, upkeep: 2, floor: 1.0, network: "leaf", desc: "Beside the harbor: clears the silt a sandstorm leaves" },
   crocNet: { name: "Croc net", category: "Sea", w: 1, d: 1, cls: "flatOrDeep", cost: { money: 20 }, workers: 0, residents: 0, upkeep: 0.1, floor: 1.0, network: "leaf", stopsPredators: true, desc: "Per water cell; crocodiles can't cross" },
   outfall: { name: "Sewage outfall", category: "Services", w: 1, d: 1, cls: "edge", cost: { money: 40 }, workers: 0, residents: 0, upkeep: 0.5, floor: 1.0, network: "leaf", desc: "Dumps the town's waste into the sea; the tide carries it" },
@@ -517,6 +517,8 @@ export const NIGHT_MARKET_TOURISM = 2;
 // Sea lanes (BIOMES.md §4; sim/lanes.ts, behind LANES_ENABLED)
 export const CARGO_SHIPS_PER_HARBOR = 1;
 export const CARGO_HOLD = 20;
+/** The harbor on a coast with no timber (the Atoll, the Delta, the Cinder, the Dunes): its planks paid for in money at the company's plank price. */
+export const TIMBERLESS_HARBOR: Cost = { money: 780 };
 /** A shipyard builds a cargo ship for the lanes (once every fishing berth is full) from planks, money and iron; a sea keeps at most CARGO_SHIPS_MAX of its own. */
 export const CARGO_SHIP_COST: Cost = { money: 60, planks: 30 };
 export const CARGO_SHIP_IRON = 10;
@@ -537,6 +539,8 @@ export const FAVOURITE_PREMIUM = 1.5;
 /** Non-food goods keep this fraction of their cap before any sails; an island wants a good it cannot make up to this fraction of its cap. */
 export const LANE_RESERVE_FRACTION = 0.3;
 export const LANE_WANT_FRACTION = 0.5;
+/** The share of each food a sea grows itself that it sends its neighbours a cycle (they want the variety). */
+export const LANE_FOOD_SHARE = 0.25;
 
 /** Classes whose pieces turn to face the street (R in the ghost); streets and everything in the water don't. */
 export const ROTATABLE_CLASSES: ReadonlySet<PlacementClass> = new Set<PlacementClass>(["flat", "high", "flatOrHigh", "shore", "beach"]);

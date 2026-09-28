@@ -148,3 +148,21 @@ wins and is noted). Numbered as they came up; the code cites them.
     out) sails in the high water a consignment lands, and the ledger says "From <sea>: …". The card lists the
     sea's lanes and last tide's cargo in and out; the Trade panel lists every lane, what is at sea, the company's
     next calls and its slid prices, and the storms.
+31. **Balance, the lanes (Stage 5):** measured with `test/balance.test.ts` (BALANCE=1), two things kept goods off
+    the lanes entirely: the market sells every food above the town's reserve at each settlement, and the company
+    bought a sea's whole stock of its own goods at every call. Now a sea sends a quarter of each food it grows
+    itself (LANE_FOOD_SHARE: the neighbours want the variety; its market sells that much less); a luxury sails
+    from the first unit (its maker has no use for it: level 3 wants a foreign one), a hub passing on only what is
+    above its own want; on a lane route the company buys a sea's own goods only above half their cap. BIOMES.md
+    §4's "surplus above the island's reserve" stays the rule for everything else.
+32. **Background seas work their shifts.** A stored sea's quiet settlement now runs the cycle's high-water and
+    low-water shifts first (boats land their catch, the flats, pots and paddies are worked; nothing is lost, no one
+    swims), so a sea's fish and shellfish keep coming while another is played; before, only settlement-time
+    producers ran and a stored sea starved of its own catch.
+33. **Timberless harbors:** the Atoll, the Delta, the Cinder and the Dunes build their harbor for 780$ and no planks
+    (600$ + the 60 planks at the company's plank price), through the coasts' `costs` hook; otherwise their first
+    company purchase and their first lane waited on planks only a harbor could order.
+34. **The Dunes' first oasis** sits just behind the flats where the town starts (x within 4 of the middle, z −7.5),
+    so the dates are the first thing a new town can reach; the draft's oases were 12 cells back and the line to
+    them cost more than the grove. The great cistern is 200$ (was 300): at 300 a town without it could not afford
+    it before its second drought. Level 2 on the Dunes now lands at cycles 10–11.

@@ -138,7 +138,8 @@ export function settleTrade(state: SimState, grid: Grid): { trade: number; touri
     for (const good of companyBuys(state)) {
       const foreign = !makesOf(state.world.biome).includes(good);
       // The favourite, bought on a route: only what the town holds beyond its own want of it.
-      const units = good === "fish" ? Math.max(0, r[good] - reserve) : foreign ? Math.max(0, r[good] - LANE_WANT_FRACTION * capOf(state, good)) : r[good];
+      // On a lane route the town keeps half its cap of its own goods for the neighbours (sim/lanes.ts) and sells the rest.
+      const units = good === "fish" ? Math.max(0, r[good] - reserve) : foreign || t.routed ? Math.max(0, r[good] - LANE_WANT_FRACTION * capOf(state, good)) : r[good];
       if (units <= 0) continue;
       r[good] -= units; trade += companyPays(good, units, (t.slide?.[good] ?? 1) * (foreign && good === fav ? FAVOURITE_PREMIUM : 1));
       t.bought[good] = units;

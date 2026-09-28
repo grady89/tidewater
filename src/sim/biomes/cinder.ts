@@ -6,7 +6,7 @@
 // cooling three cycles before anything may stand on it — and a wave for every neighbouring sea.
 import {
   ASH_HAPPY, ASH_TERRACE_FACTOR, COCOA_PER_CYCLE, ERUPTION_CHANCE, ERUPTION_COOLDOWN, ERUPTION_FIRST, GLASS_PER_CYCLE,
-  GLASS_SULFUR, GLASS_TIMBER, HOT_SPRING_TOURISM, LAVA_COOL_CYCLES, SULFUR_PER_CYCLE, TARO_PER_CYCLE, TREMOR_CYCLES,
+  GLASS_SULFUR, GLASS_TIMBER, HOT_SPRING_TOURISM, LAVA_COOL_CYCLES, SULFUR_PER_CYCLE, TARO_PER_CYCLE, TREMOR_CYCLES, TIMBERLESS_HARBOR,
 } from "../balance";
 import { cellIndex, DIRS, HALF, inBounds } from "../cells";
 import { addCapped } from "../economy";
@@ -195,7 +195,7 @@ export const CINDER: Biome = registerBiome({
   favourite: "indigo",
   unique: ["taroTerrace", "cocoaTerrace", "glassworks", "sulfurWorks", "hotSpring"],
   excluded: ["oysterBed", "clamCamp", "lumberCamp", "sawmill", "smokehouse", "tallHouse"],
-  costs: { seaWall: { money: 25, timber: 1.5 } },
+  costs: { seaWall: { money: 25, timber: 1.5 }, harbor: TIMBERLESS_HARBOR },
   startNear: { i: 0, j: 0 },
   shape: seed => ({ height: cinderHeight(seed), material: cinderMaterial(seed), trees: cinderTrees(seed) }),
   thresholds: { flats: 180, region: 70, piers: 6, harbors: 1, treed: 12 },

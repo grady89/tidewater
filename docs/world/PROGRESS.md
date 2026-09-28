@@ -5,7 +5,7 @@ whenever unsure: re-read CLAUDE.md, BIOMES.md and this file, then continue from 
 DONE. Update after every step. Build + test + smoke green before every commit; commit per step; push `world`
 after each stage; never push `main`. Calls BIOMES.md leaves open go in `docs/world/decisions.md`.
 
-Last thing that worked: Stage 4 — the sea lanes and the World ledger (routing, hubs, migration, storms, eruption waves, the company route, the World's view, the flag on); 173 unit tests, the World fuzz mode, smoke green (160 s). Stage 4 pushed.
+Last thing that worked: Stage 5 — lanes carry food variety and luxuries, background seas work their shifts, timberless harbors, the Dunes' first oasis and cistern; build, test and smoke green.
 
 ## Stages
 
@@ -27,7 +27,7 @@ Last thing that worked: Stage 4 — the sea lanes and the World ledger (routing,
 | 4f | View: lanes on the World, cargo ships travelling them, the storm knot; in a sea a cargo ship from the deep edge and a ledger line "from <sea>: …"; the card's connections, imports and exports; a World Trade panel | TODO | |
 | 4g | LANES_ENABLED = true (flag kept) | TODO | |
 | 4h | Tests (multi-hop + hub limit, migration, storm drift, eruption across faces, company route, idle World), smoke (adjacent harbors trade within three cycles, the lane and a ship on the World, an eruption warns its neighbour), fuzzer World mode (goods conserved across a hop, no negative stock, hash-stable ordering) | DONE | test/lanes.test.ts (15), fuzz.test.ts World run (two orderings, one hash), fuzzWorker plays a three-sea World on every seventh seed; the smoke's lanes section |
-| 5 | Balance: each new coast's starter positive in 4 cycles, level 2 ~8, level 3 ~15 with a company purchase; two connected seas reach level 3 without purchases by ~20; a hub without a warehouse throttles; NOTES.md | TODO | |
+| 5 | Balance: each new coast's starter positive in 4 cycles, level 2 ~8, level 3 ~15 with a company purchase; two connected seas reach level 3 without purchases by ~20; a hub without a warehouse throttles; NOTES.md | DONE | decisions #31–#34; test/balance.test.ts (BALANCE=1) is the probe; the numbers are in NOTES.md (Session F) |
 | 6 | Review and audit: each new coast beside Tidewater at noon and dusk (biomeShots.ts), cohesion audit, the World with four seas, two lanes and a ship; fixes; monkey 5 min from the World with lanes on | TODO | |
 | 7 | Docs: ARCHITECTURE.md, HANDOFF.md (World section), BIOMES.md deviations, NOTES.md, this file | TODO | |
 | 8 | Only if everything above is DONE and nothing BLOCKED: pirates v0 behind PIRATES_ENABLED = false | TODO | |
@@ -45,3 +45,4 @@ Last thing that worked: Stage 4 — the sea lanes and the World ledger (routing,
 - 3a: Dunes ledger; 164 unit tests, smoke green
 - 3b: Dunes view; smoke green (153 s)
 - 4: sea lanes; the first smokes failed on the card (it showed the wrong face) and on a ship hidden under the miniature's water; green
+- 5: balance; smoke green (154 s)
