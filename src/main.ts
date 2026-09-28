@@ -49,6 +49,7 @@ import { Trees } from "./view/trees";
 import { PERSON_SCALE, Walkers } from "./view/walkers";
 import { setGroundSampler } from "./view/ground";
 import { Wildlife } from "./view/wildlife";
+import { CoastFauna } from "./view/fauna";
 import { computeLighting, createLights, dayFraction, duskAt, Lighting, MORNING } from "./world/lighting";
 import { createSky } from "./world/sky";
 import { createTerrain } from "./world/terrain";
@@ -117,6 +118,7 @@ const overlays = new Overlays(scene, grid);
 const effects = new Effects(scene);
 const ship = new Ship(scene, grid);
 const wildlife = new Wildlife(scene, grid);
+const fauna = new CoastFauna(scene, grid);
 const audio = new Audio();
 const ferry = new Ferry(scene, grid);
 const pierMarker = new PierMarker(scene, grid);
@@ -142,6 +144,8 @@ function applyLook(): void {
   boats.setLook(look);
   trees.setLook(look);
   wildlife.setLook(look);
+  fauna.setLook(look);
+  effects.setLook(look);
   audio.setLook(look);
 }
 function syncGround(): void {
@@ -576,6 +580,7 @@ function syncView(): void {
   effects.sync(state, viewTime);
   ship.sync(state, viewTime);
   wildlife.sync(state, viewTime);
+  fauna.sync(state, viewTime);
   pierMarker.sync(state, viewTime);
   cameraControl.setWaterLevel(state.tide.level);
   terrain.update(camera.position, state.tide.level, state.tide.wetLevel);
@@ -734,7 +739,7 @@ const api = {
     sky: () => ({ day: dayFraction(state.time), sun: { x: lastLight.skySun.x, y: lastLight.skySun.y, z: lastLight.skySun.z }, moon: lastLight.moon, night: lastLight.night, lit: { x: lastLight.sunDir.x, y: lastLight.sunDir.y, z: lastLight.sunDir.z } }),
     stormMix: () => stormMix,
     drawCalls: () => scene.getActiveMeshes().length,
-    audio: () => ({ started: audio.started, state: audio.state, muted: audio.muted, cries: audio.cries, hammers: audio.hammers, bells: audio.bells, horns: audio.horns, creaks: audio.creaks, chirps: audio.chirps }),
+    audio: () => ({ started: audio.started, state: audio.state, muted: audio.muted, cries: audio.cries, hammers: audio.hammers, bells: audio.bells, horns: audio.horns, creaks: audio.creaks, chirps: audio.chirps, frogs: audio.frogs }),
     netFloats: () => ({ count: effects.netFloatCount, y: effects.netFloatY }),
     personScale: () => PERSON_SCALE,
     porters: () => ({ now: walkers.porters, spawned: walkers.portersSpawned }),
@@ -745,7 +750,7 @@ const api = {
     gulls: () => wildlife.gullCount,
     crabs: () => wildlife.crabCount,
     /** Every fauna kit's live count (the coast's picks). */
-    fauna: () => ({ gulls: wildlife.gullCount, crabs: wildlife.crabCount, seals: wildlife.sealCount, puffins: wildlife.puffinCount, whales: wildlife.whaleCount, turtles: wildlife.turtleCount, shoals: wildlife.shoalCount }),
+    fauna: () => ({ gulls: wildlife.gullCount, crabs: wildlife.crabCount, seals: wildlife.sealCount, puffins: wildlife.puffinCount, whales: wildlife.whaleCount, turtles: wildlife.turtleCount, shoals: wildlife.shoalCount, ...fauna.counts } as Record<string, number>),
     /** What the view shows of the coast: the look in use, sea ice, the aurora, the hatching's dark lanterns, the bleached count. */
     biome: () => ({ look: look.id, ice: iceMix, aurora: look.sky.aurora, hatching: hatching(state), lanterns: views.lanternCounts, bleached: state.biomeState.bleached ?? 0, palms: look.trees.kit, boat: look.boat, hat: look.walker.hat, house: look.house }),
     ferry: () => ferry.pose,

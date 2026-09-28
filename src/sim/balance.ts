@@ -470,7 +470,7 @@ export const LANE_WANT_FRACTION = 0.5;
 /** Classes whose pieces turn to face the street (R in the ghost); streets and everything in the water don't. */
 export const ROTATABLE_CLASSES: ReadonlySet<PlacementClass> = new Set<PlacementClass>(["flat", "high", "flatOrHigh", "shore", "beach"]);
 /** One-cell runs laid by a drag: never turned — a turned walkway wears its rails across the walk. */
-export const LINE_KINDS: ReadonlySet<BuildingKind> = new Set<BuildingKind>(["walkway", "raisedWalkway", "path", "breakwater", "sharkNet", "seaWall"]);
+export const LINE_KINDS: ReadonlySet<BuildingKind> = new Set<BuildingKind>(["walkway", "raisedWalkway", "path", "breakwater", "sharkNet", "seaWall", "crocNet"]);
 export function mayTurn(kind: BuildingKind): boolean {
   return ROTATABLE_CLASSES.has(BUILDINGS[kind].cls) && !LINE_KINDS.has(kind);
 }

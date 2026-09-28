@@ -3,7 +3,9 @@
 import { Color3, Matrix, Mesh, MeshBuilder, Quaternion, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
 import { CELLS } from "../sim/fields";
 import { cellCenter, HALF } from "../sim/grid";
+import { BUILDINGS } from "../sim/balance";
 import { Building, SimState } from "../sim/state";
+import type { BiomeLook } from "./biomes";
 import { flatMaterial, mergeFlat, tint } from "../world/flatMesh";
 import { waveHeight } from "../world/water";
 
@@ -16,7 +18,9 @@ const PUFFS_PER_FIRE = 5;
 const CHIMNEY_PUFFS = 3;
 
 export class Effects {
-  private readonly fins: Mesh;
+  private fins: Mesh;
+  private finKit: "fin" | "croc" = "fin";
+  private readonly scene: Scene;
   private readonly flames: Mesh;
   private readonly smoke: Mesh;
   private readonly netFloats: Mesh;
@@ -32,11 +36,8 @@ export class Effects {
   burning = 0;
 
   constructor(scene: Scene) {
-    // A fin: a thin triangular prism.
-    const fin = MeshBuilder.CreateCylinder("fin", { diameterTop: 0, diameterBottom: 0.5, height: 0.45, tessellation: 3 }, scene);
-    fin.scaling.set(1, 1, 0.25);
-    fin.position.y = 0.22;
-    this.fins = mergeFlat("sharkFins", [tint(fin, "#4c5a66")], scene);
+    this.scene = scene;
+    this.fins = this.buildFins("fin");
 
     // A flame: a slim cone, self-lit.
     const flame = MeshBuilder.CreateCylinder("flame", { diameterTop: 0, diameterBottom: 0.34, height: 0.7, tessellation: 5 }, scene);
@@ -65,10 +66,44 @@ export class Effects {
     for (const m of [this.fins, this.flames, this.smoke, this.netFloats, this.netBuoys]) { m.isPickable = false; m.alwaysSelectAsActiveMesh = true; m.setEnabled(false); }
   }
 
+  /** What patrols the risky water: a shark's fin, or (the Delta) a crocodile's eyes, snout and ridged back. */
+  private buildFins(kit: "fin" | "croc"): Mesh {
+    const scene = this.scene;
+    const parts: Mesh[] = [];
+    if (kit === "fin") {
+      const fin = MeshBuilder.CreateCylinder("fin", { diameterTop: 0, diameterBottom: 0.5, height: 0.45, tessellation: 3 }, scene);
+      fin.scaling.set(1, 1, 0.25);
+      fin.position.y = 0.22;
+      parts.push(tint(fin, "#4c5a66"));
+    } else {
+      const back = MeshBuilder.CreateSphere("croc", { diameter: 0.3, segments: 4 }, scene);
+      back.scaling.set(2.6, 0.3, 0.8);
+      back.position.y = 0.03;
+      parts.push(tint(back, "#3f5f44"));
+      const snout = MeshBuilder.CreateBox("snout", { width: 0.34, height: 0.05, depth: 0.1 }, scene);
+      snout.position.set(0.5, 0.03, 0);
+      parts.push(tint(snout, "#3f5f44"));
+      for (const z of [-0.05, 0.05]) { const eye = MeshBuilder.CreateSphere("eye", { diameter: 0.06, segments: 3 }, scene); eye.position.set(0.3, 0.07, z); parts.push(tint(eye, "#b9a377")); }
+      for (let k = 0; k < 4; k++) { const r = MeshBuilder.CreateBox("ridge", { width: 0.05, height: 0.04, depth: 0.05 }, scene); r.position.set(0.1 - k * 0.15, 0.08, 0); parts.push(tint(r, "#2f4a34")); }
+    }
+    const m = mergeFlat(kit === "fin" ? "sharkFins" : "crocs", parts, scene);
+    m.isPickable = false; m.alwaysSelectAsActiveMesh = true; m.setEnabled(false);
+    return m;
+  }
+
+  /** The look's predator: crocodiles where the fauna has them (the Delta), fins everywhere else. */
+  setLook(look: BiomeLook): void {
+    const kit = look.fauna.includes("crocodiles") ? "croc" : "fin";
+    if (kit === this.finKit) return;
+    this.finKit = kit;
+    this.fins.dispose();
+    this.fins = this.buildFins(kit);
+  }
+
   /** Every net's floats sit on the water: the tide and the swell carry them, the net hangs below. */
   private syncNets(state: SimState, viewTime: number): void {
     const nets: Building[] = [];
-    for (const b of Object.values(state.buildings)) if (b.kind === "sharkNet") nets.push(b);
+    for (const b of Object.values(state.buildings)) if (BUILDINGS[b.kind].stopsPredators) nets.push(b);
     this.netFloatCount = nets.length * FLOATS_PER_NET;
     if (!nets.length) { this.netFloats.setEnabled(false); this.netBuoys.setEnabled(false); return; }
     const level = state.tide.level;

@@ -29,9 +29,11 @@ export function roofShape(b: Building, shapeFor: (level: number) => RoofShape | 
   return shapeFor(b.level) ?? ROOF_SHAPES[(Math.imul(b.id * 31 + b.level * 17 + 5, 2654435761) >>> 0) % 3];
 }
 
+/** Kinds on land with nothing under a roof worth drawing from the sky (fields, walls, nets). */
+const ROOFLESS: ReadonlySet<string> = new Set(["path", "oysterBed", "seaWall", "breakwater", "sharkNet", "crocNet", "ricePaddy"]);
 /** Does this kind have a roof worth drawing from the sky: anything on land with a footprint and walls. */
 export function hasRoof(b: Building): boolean {
   const def = BUILDINGS[b.kind];
   if (def.cls === "deep" || def.cls === "edge" || def.cls === "street") return false;
-  return b.kind !== "path" && b.kind !== "oysterBed" && b.kind !== "seaWall" && b.kind !== "breakwater" && b.kind !== "sharkNet";
+  return !ROOFLESS.has(b.kind);
 }

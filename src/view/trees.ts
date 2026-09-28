@@ -46,11 +46,22 @@ export class Trees {
   private buildKit(kit: TreeKit, trunkHex: string, leaves: readonly string[]): { trunks: Mesh; canopies: Mesh } {
     const scene = this.scene;
     void leaves;
-    const tall = kit === "pine" ? 2.2 : kit === "palm" ? 2.6 : 1.3;
+    const tall = kit === "pine" ? 2.2 : kit === "palm" ? 2.6 : kit === "mangrove" ? 0.9 : 1.3;
     const trunk = MeshBuilder.CreateCylinder("t", { diameterTop: kit === "palm" ? 0.16 : 0.14, diameterBottom: 0.22, height: tall, tessellation: 5 }, scene);
     trunk.position.y = tall / 2;
     if (kit === "palm") trunk.rotation.z = 0.08;
-    const trunks = mergeFlat("treeTrunks", [tint(trunk, trunkHex)], scene);
+    const trunkParts = [tint(trunk, trunkHex)];
+    if (kit === "mangrove") {
+      // Prop roots: five arched stilts splaying from the trunk into the mud.
+      for (let k = 0; k < 5; k++) {
+        const a = k * 1.256;
+        const root = MeshBuilder.CreateCylinder("r", { diameterTop: 0.06, diameterBottom: 0.04, height: 0.75, tessellation: 4 }, scene);
+        root.position.set(Math.cos(a) * 0.22, 0.28, Math.sin(a) * 0.22);
+        root.rotation.set(Math.sin(a) * 0.55, 0, -Math.cos(a) * 0.55);
+        trunkParts.push(tint(root, trunkHex));
+      }
+    }
+    const trunks = mergeFlat("treeTrunks", trunkParts, scene);
     const tiers: Mesh[] = [];
     if (kit === "conifer") {
       // Three tiers of foliage; the vertex tint darkens the lower tiers under the per-instance green.
@@ -66,6 +77,14 @@ export class Trees {
         cone.position.y = y;
         cone.rotation.y = y * 0.7;
         tiers.push(tint(cone, shade));
+      }
+    } else if (kit === "mangrove") {
+      // A low round crown of three overlapping clumps.
+      for (const [dx, dy, dz, dia] of [[0, 1.15, 0, 1.2], [0.35, 1.0, 0.2, 0.8], [-0.3, 1.02, -0.2, 0.85]] as [number, number, number, number][]) {
+        const clump = MeshBuilder.CreateSphere("c", { diameter: dia, segments: 4 }, scene);
+        clump.scaling.set(1, 0.62, 1);
+        clump.position.set(dx, dy, dz);
+        tiers.push(tint(clump, dy > 1.1 ? "#ffffff" : "#d4d4d4"));
       }
     } else {
       const top = tall + 0.05;

@@ -1080,10 +1080,11 @@ try {
   assert(t4after.seed === 7 && Math.abs(t4after.h - t4.h) < 1e-6, "the island survives a reload");
   assert(t4zero.seed === 0 && Math.abs(t4zero.h - t4before.h) < 1e-6, "seed 0 is the original island again");
 
-  // ---- Biomes (docs/biomes): the Fjord and the Atoll beside Tidewater ----
+  // ---- Biomes (docs/biomes, docs/world): the Fjord, the Atoll and the later coasts beside Tidewater ----
   // Each coast: a sector of its own, the starter town positive over four cycles, every unique kind producing, its
   // hazard and its moment forced through the console API and seen by the view, and shots by day and night.
-  for (const coast of [{ id: "fjord" as const, face: 0, seed: 2 }, { id: "atoll" as const, face: 6, seed: 2 }]) {
+  const COAST_FOOD: Record<string, string> = { fjord: "stockfish", atoll: "coconut", delta: "rice" };
+  for (const coast of [{ id: "fjord" as const, face: 0, seed: 2 }, { id: "atoll" as const, face: 6, seed: 2 }, { id: "delta" as const, face: 2, seed: 2 }]) {
     const founded = await page.evaluate(async ({ id, face, seed }) => {
       const api = (window as unknown as { __tidewater: Api }).__tidewater;
       const url = "/test/scenario.ts";
@@ -1110,7 +1111,7 @@ try {
     assert(founded.ok && founded.meta.biome === coast.id && founded.biome === coast.id && founded.look === coast.id, `${coast.id}: the sector carries its coast and the view wears its look`);
     assert(founded.money4 > founded.money0 && founded.spent < 0, `${coast.id}: the starter town nets positive money over four cycles`);
     assert(!founded.catalogHasOyster && founded.extras.length >= 3, `${coast.id}: the catalog is the coast's own and its kinds went up: ${founded.extras.join(",")}`);
-    assert(founded.goodsShown.includes(coast.id === "fjord" ? "stockfish" : "coconut") && !founded.goodsShown.includes("shellfish"), `${coast.id}: the resource bar shows the coast's foods, not Tidewater's shellfish`);
+    assert(founded.goodsShown.includes(COAST_FOOD[coast.id]) && !founded.goodsShown.includes("shellfish"), `${coast.id}: the resource bar shows the coast's foods, not Tidewater's shellfish`);
     if (coast.id === "fjord") {
       assert(founded.tide === 1.6 && founded.boat === "longboat" && founded.hat === "hood" && founded.house === "stave" && founded.palms === "pine", "the Fjord's tide, longboats, hoods, stave houses and pines");
       const fj = await page.evaluate(async () => {
@@ -1161,6 +1162,41 @@ try {
       assert(fj.ice.seaIce === 1 && fj.ice.view > 0.5 && /frozen/.test(fj.ice.label), "Fjord: sea ice: the water whitens and the tide clock says so");
       assert(fj.slopeHut && fj.buried && fj.avalanches > 0, "Fjord: a storm's avalanche buried the hut on the slope");
       assert(fj.aurora === 1 && (fj.fauna.seals + fj.fauna.puffins) > 0, "Fjord: the aurora is on and seals or puffins are about");
+    } else if (coast.id === "delta") {
+      assert(founded.tide === 1 && founded.boat === "sampan" && founded.hat === "conical" && founded.house === "reed" && founded.palms === "mangrove", "the Delta's tide, sampans, conical hats, reed stilt houses and mangroves");
+      const dl = await page.evaluate(async () => {
+        const api = (window as unknown as { __tidewater: Api }).__tidewater;
+        const s = api.sim, grid = api.grid;
+        const kinds = (k: string) => (Object.values(s.buildings) as Building[]).filter(b => b.kind === k);
+        const url3 = "/test/scenario.ts";
+        const sc3 = (await import(url3)) as typeof import("./scenario");
+        api.grant(3000);
+        sc3.placeByWalkway(s, grid, "house", 4);
+        for (const b of Object.values(s.buildings) as Building[]) if (["hut", "house"].includes(b.kind)) b.residents = grid.capacityOf(b);
+        // A paddy with water: the river's reach or a well's (wells on the street; the layer is painted at the settlement).
+        api.advance(1);
+        const wet = (b: Building) => b.cells.some(c => s.fields.coverage.water[(c.i + 32) * 64 + (c.j + 32)] > 0);
+        if (!kinds("ricePaddy").some(wet)) { sc3.placeByWalkway(s, grid, "well", 2); api.advance(1); }
+        if (!kinds("ricePaddy").some(wet)) sc3.placeByWalkway(s, grid, "ricePaddy", 6);
+        for (const b of Object.values(s.buildings) as Building[]) if (["hut", "house"].includes(b.kind)) b.residents = grid.capacityOf(b);
+        api.advance(1);
+        const day = api.view.fauna();
+        const harvest = api.forceBiome("harvest");
+        const harvestLog = s.log.filter(m => /rice harvest/.test(m));
+        const king = api.forceBiome("kingTide");
+        const kingLog = s.log.filter(m => /king tide/i.test(m));
+        const atKing = { level: s.tide.level, hutsDry: kinds("hut").every(h => !h.cut), piersDry: kinds("pier").every(p => !p.cut), label: document.querySelector("#hud .tide-event")?.textContent ?? "" };
+        const fever = api.forceBiome("fever");
+        const feverLog = s.log.filter(m => /Fever season/.test(m));
+        api.frameTown(26);
+        return { day, harvest: { n: harvest.biomeState.harvests ?? 0, log: harvestLog }, king: { cycle: king.cycle, log: kingLog, ...atKing }, fever: { sick: fever.biomeState.fever ?? 0, log: feverLog }, rice: s.resources.rice, crab: s.resources.crab, salt: s.resources.salt, indigo: s.resources.indigo, catchLine: document.querySelector("#hud .score-value")?.textContent ?? "" };
+      });
+      console.log("Biome delta:", JSON.stringify(dl));
+      assert(dl.day.flamingos + dl.day.herons > 0, "Delta: flamingos and herons about the flats by day");
+      assert(dl.harvest.n > 0 && dl.harvest.log.some(m => /rice harvest/.test(m)), "Delta: the paddies came in at once at a spring low: the rice harvest");
+      assert(dl.king.level > 1.1 && dl.king.hutsDry && dl.king.piersDry && dl.king.log.some(m => /king tide/i.test(m)), "Delta: a king tide stood over 1.1 and every home and pier cleared it");
+      assert(dl.fever.sick > 0 && dl.fever.log.some(m => /Fever season/.test(m)), "Delta: fever season laid residents up away from a clinic");
+      assert(dl.salt > 0 && dl.indigo > 0 && /crab landed/.test(dl.catchLine), "Delta: salt and indigo made; the ledger lands crab");
     } else {
       assert(founded.tide === 0.6 && founded.boat === "outrigger" && founded.hat === "straw" && founded.house === "round" && founded.palms === "palm", "the Atoll's tide, outriggers, straw hats, round huts and palms");
       const at = await page.evaluate(async () => {

@@ -81,7 +81,9 @@ export class Tutorial {
     if (boats(state) === 0) return "No boats: buy one at the pier, or build a shipyard.";
     if (!bs.some(b => b.kind === "market")) return "No fish market: the catch has nowhere to go.";
     if (!bs.some(b => b.kind === "outfall") && state.wasteBacklog > 0) return "Waste is piling up: a sewage outfall (Services tab) puts it in the sea.";
-    if (!bs.some(b => b.kind === "well")) return "No well: homes without water stay unhappy.";
+    // Water from anywhere counts: a well, the Delta's river, the Dunes' cistern.
+    const water = state.fields.coverage.water;
+    if (bs.some(b => BUILDINGS[b.kind].residents > 0 && b.residents > 0 && water[(b.cells[0].i + 32) * 64 + (b.cells[0].j + 32)] === 0)) return "Homes without water stay unhappy: a well (Services tab) near them.";
     return "";
   }
 

@@ -6,6 +6,7 @@ import type { BiomeId } from "../../sim/biomes";
 import type { RoofShape } from "../roofs";
 import { ATOLL_LOOK } from "./atoll";
 import { FJORD_LOOK } from "./fjord";
+import { DELTA_LOOK } from "./delta";
 
 export type BoatKit = "dory" | "longboat" | "outrigger" | "sampan" | "dugout" | "dhow";
 export type HatKit = "straw" | "knit" | "hood" | "conical" | "bandana" | "wrap";
@@ -19,7 +20,9 @@ export interface BiomeLook {
   /** The water shader's three depth tints. */
   water: { shallow: string; mid: string; deep: string };
   /** The terrain shader's height bands, and the snow line (999 = no snow). */
-  terrain: { sandDeep: string; sand: string; grassLo: string; grassHi: string; rock: string; snowLine: number; snow: string };
+  terrain: { sandDeep: string; sand: string; grassLo: string; grassHi: string; rock: string; snowLine: number; snow: string;
+    /** Shift of the colour bands in metres (the terrain shader's coastLift): negative brings the green down the flats (the Delta's reeds). */
+    bands?: number };
   /** Tints per cell material (materials.ts codes 1..8; missing = no tint) and how strongly they show. */
   materialTints: Partial<Record<"lagoon" | "mangrove" | "lava" | "dune" | "oasis" | "vent" | "spring" | "fertile", { tint: string; mix: number }>>;
   /** The water over lagoon cells is pulled toward this colour by `mix`. */
@@ -73,6 +76,7 @@ export const TIDEWATER_LOOK: BiomeLook = registerLook({
 // module's registry before it exists.
 registerLook(FJORD_LOOK);
 registerLook(ATOLL_LOOK);
+registerLook(DELTA_LOOK);
 
 /** The look for a biome id; Tidewater's for anything not registered. */
 export function lookOf(id: BiomeId): BiomeLook {

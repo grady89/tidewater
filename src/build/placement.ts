@@ -2,7 +2,7 @@
 // low decks, by which tides will flood it), click places (and pays), clicking an existing building inspects it,
 // right-click removes. Placement writes to the sim through the Grid; meshes appear when the view syncs.
 import { ArcRotateCamera, Color3, Matrix, Mesh, MeshBuilder, Quaternion, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
-import { BuildingKind, BUILDINGS, PlacementClass, ROTATABLE_CLASSES, STREET_STEP_MAX } from "../sim/balance";
+import { BuildingKind, BUILDINGS, LINE_KINDS, PlacementClass, ROTATABLE_CLASSES, STREET_STEP_MAX } from "../sim/balance";
 import { autoStilts, boatPurchaseBlocker, buyBoat, canAfford, placeCost, removeBuilding, tryPlace } from "../sim/economy";
 import { BOAT_COST, LANDFILL_COST, LANTERN_COST, LIFT_MAX, PLANT_COST } from "../sim/balance";
 import { CLEARANCE } from "../config";
@@ -24,7 +24,7 @@ export type Fate = "safe" | "spring" | "always";
 
 const CLICK_SLOP_PX = 5;
 /** Per-cell pieces that are laid in runs: drag from one cell to another and the whole line goes down. */
-const LINE_TOOLS: ReadonlySet<Tool> = new Set<Tool>(["walkway", "raisedWalkway", "path", "breakwater", "sharkNet", "seaWall"]);
+const LINE_TOOLS: ReadonlySet<Tool> = new Set<Tool>(LINE_KINDS);
 /** Buildings on land turn with R (streets, and everything in the water, keep their one orientation). */
 const ROTATABLE = ROTATABLE_CLASSES;
 /** Where the door is for each quarter turn: −z, −x, +z, +x. */

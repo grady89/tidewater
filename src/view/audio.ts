@@ -40,11 +40,19 @@ export class Audio {
   private windGain: GainNode | null = null;
   private windFilter: BiquadFilterNode | null = null;
   private rustleGain: GainNode | null = null;
+  /** The later coasts' beds: insects (a tremolo'd high band), rain, a low rumble, steam hiss, blown sand. */
+  private insectGain: GainNode | null = null;
+  private rainGain: GainNode | null = null;
+  private rumbleGain: GainNode | null = null;
+  private hissGain: GainNode | null = null;
+  private sandGain: GainNode | null = null;
+  private nextFrog = 0;
   private ambience: Ambience = TIDEWATER_AMBIENCE;
-  /** Creaks, chirps and horns played (checks). */
+  /** Creaks, chirps, horns and frogs played (checks). */
   creaks = 0;
   chirps = 0;
   horns = 0;
+  frogs = 0;
   private lastWhaleSeason = 0;
   /** The biome look's ambience parameters; applied every frame in sync. */
   setLook(look: BiomeLook): void { this.ambience = look.ambience; }
@@ -102,6 +110,31 @@ export class Audio {
     this.rustleGain = ctx.createGain();
     this.rustleGain.gain.value = 0;
     noise.connect(rustle).connect(this.rustleGain).connect(this.master);
+    // The later coasts' beds, all silent unless the look asks: insects at night (a narrow high band throbbing at 18
+    // Hz), rain (a bright wash), a rumble under the ground (the noise far down), steam hiss, sand hissing in the wind.
+    const bed = (type: BiquadFilterType, freq: number, q: number): GainNode => {
+      const f = ctx.createBiquadFilter();
+      f.type = type; f.frequency.value = freq; f.Q.value = q;
+      const g = ctx.createGain();
+      g.gain.value = 0;
+      noise.connect(f).connect(g).connect(this.master!);
+      return g;
+    };
+    this.insectGain = bed("bandpass", 4600, 9);
+    const trem = ctx.createOscillator();
+    trem.frequency.value = 18;
+    const tremGain = ctx.createGain();
+    tremGain.gain.value = 0.5;
+    const insectVca = ctx.createGain();
+    insectVca.gain.value = 0.5;
+    trem.connect(tremGain).connect(insectVca.gain);
+    trem.start();
+    this.insectGain.disconnect();
+    this.insectGain.connect(insectVca).connect(this.master);
+    this.rainGain = bed("highpass", 1800, 0.4);
+    this.rumbleGain = bed("lowpass", 70, 0.7);
+    this.hissGain = bed("highpass", 5200, 0.5);
+    this.sandGain = bed("bandpass", 2600, 1.1);
 
     // Thrum: a low sine with a slow wobble, silent until the sea does something.
     const thrum = ctx.createOscillator();
@@ -309,6 +342,29 @@ export class Audio {
     this.chirps++;
   }
 
+  /** A frog: two short throaty pulses, a little apart. */
+  frog(): void {
+    if (!this.ctx || !this.master) return;
+    const ctx = this.ctx, t = ctx.currentTime;
+    const base = 170 + Math.random() * 90;
+    for (const at of [0, 0.13]) {
+      const s = t + at;
+      const o = ctx.createOscillator();
+      o.type = "square";
+      o.frequency.setValueAtTime(base, s);
+      o.frequency.exponentialRampToValueAtTime(base * 0.8, s + 0.08);
+      const lp = ctx.createBiquadFilter();
+      lp.type = "lowpass"; lp.frequency.value = 700;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, s);
+      g.gain.exponentialRampToValueAtTime(0.025, s + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, s + 0.09);
+      o.connect(lp).connect(g).connect(this.master);
+      o.start(s); o.stop(s + 0.1);
+    }
+    this.frogs++;
+  }
+
   /** Every frame: follow the ledger and the view. */
   sync(state: SimState, stormMix: number, ambient: Ambient = { gulls: 0 }): void {
     if (!this.ctx || !this.surfGain || !this.surfFilter || !this.thrumGain || !this.padGain || !this.padVoice || !this.padFilter) return;
@@ -329,6 +385,20 @@ export class Audio {
       this.rustleGain.gain.setTargetAtTime(amb.palms * (0.012 + 0.02 * gust + 0.04 * stormMix), t, 0.5);
     }
     if (amb.ice > 0 && t > this.nextCreak) { this.creak(); this.nextCreak = t + 9 + Math.random() * 16 / amb.ice; }
+    // The later coasts: frogs and insects after dark, rain (a light shower now and then, heavy in a storm), a rumble
+    // that swells with the mountain's tremors, steam hissing, sand hissing in the gusts.
+    const night = !isSunUp(state.time);
+    if (this.insectGain && this.rainGain && this.rumbleGain && this.hissGain && this.sandGain) {
+      const gust = 0.6 + 0.4 * Math.sin(t * 0.37) * Math.sin(t * 0.11 + 1.3);
+      const shower = Math.max(0, Math.sin(t * 0.021) * Math.sin(t * 0.0073 + 2) - 0.35);
+      const tremor = (state.biomeState.tremor ?? 0) > 0 ? 1 : 0;
+      this.insectGain.gain.setTargetAtTime((amb.insects ?? 0) * (night ? 0.018 : 0.003) * (1 - stormMix), t, 1.2);
+      this.rainGain.gain.setTargetAtTime((amb.rain ?? 0) * (0.02 * shower + 0.07 * stormMix), t, 0.8);
+      this.rumbleGain.gain.setTargetAtTime((amb.rumble ?? 0) * (0.05 + 0.25 * tremor), t, 0.8);
+      this.hissGain.gain.setTargetAtTime((amb.hiss ?? 0) * (0.004 + 0.004 * Math.max(0, Math.sin(t * 0.5))), t, 0.4);
+      this.sandGain.gain.setTargetAtTime((amb.sand ?? 0) * (0.004 + 0.012 * gust + 0.06 * stormMix), t, 0.6);
+    }
+    if ((amb.frogs ?? 0) > 0 && night && t > this.nextFrog) { this.frog(); this.nextFrog = t + 0.8 + Math.random() * 3 / amb.frogs!; }
     if (amb.birds > 0 && t > this.nextChirp && isSunUp(state.time)) { this.chirp(); this.nextChirp = t + 3 + Math.random() * 9 / amb.birds; }
     this.surfFilter.frequency.setTargetAtTime(350 + 400 * water + 900 * stormMix, t, 0.3);
     const stage = state.tsunami.stage;

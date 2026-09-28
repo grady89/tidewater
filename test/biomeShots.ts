@@ -7,10 +7,11 @@ import { createServer } from "vite";
 import type { TidewaterApi as Api } from "../src/main";
 
 const PORT = 5186;
-const BIOMES: { id: "tidewater" | "fjord" | "atoll"; face: number; seed: number }[] = [
+const BIOMES: { id: "tidewater" | "fjord" | "atoll" | "delta" | "cinder" | "dunes"; face: number; seed: number }[] = [
   { id: "tidewater", face: 1, seed: 0 },
   { id: "fjord", face: 0, seed: 2 },
   { id: "atoll", face: 6, seed: 2 },
+  { id: "delta", face: 2, seed: 2 },
 ];
 
 async function waitReady(page: Page): Promise<void> {
@@ -43,7 +44,7 @@ try {
       sc.placeByWalkway(s, grid, "house", 4);
       sc.placeByWalkway(s, grid, "well", 1);
       sc.placeByWalkway(s, grid, "warehouse", 1);
-      for (const kind of ["stockfishRacks", "iceHouse", "pearlHouse", "coconutGrove", "toolworks"] as const) if (grid.inCatalog(kind)) sc.placeByWalkway(s, grid, kind, 1);
+      for (const kind of ["stockfishRacks", "iceHouse", "pearlHouse", "coconutGrove", "toolworks", "ricePaddy", "saltPan", "indigoVats", "wardenTower"] as const) if (grid.inCatalog(kind)) sc.placeByWalkway(s, grid, kind, 1);
       api.advance(6);
       api.frameTown(26);
       return { biome: s.world.biome, buildings: Object.keys(s.buildings).length, money: Math.round(s.resources.money), pop: town.huts.reduce((n, h) => n + h.residents, 0), log: s.log.slice(-2) };

@@ -129,6 +129,30 @@ export class Walkers {
       const cone = MeshBuilder.CreateCylinder("wt", { diameterTop: 0, diameterBottom: 0.38, height: 0.14, tessellation: 8 }, scene);
       cone.position.y = 0.56;
       parts.push(tint(cone, "#e6d3a1"));
+    } else if (hat === "conical") {
+      // A tall conical hat of palm leaf, taller and narrower than the straw brim.
+      const cone = MeshBuilder.CreateCylinder("wt", { diameterTop: 0, diameterBottom: 0.34, height: 0.2, tessellation: 8 }, scene);
+      cone.position.y = 0.58;
+      parts.push(tint(cone, "#d9c9a5"));
+    } else if (hat === "bandana") {
+      const band = MeshBuilder.CreateSphere("wt", { diameter: 0.18, segments: 5 }, scene);
+      band.scaling.set(1, 0.55, 1);
+      band.position.y = 0.52;
+      parts.push(tint(band, "#b9543f"));
+      const knot = MeshBuilder.CreateBox("wtk", { width: 0.05, height: 0.04, depth: 0.08 }, scene);
+      knot.position.set(-0.09, 0.5, 0);
+      parts.push(tint(knot, "#b9543f"));
+    } else if (hat === "wrap") {
+      const wrap = MeshBuilder.CreateTorus("wt", { diameter: 0.15, thickness: 0.07, tessellation: 10 }, scene);
+      wrap.position.y = 0.53;
+      parts.push(tint(wrap, "#f6f1e6"));
+      const crown = MeshBuilder.CreateSphere("wtc", { diameter: 0.14, segments: 4 }, scene);
+      crown.scaling.set(1, 0.6, 1);
+      crown.position.y = 0.56;
+      parts.push(tint(crown, "#f6f1e6"));
+      const tail = MeshBuilder.CreateBox("wtt", { width: 0.03, height: 0.14, depth: 0.06 }, scene);
+      tail.position.set(-0.08, 0.46, 0.02);
+      parts.push(tint(tail, "#f6f1e6"));
     } else if (hat === "knit") {
       const cap = MeshBuilder.CreateSphere("wt", { diameter: 0.19, segments: 5 }, scene);
       cap.scaling.set(1, 0.7, 1);

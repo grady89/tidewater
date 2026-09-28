@@ -639,7 +639,7 @@ export class World {
     terrainMat.setFloat("clipY", -999).setMatrix("frame", Matrix.Identity()).setFloat("fogNear", FOG_WORLD[0]).setFloat("fogFar", FOG_WORLD[1]);
     terrainMat.setFloat("waterLevel", level).setFloat("wetLevel", level + 0.1);
     // The coast, exaggerated: lift the bands so sand runs SAND_RISE above the water line at any tide, then grass, then rock.
-    terrainMat.setFloat("coastLift", Math.max(0, level + SAND_RISE - 0.55 * tides.scale));
+    terrainMat.setFloat("coastLift", Math.max(0, level + SAND_RISE - 0.55 * tides.scale) + (look.terrain.bands ?? 0));
     terrain.material = terrainMat;
     fv.terrain = terrain; fv.terrainMat = terrainMat;
     // Roofs from the real buildings: three shape meshes with thin instances and per-instance colours.

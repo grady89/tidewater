@@ -1,8 +1,8 @@
 // The UI: resource bar, build menu by category, tide clock, last-cycle ledger, notifications. Plain DOM over the
 // canvas, read-only over the sim.
 import { Fate, isBuildingTool, Tool } from "../build/placement";
-import { BOAT_COST, BUILDING_KINDS, BuildingKind, BUILDINGS, CATEGORIES, Category, CLEAR_TIMBER, LANDFILL_COST, LANTERN_COST, LIFT_STEP, LOAN_AMOUNT, LOAN_GRACE_CYCLES, LOAN_INTEREST, LOAN_REPAY_CYCLES, PLANK_ORDER_SIZE, PLANT_COST, TRADE_PLANK_PRICE } from "../sim/balance";
-import { biomeFor, BiomeId, catalogFor, costOf, makesOf } from "../sim/biomes";
+import { BOAT_COST, BUILDING_KINDS, LINE_KINDS, BuildingKind, BUILDINGS, CATEGORIES, Category, CLEAR_TIMBER, LANDFILL_COST, LANTERN_COST, LIFT_STEP, LOAN_AMOUNT, LOAN_GRACE_CYCLES, LOAN_INTEREST, LOAN_REPAY_CYCLES, PLANK_ORDER_SIZE, PLANT_COST, TRADE_PLANK_PRICE } from "../sim/balance";
+import { biomeFor, BiomeId, catalogFor, catchOf, costOf, makesOf } from "../sim/biomes";
 import { canAfford } from "../sim/economy";
 import { GOOD_IDS, GOOD_ROLES, GoodId, GOODS, shownGoods } from "../sim/goods";
 import { Grid } from "../sim/grid";
@@ -53,7 +53,7 @@ const FATE_TEXT: Record<Fate | "line", string> = {
   spring: "Low ground: floods at spring tides — a raised walkway or landfill stays dry",
   always: "Floods every high tide",
 };
-const LINE_TOOL_HINT: ReadonlySet<Tool> = new Set<Tool>(["walkway", "raisedWalkway", "path", "breakwater", "sharkNet", "seaWall"]);
+const LINE_TOOL_HINT: ReadonlySet<Tool> = new Set<Tool>(LINE_KINDS);
 
 /** The bar's fixed cells; the goods sit between money and population, grouped by role, per the island. */
 const RESOURCES_HEAD = ["money"];
@@ -343,7 +343,7 @@ export class Hud {
         const net = l.income - l.expenses;
         this.ledgerLabel.textContent = `Cycle ${l.cycle}`;
         const extras = [l.tourism > 0 ? `${l.tourism.toFixed(0)}$ tourism` : "", l.trade !== 0 ? `${l.trade >= 0 ? "+" : ""}${l.trade.toFixed(0)}$ trade` : "", l.expenses > 0 ? `−${l.expenses.toFixed(0)}$ upkeep${state.loan.owed > 0 ? " & loan" : ""}` : ""].filter(Boolean);
-        this.ledgerValue.textContent = `${net >= 0 ? "+" : ""}${net.toFixed(0)}$ · ${l.fishCaught.toFixed(0)} fish landed · ${(l.fishSold + l.shellfishSold).toFixed(0)} sold${extras.length ? " · " + extras.join(" · ") : ""}`;
+        this.ledgerValue.textContent = `${net >= 0 ? "+" : ""}${net.toFixed(0)}$ · ${l.fishCaught.toFixed(0)} ${GOODS[catchOf(state.world.biome)].name} landed · ${(l.fishSold + l.shellfishSold).toFixed(0)} sold${extras.length ? " · " + extras.join(" · ") : ""}`;
         this.ledgerValue.classList.remove("flash");
         void this.ledgerValue.offsetWidth;
         this.ledgerValue.classList.add("flash");
