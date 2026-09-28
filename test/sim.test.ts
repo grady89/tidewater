@@ -2,7 +2,7 @@
 // pull in Babylon; the hygiene test enforces that for src/sim/**. The other test/*.test.ts files are the topics.
 import { describe, expect, it } from "vitest";
 import { SPRING_HI, SPRING_LO, STILT_MIN, TIDE_HI, TIDE_LO, TIDE_PERIOD } from "../src/config";
-import { CLEAR_TIMBER, LANDFILL_COST, LANDFILL_HEIGHT, LOAN_AMOUNT, LOAN_GRACE_CYCLES, LOAN_INTEREST, LOAN_REPAY_CYCLES, TREE_REGROW_CYCLES } from "../src/sim/balance";
+import { CLEAR_TIMBER, LANDFILL_COST, LANDFILL_HEIGHT, LOAN_AMOUNT, LOAN_GRACE_CYCLES, LOAN_INTEREST, TREE_REGROW_CYCLES } from "../src/sim/balance";
 import { deserialize, serialize } from "../src/sim/save";
 import { addLandfill, clearBlocker, clearTree, landfillBlocker, plantBlocker, plantTree, treeAt } from "../src/sim/land";
 import { dayFraction, duskAt, isDaytime, moonVector, NOON_SUN, sunVector } from "../src/sim/daylight";
@@ -152,6 +152,15 @@ describe("day clock: sun and moon", () => {
 });
 
 describe("loans", () => {
+  it("a town that earns nothing owes the loan but is never drained by it", () => {
+    const { state, grid } = newGame(7); // a hut and nothing that earns
+    expect(takeLoan(state)).toBe(true);
+    const money = state.resources.money;
+    let upkeep = 0;
+    for (let c = 0; c < LOAN_GRACE_CYCLES + 6; c++) { advanceCycles(state, grid, 1); upkeep += state.last.expenses; }
+    expect(state.loan.owed).toBeCloseTo(LOAN_AMOUNT * (1 + LOAN_INTEREST), 6);
+    expect(state.resources.money).toBeCloseTo(money - upkeep, 4);
+  });
   it("lends the lump sum once, takes an instalment each settlement, and is paid off with interest", () => {
     const { state, grid } = town();
     expect(canBorrow(state)).toBe(true);
@@ -162,14 +171,18 @@ describe("loans", () => {
     expect(canBorrow(state)).toBe(false);
     expect(takeLoan(state)).toBe(false);
     expect(state.log[state.log.length - 1]).toMatch(/Borrowed/);
-    // The grace: nothing is taken for LOAN_GRACE_CYCLES settlements, then an instalment at each.
+    // The grace: nothing is taken for LOAN_GRACE_CYCLES settlements. Then each settlement pays at most the
+    // instalment and never more than the cycle earned above its upkeep: the loan is paid out of earnings, not
+    // out of the purse.
     let paid = 0;
     for (let c = 0; c < LOAN_GRACE_CYCLES; c++) { const before = state.loan.owed; advanceCycles(state, grid, 1); expect(state.loan.owed).toBe(before); }
-    for (let c = 0; c < LOAN_REPAY_CYCLES; c++) {
+    for (let c = 0; c < 80 && state.loan.owed > 0; c++) {
       const before = state.loan.owed;
       advanceCycles(state, grid, 1);
-      paid += before - state.loan.owed;
-      if (c < LOAN_REPAY_CYCLES - 1) expect(state.last.expenses).toBeGreaterThanOrEqual(loanInstalment() - 1e-6);
+      const pay = before - state.loan.owed;
+      paid += pay;
+      expect(pay).toBeLessThanOrEqual(loanInstalment() + 1e-6);
+      expect(pay).toBeLessThanOrEqual(Math.max(0, state.last.income - (state.last.expenses - pay)) + 1e-6);
     }
     expect(state.loan.owed).toBe(0);
     expect(paid).toBeCloseTo(LOAN_AMOUNT * (1 + LOAN_INTEREST), 4);

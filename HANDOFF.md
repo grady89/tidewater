@@ -159,11 +159,15 @@ left open), ARCHITECTURE.md "Biomes" (where each piece lives), NOTES.md "Session
   `npm run quality` measures each coast at each preset.
 
 Known-rough:
-- The first blind playtest (NOTES.md Session E) fixed the dragged run (now one street tool that routes), the
-  market's staffing, the first-peak message, the walkthrough that never reset, clicks without a hover, edge-piece
-  snapping and the loan's grace. Still open from the tester: the World's face picking is fiddly (empty faces get
-  hit), storms after cycle 6 read as unfair when nothing else earns, and the chain behind the Fjord's stockfish
-  (salt ← ship ← harbor ← planks) is not explained anywhere in the game.
+- Two blind playtest rounds (NOTES.md Session E) fixed the dragged run (one street tool, routed from any side of
+  the pier to any side of the hut, cost-weighted), the market's staffing, the first-peak message, the walkthrough
+  that never reset, clicks without a hover, edge-piece and berth snapping, the loan (grace, then paid from
+  earnings only), storms (no boat loss before cycle 20, never the last boat), the cost tag at the cursor and the
+  faded drawing of anything the street does not reach. Still open from the tester: the World's face picking is
+  fiddly (empty faces get hit), and the chain behind the Fjord's stockfish (salt ← ship ← harbor ← planks) is
+  not explained anywhere in the game. The tester also reported a "Round2 Fjord" sea vanishing while the old
+  "Round1 Fjord" changed stats; no code path was found that writes one face's town under another's meta, and the
+  tester's own census is pending — worth a look at `save()` / `enterSector` if it recurs.
 - The Fjord's ridges are smooth slabs under the snow cap; the shaper's noise (±1.3) is small against its
   profile. More noise on the crests, or a second ridge line, would break the silhouette.
 - The whaling station's berth shows an ordinary fishing boat; the ice-breaker pier is the pier plus a wedge and

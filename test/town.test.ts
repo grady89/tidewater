@@ -62,10 +62,16 @@ describe("happiness, services, leveling (M7)", () => {
     expect(Math.max(...t.huts.map(h => h.level))).toBe(2);
     // A third food and a foreign luxury (what the company carries): level 3. (A shark incident on the beach can
     // cost a few cycles of grief, so allow a few more than the streak needs.)
-    state.resources.rice += 30;
+    // The market sells every food above the reserve, so the table is kept laid each cycle: the streak is what is
+    // tested, not the pantry.
     state.resources.coffee += 10;
     let reached3 = -1;
-    for (let c = 1; c <= LEVEL_UP_CYCLES + 6 && reached3 < 0; c++) { advanceCycles(state, grid, 1); if (t.huts.some(h => h.level === MAX_LEVEL)) reached3 = c; }
+    for (let c = 1; c <= LEVEL_UP_CYCLES + 8 && reached3 < 0; c++) {
+      state.resources.rice = Math.max(state.resources.rice, 30);
+      state.resources.shellfish = Math.max(state.resources.shellfish, 20);
+      advanceCycles(state, grid, 1);
+      if (t.huts.some(h => h.level === MAX_LEVEL)) reached3 = c;
+    }
     expect(reached3).toBeGreaterThan(0);
     const levels = t.huts.map(h => h.level);
     expect(Math.max(...levels)).toBe(MAX_LEVEL);

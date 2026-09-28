@@ -990,3 +990,30 @@ building's connection and the job assignment) added:
 - The HUD shows who is at work beside the job count (the tester read "2 / 5 jobs" as none filled); the ledger
   line shows the cycle's upkeep (and loan) so the drain is accounted for; the connection warning says what a
   street needs instead of "streets need a pier at one end".
+
+Round 2 (the same tester, after those fixes; one export) confirmed the fixes and died twice more:
+
+- **A storm took the only boat at cycle 11**, and the town had no way back: the loan then drained it. Storms now
+  take no boats before `STORM_LOSS_FIRST_CYCLE` (20 — the dice still roll, so a seed's story is unchanged) and
+  never a town's last boat (`startStorm` clamps the loss to the fleet minus one). The tsunami still takes every
+  unsheltered boat: it comes after cycle 20 with a tide of warning.
+- **The loan is paid out of earnings, never out of the purse:** `repayLoan(state, surplus)` takes at most the
+  instalment and at most what the cycle earned above its upkeep. A stalled town owes but is not drained (test:
+  a hut alone pays nothing and its purse moves only by upkeep). The grace stays.
+- **"A visible walkway ran to the market and it still said no walkway to a pier."** The export showed why: the
+  walkways touched the market but never the pier's street — the break was elsewhere and nothing showed it. Now
+  a piece the network does not reach (a street piece, a home, a workplace; never a root) is drawn faded toward
+  bare wood (`applyUnreached`, part of the mesh signature), which also paints a street cut by the spring tide for
+  the length of the peak; the spring-peak notification counts the cut walkways.
+- **The route leaves from any side of the pier and arrives at any side of the hut** (`RouteOptions.startCells /
+  goalCells`): a drag that began on the pier's seaward cell had no buildable neighbour and fell back to the L,
+  leaving the gap at the pier the tester saw. The route is now cost-weighted (Dijkstra over the cell's own stilt
+  price): on the Fjord it takes the shore over the deep flats instead of a 212$ crossing. The L is kept whenever
+  it fits, so a street the player drew straight stays straight.
+- A drag that never left its cell places that cell (it placed nothing); the boat tool buys at the pier, dock or
+  harbor within two cells of the click (walkways beside the pier were eating the click).
+- **True costs at the cursor:** a tag beside the ghost shows the price with its stilts, the flood fate and any
+  caution, and during a drag the run's count and price; red when blocked. The build cards keep the base price.
+- `__tidewater.world.export(face)` returns a sea's export JSON for testers whose browser drops downloads.
+- Not bugs: the "hut stacked on the market" had no overlapping footprints in the export (the hut stood beside
+  it); the second fish market that never sold was simply off the street — the fade now says so.

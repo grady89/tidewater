@@ -124,7 +124,7 @@ export class Hud {
         <label></label>
         <div class="score-value">—</div>
         <div class="trade-row"><span class="trade-status"></span><button type="button" class="order">Order ${PLANK_ORDER_SIZE} planks · ${PLANK_ORDER_SIZE * TRADE_PLANK_PRICE}$</button></div>
-        <div class="trade-row loan-row"><span class="loan-status"></span><button type="button" class="order loan" title="${LOAN_AMOUNT}$ now, ${Math.round(LOAN_AMOUNT * (1 + LOAN_INTEREST))}$ back over ${LOAN_REPAY_CYCLES} tides, starting after ${LOAN_GRACE_CYCLES}">Borrow ${LOAN_AMOUNT}$</button></div>
+        <div class="trade-row loan-row"><span class="loan-status"></span><button type="button" class="order loan" title="${LOAN_AMOUNT}$ now; ${Math.round(LOAN_AMOUNT * (1 + LOAN_INTEREST))}$ repaid at up to ${Math.round(LOAN_AMOUNT * (1 + LOAN_INTEREST) / LOAN_REPAY_CYCLES)}$ a tide out of what the town earns, never from the purse, starting after ${LOAN_GRACE_CYCLES} tides">Borrow ${LOAN_AMOUNT}$</button></div>
       </div>`;
 
     const tabs = root.querySelector<HTMLElement>(".tabs")!;
@@ -305,7 +305,7 @@ export class Hud {
     if (this.tradeStatus.textContent !== orderText) this.tradeStatus.textContent = orderText;
     this.orderButton.hidden = toShip < 0;
     const loan = state.loan;
-    const loanText = loan.owed > 0 ? `Loan: ${Math.ceil(loan.owed)}$ owed · ${Math.round(loan.perCycle)}$ a tide` : "";
+    const loanText = loan.owed > 0 ? `Loan: ${Math.ceil(loan.owed)}$ owed · up to ${Math.round(loan.perCycle)}$ a tide from earnings` : "";
     if (this.loanStatus.textContent !== loanText) this.loanStatus.textContent = loanText;
     this.loanButton.hidden = loan.owed > 0;
     const ts = state.tsunami.stage;

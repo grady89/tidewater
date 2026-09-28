@@ -1,7 +1,7 @@
 // Fire, storms and the tsunami.
 import { describe, expect, it } from "vitest";
 import { TIDE_PERIOD } from "../src/config";
-import { BUILDINGS, DRAWDOWN_LEVEL, DRAWDOWN_SECONDS, FIRE_BURN_SECONDS, FIRE_IGNITE_THRESHOLD } from "../src/sim/balance";
+import { BUILDINGS, DRAWDOWN_LEVEL, DRAWDOWN_SECONDS, FIRE_BURN_SECONDS, FIRE_IGNITE_THRESHOLD, STORM_LOSS_FIRST_CYCLE } from "../src/sim/balance";
 import { deserialize, serialize } from "../src/sim/save";
 
 import { rollTsunami, sheltered, shielded, startStorm, startTsunami, tsunamiDue, warnTsunami, waveDirection } from "../src/sim/events";
@@ -103,6 +103,7 @@ describe("storms and the tsunami (M11)", () => {
         expect(walls).toBeGreaterThan(0);
         expect(sheltered(grid, t.pier) && sheltered(grid, dock)).toBe(true);
       }
+      state.tide.cycle = STORM_LOSS_FIRST_CYCLE; // before it a storm takes nothing
       startStorm(state, grid);
       return { boats: t.pier.boats + dock.boats, active: state.storm.active };
     };
@@ -120,8 +121,9 @@ describe("storms and the tsunami (M11)", () => {
     startStorm(state, grid);
     tick(state, grid);
     expect(maxOf(state.fields.fire)).toBe(0);
-    let sailed = false;
-    for (let k = 0; k < TIDE_PERIOD * 20; k++) { tick(state, grid); if (state.storm.active && t.pier.atSea) sailed = true; if (!state.storm.active) break; }
+    // Boats already out when the storm breaks come home with the shift; no new trip starts while it blows.
+    let sailed = false, wasOut = t.pier.atSea;
+    for (let k = 0; k < TIDE_PERIOD * 20; k++) { tick(state, grid); if (state.storm.active && t.pier.atSea && !wasOut) sailed = true; wasOut = t.pier.atSea; if (!state.storm.active) break; }
     expect(sailed).toBe(false);
     expect(state.storm.active).toBe(false); // it blew through by the next peak
   });

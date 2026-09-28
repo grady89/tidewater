@@ -1105,6 +1105,24 @@ function turn(m: BuildingMeshes, b: Building): void {
   if (m.lantern) m.lantern.position.copyFrom(Vector3.TransformCoordinates(m.lantern.position, matrix));
 }
 
+/** Whether a piece that needs the street is off it: a street piece, a home or a workplace the network does not reach (or one cut by the spring tide). Roots — piers, docks, harbors — are the street's start and never count. */
+function unreached(b: Building): boolean {
+  const def = BUILDINGS[b.kind];
+  if (def.network === "root") return false;
+  return !b.reached && (def.network === "link" || def.residents > 0 || def.workers > 0);
+}
+
+/** An unreached piece fades toward bare, sun-bleached wood, so a gap in the street reads at a glance. */
+function applyUnreached(b: Building, m: BuildingMeshes): BuildingMeshes {
+  if (!unreached(b)) return m;
+  const colors = m.root.getVerticesData(VertexBuffer.ColorKind);
+  if (colors) {
+    for (let i = 0; i < colors.length; i += 4) { colors[i] = colors[i] * 0.5 + 0.44; colors[i + 1] = colors[i + 1] * 0.5 + 0.43; colors[i + 2] = colors[i + 2] * 0.5 + 0.4; }
+    m.root.updateVerticesData(VertexBuffer.ColorKind, colors);
+  }
+  return m;
+}
+
 function applyDamage(scene: Scene, b: Building, m: BuildingMeshes): BuildingMeshes {
   if (!b.damaged) return m;
   void scene;
@@ -1311,7 +1329,7 @@ function reefNursery(scene: Scene, b: Building): BuildingMeshes {
 export function createBuildingMeshes(scene: Scene, b: Building, grid: Grid): BuildingMeshes {
   const m = buildMeshes(scene, b, grid);
   if (b.rot && !CELL_ORIENTED.has(b.kind)) turn(m, b);
-  return applyDamage(scene, b, m);
+  return applyUnreached(b, applyDamage(scene, b, m));
 }
 
 function buildMeshes(scene: Scene, b: Building, grid: Grid): BuildingMeshes {
@@ -1366,7 +1384,7 @@ function buildMeshes(scene: Scene, b: Building, grid: Grid): BuildingMeshes {
  *  depend on what stands beside them. */
 export function meshSignature(b: Building, grid: Grid): string {
   const joins = b.kind === "walkway" || b.kind === "raisedWalkway" || b.kind === "path" ? ":" + joinKey(b, grid) : "";
-  return `${b.kind}:${b.level}:${b.lantern ? 1 : 0}:${b.damaged ? 1 : 0}:${b.rot}${joins}`;
+  return `${b.kind}:${b.level}:${b.lantern ? 1 : 0}:${b.damaged ? 1 : 0}:${unreached(b) ? 0 : 1}:${b.rot}${joins}`;
 }
 
 /** Whether the building's lantern should glow: homes need residents, everything else just a connection. */

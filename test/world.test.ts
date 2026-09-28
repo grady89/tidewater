@@ -1,7 +1,7 @@
 // The second island and the ferry, Session B's regressions, rotation, and seeded islands.
 import { describe, expect, it } from "vitest";
 import { TIDE_HI } from "../src/config";
-import { BUILDINGS, FERRY_COST, ISLAND_MIN_TREED } from "../src/sim/balance";
+import { BUILDINGS, FERRY_COST, ISLAND_MIN_TREED, STORM_LOSS_FIRST_CYCLE } from "../src/sim/balance";
 import { deserialize, serialize } from "../src/sim/save";
 import { addLandfill } from "../src/sim/land";
 
@@ -132,6 +132,7 @@ describe("QA regressions (Session B)", () => {
     advanceCycles(state, grid, 2);
     expect(t.pier.boats).toBe(2);
     expect(t.pier.workers).toBe(4);
+    state.tide.cycle = STORM_LOSS_FIRST_CYCLE; // before it a storm takes nothing
     for (let k = 0; k < 40 && t.pier.boats === 2; k++) startStorm(state, grid); // 50 % per boat: a few rolls
     expect(t.pier.boats).toBeLessThan(2);
     expect(t.pier.workers).toBe(jobsAt(t.pier));

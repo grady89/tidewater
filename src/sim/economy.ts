@@ -360,9 +360,11 @@ export function settleCycle(state: SimState, grid: Grid, opts: { quiet?: boolean
   repairDamage(state);
   healInjuries(state);
 
-  // Upkeep.
-  for (const b of buildings) stats.expenses += BUILDINGS[b.kind].upkeep;
-  stats.expenses += repayLoan(state);
+  // Upkeep, then the loan out of what is left of the cycle's earnings (never out of the purse).
+  let upkeep = 0;
+  for (const b of buildings) upkeep += BUILDINGS[b.kind].upkeep;
+  stats.expenses += upkeep;
+  stats.expenses += repayLoan(state, stats.income - upkeep);
   moveMoney(state, stats.income - stats.expenses, "settlement");
 
   // The trade ship and the tourists (they move money themselves; the stats just record it).
