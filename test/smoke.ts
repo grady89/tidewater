@@ -1083,8 +1083,8 @@ try {
   // ---- Biomes (docs/biomes, docs/world): the Fjord, the Atoll and the later coasts beside Tidewater ----
   // Each coast: a sector of its own, the starter town positive over four cycles, every unique kind producing, its
   // hazard and its moment forced through the console API and seen by the view, and shots by day and night.
-  const COAST_FOOD: Record<string, string> = { fjord: "stockfish", atoll: "coconut", delta: "rice", cinder: "taro" };
-  for (const coast of [{ id: "fjord" as const, face: 0, seed: 2 }, { id: "atoll" as const, face: 6, seed: 2 }, { id: "delta" as const, face: 2, seed: 2 }, { id: "cinder" as const, face: 7, seed: 2 }]) {
+  const COAST_FOOD: Record<string, string> = { fjord: "stockfish", atoll: "coconut", delta: "rice", cinder: "taro", dunes: "dates" };
+  for (const coast of [{ id: "fjord" as const, face: 0, seed: 2 }, { id: "atoll" as const, face: 6, seed: 2 }, { id: "delta" as const, face: 2, seed: 2 }, { id: "cinder" as const, face: 7, seed: 2 }, { id: "dunes" as const, face: 3, seed: 2 }]) {
     const founded = await page.evaluate(async ({ id, face, seed }) => {
       const api = (window as unknown as { __tidewater: Api }).__tidewater;
       const url = "/test/scenario.ts";
@@ -1200,6 +1200,48 @@ try {
       assert(cn.eruption.n >= 1 && cn.eruption.log.length > 0 && cn.eruption.outbox > 0 && cn.eruption.landfill > 0 && cn.eruption.newLand > 0, "Cinder: the eruption: a lava flow makes new land, and a wave goes out to the neighbours");
       assert(cn.ash.falling && cn.ash.flakes > 0, "Cinder: ash falls over the town the cycle after");
       assert(cn.fauna.iguanas + cn.fauna.boobies > 0, "Cinder: iguanas or boobies about");
+    } else if (coast.id === "dunes") {
+      assert(founded.tide === 0.8 && founded.boat === "dhow" && founded.hat === "wrap" && founded.house === "cube" && founded.palms === "palm", "the Dunes' tide, dhows, head wraps, cube houses and date palms");
+      const du = await page.evaluate(async () => {
+        const api = (window as unknown as { __tidewater: Api }).__tidewater;
+        const s = api.sim, grid = api.grid;
+        const kinds = (k: string) => (Object.values(s.buildings) as Building[]).filter(b => b.kind === k);
+        const wait = (ms: number) => new Promise(r => setTimeout(r, ms));
+        const url5 = "/test/scenario.ts";
+        const sc5 = (await import(url5)) as typeof import("./scenario");
+        api.grant(3000);
+        sc5.placeByWalkway(s, grid, "house", 6);
+        const tavern = sc5.placeByWalkway(s, grid, "tavern", 1)[0];
+        const mk = kinds("market")[0];
+        const square = mk ? sc5.placeJoined(s, grid, "marketSquare", mk.cells[0]) : null;
+        for (const b of Object.values(s.buildings) as Building[]) if (["hut", "house"].includes(b.kind)) b.residents = grid.capacityOf(b);
+        api.advance(2);
+        const produced = { dates: s.resources.dates, coffee: s.resources.coffee, salt: s.resources.salt, sponges: s.resources.sponges, groves: kinds("dateGrove").length, cisterns: kinds("greatCistern").length, divers: kinds("spongeDivers").length };
+        const day = api.view.fauna();
+        // The sandstorm: the haze comes down over the town; when it passes, the harbour is silted.
+        api.forceStorm();
+        let haze = 0;
+        for (let k = 0; k < 14; k++) { await wait(300); haze = Math.max(haze, api.view.haze()); }
+        const named = s.log.filter(m => /sandstorm is coming/.test(m)).length;
+        api.advance(1);
+        await wait(200);
+        const silt = { silted: (s.biomeState.silt ?? 0) > 0, label: document.querySelector("#hud .tide-event")?.textContent ?? "", log: s.log.filter(m => /silted/.test(m)).length };
+        const dr = api.forceBiome("drought");
+        await wait(200);
+        const drought = { n: dr.biomeState.droughts ?? 0, label: document.querySelector("#hud .tide-event")?.textContent ?? "" };
+        const nm = api.forceBiome("nightMarket");
+        let crowd = 0;
+        for (let k = 0; k < 16 && crowd === 0; k++) { await wait(500); crowd = api.view.crowd(); }
+        api.frameTown(26);
+        return { produced, day, haze, named, silt, drought, market: { n: nm.biomeState.nightMarkets ?? 0, tavern: !!tavern, square: !!square, log: s.log.filter(m => /night market/.test(m)).length }, crowd, stars: api.view.biome().stars, fauna: api.view.fauna() };
+      });
+      console.log("Biome dunes:", JSON.stringify(du));
+      assert(du.produced.groves >= 1 && du.produced.cisterns >= 1 && du.produced.divers >= 1 && du.produced.dates > 0 && du.produced.salt > 0, "Dunes: a date grove at an oasis, the great cistern, the sponge divers; dates and salt made");
+      assert(du.named > 0 && du.haze > 0.3, "Dunes: the storm is a sandstorm and its haze comes down");
+      assert(du.silt.silted && du.silt.log > 0 && /silted/.test(du.silt.label), "Dunes: the sandstorm silted the harbour and the tide clock says so");
+      assert(du.drought.n > 0 && /Drought/.test(du.drought.label), "Dunes: the drought came and the tide clock says so");
+      assert(du.market.n > 0 && du.market.log > 0 && du.crowd > 0, "Dunes: the night market: the square crowds under the lanterns");
+      assert(du.stars === 1 && du.day.pelicans > 0, "Dunes: the clearest stars; pelicans on the piers");
     } else if (coast.id === "delta") {
       assert(founded.tide === 1 && founded.boat === "sampan" && founded.hat === "conical" && founded.house === "reed" && founded.palms === "mangrove", "the Delta's tide, sampans, conical hats, reed stilt houses and mangroves");
       const dl = await page.evaluate(async () => {

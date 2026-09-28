@@ -2,7 +2,7 @@
 import { ArcRotateCamera, Color4, DefaultRenderingPipeline, Engine, Matrix, Scene, Vector3 } from "@babylonjs/core";
 import { CameraControl } from "./build/cameraControl";
 import { Placement, Tool } from "./build/placement";
-import { LANES_ENABLED, SIM_TICK, SIZE, TIDE_PERIOD, TREMOR_SHAKE } from "./config";
+import { HAZE_FAR, HAZE_NEAR, HAZE_TINT, LANES_ENABLED, SIM_TICK, SIZE, TIDE_PERIOD, TREMOR_SHAKE } from "./config";
 import { BUILDINGS, STORM_WAVE_AMP, WAVE_WIDTH } from "./sim/balance";
 import { districtOf } from "./sim/districts";
 import { startStorm, startTsunami } from "./sim/events";
@@ -333,9 +333,20 @@ function handoverFrame(dt: number): void {
   syncView();
   scene.render();
 }
+let fogExtra = 0, haze = 0;
 function setIslandFog(extra: number): void {
-  terrain.material.setFloat("fogNear", FOG_NEAR + extra).setFloat("fogFar", FOG_FAR + extra);
-  water.material.setFloat("fogNear", FOG_NEAR + extra).setFloat("fogFar", FOG_FAR + extra);
+  fogExtra = extra;
+  applyIslandFog();
+}
+/** The island's fog distances: pushed back during the dive's hand-over, pulled in by a coast's haze (a sandstorm). */
+function applyIslandFog(): void {
+  const near = (FOG_NEAR + fogExtra) * (1 - HAZE_NEAR * haze), far = (FOG_FAR + fogExtra) * (1 - HAZE_FAR * haze);
+  terrain.material.setFloat("fogNear", near).setFloat("fogFar", far);
+  water.material.setFloat("fogNear", near).setFloat("fogFar", far);
+  // The pieces, trees and boats take the same haze through the scene fog, only while there is haze.
+  const mode = haze > 0 ? Scene.FOGMODE_LINEAR : Scene.FOGMODE_NONE;
+  if (scene.fogMode !== mode) scene.fogMode = mode;
+  scene.fogStart = near; scene.fogEnd = far;
 }
 /** The island's HUD fades in as the dive lands (it was hidden with the World up). */
 function arrive(): void {
@@ -559,14 +570,18 @@ function syncView(): void {
   const target = state.storm.active ? 1 : 0;
   stormMix += (target - stormMix) * Math.min(1, frameDt / 3);
   // A storm drags the light toward the study's dusk palette; the tsunami crest rides the water shader.
-  const light = computeLighting(Math.max(duskAt(state.time), stormMix * 0.95), dayFraction(state.time), { tint: look.sky.fogTint, mix: look.sky.fogMix });
+  const hazeNow = stormMix * (biomeFor(state).storm?.fog ?? 0);
+  if (Math.abs(hazeNow - haze) > 0.005 || (hazeNow === 0 && haze !== 0)) { haze = hazeNow; applyIslandFog(); }
+  const light = computeLighting(Math.max(duskAt(state.time), stormMix * 0.95), dayFraction(state.time), { tint: look.sky.fogTint, mix: look.sky.fogMix + (1 - look.sky.fogMix) * haze * HAZE_TINT });
   lastLight = light;
+  if (haze > 0) scene.fogColor.set(light.fog.x, light.fog.y, light.fog.z);
   lights.apply(light);
   terrain.setLighting(light);
   if (look.glow) terrain.setGlow(look.glow.amount * (0.3 + 0.7 * Math.min(1, light.lamp)));
   water.setLighting(light);
   sky.setLighting(light);
   sky.setAurora(look.sky.aurora * (1 - stormMix), viewTime);
+  sky.setStars((look.sky.stars ?? 0) * (1 - stormMix));
   // The reef's bleaching reaches the water shader once a cycle (it only changes at the settlement).
   if (landKeyOf(state) !== lastLandKey) { lastLandKey = landKeyOf(state); syncGround(); }
   if (state.tide.cycle !== lastBleachCycle) { lastBleachCycle = state.tide.cycle; if (look.lagoon.mix > 0 || bleachShown) { terrain.setBleach(look.lagoon.mix > 0 ? state.fields.bleach : null); bleachShown = look.lagoon.mix > 0; } }
@@ -746,6 +761,9 @@ const api = {
     dusk: () => duskAt(state.time),
     sky: () => ({ day: dayFraction(state.time), sun: { x: lastLight.skySun.x, y: lastLight.skySun.y, z: lastLight.skySun.z }, moon: lastLight.moon, night: lastLight.night, lit: { x: lastLight.sunDir.x, y: lastLight.sunDir.y, z: lastLight.sunDir.z } }),
     stormMix: () => stormMix,
+    /** A coast's storm haze this frame (the sandstorm), 0..1; the night market's crowd. */
+    haze: () => haze,
+    crowd: () => walkers.nightCrowd,
     drawCalls: () => scene.getActiveMeshes().length,
     audio: () => ({ started: audio.started, state: audio.state, muted: audio.muted, cries: audio.cries, hammers: audio.hammers, bells: audio.bells, horns: audio.horns, creaks: audio.creaks, chirps: audio.chirps, frogs: audio.frogs }),
     netFloats: () => ({ count: effects.netFloatCount, y: effects.netFloatY }),
@@ -760,7 +778,7 @@ const api = {
     /** Every fauna kit's live count (the coast's picks). */
     fauna: () => ({ gulls: wildlife.gullCount, crabs: wildlife.crabCount, seals: wildlife.sealCount, puffins: wildlife.puffinCount, whales: wildlife.whaleCount, turtles: wildlife.turtleCount, shoals: wildlife.shoalCount, ...fauna.counts } as Record<string, number>),
     /** What the view shows of the coast: the look in use, sea ice, the aurora, the hatching's dark lanterns, the bleached count. */
-    biome: () => ({ look: look.id, ice: iceMix, aurora: look.sky.aurora, hatching: hatching(state), lanterns: views.lanternCounts, bleached: state.biomeState.bleached ?? 0, palms: look.trees.kit, boat: look.boat, hat: look.walker.hat, house: look.house }),
+    biome: () => ({ look: look.id, ice: iceMix, aurora: look.sky.aurora, hatching: hatching(state), lanterns: views.lanternCounts, bleached: state.biomeState.bleached ?? 0, palms: look.trees.kit, boat: look.boat, hat: look.walker.hat, house: look.house, stars: look.sky.stars ?? 0 }),
     /** The mountain (the Cinder): steam puffs, ash flakes, the shiver, the lava's glow this frame. */
     mountain: () => ({ steam: effects.steamCount, ash: effects.ashCount, shake: effects.shake, glow: look.glow ? look.glow.amount : 0 }),
     ferry: () => ferry.pose,

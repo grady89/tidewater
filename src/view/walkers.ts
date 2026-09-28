@@ -14,6 +14,7 @@ import { BiomeLook, HatKit } from "./biomes";
 export const MAX_WALKERS = 200;
 const SPEED = 1.6; // cells per second
 const LOITERERS_PER_MARKET = 3;
+const NIGHT_MARKET_CROWD = 6;
 const COLORS = ["#c9674f", "#4c5a66", "#2f6f8f", "#79ad5e", "#f4d9c6", "#b9543f", "#5d6d7a", "#e6d3a1"];
 
 interface Walker {
@@ -329,8 +330,12 @@ export class Walkers {
     return spawned;
   }
 
+  /** Walkers in the night market's crowd (the Dunes), for checks. */
+  nightCrowd = 0;
+
   private refreshLoiterers(state: SimState): void {
     this.loiterers = [];
+    this.nightCrowd = 0;
     for (const b of Object.values(state.buildings)) {
       const is = b.cells.map(c => c.i), js = b.cells.map(c => c.j);
       const cx = (Math.min(...is) + Math.max(...is) + 1) / 2, cz = (Math.min(...js) + Math.max(...js) + 1) / 2;
@@ -338,6 +343,11 @@ export class Walkers {
         for (let k = 0; k < LOITERERS_PER_MARKET; k++) {
           this.loiterers.push({ centre: new Vector3(cx, b.floorY, cz), seed: b.id * 7 + k, color: Color4.FromHexString(this.palette[(b.id + k) % this.palette.length]), scale: 1 });
         }
+      }
+      // The night market (the Dunes): the square and the tavern crowd for the night.
+      if ((b.kind === "marketSquare" || b.kind === "tavern") && b.reached && (state.biomeState.nightMarket ?? -9) === state.tide.cycle) {
+        this.nightCrowd += NIGHT_MARKET_CROWD;
+        for (let k = 0; k < NIGHT_MARKET_CROWD; k++) this.loiterers.push({ centre: new Vector3(cx, b.floorY, cz), seed: b.id * 13 + k + 5, color: Color4.FromHexString(this.palette[(b.id + k + 1) % this.palette.length]), scale: 1 });
       }
       // Kids play around homes that have grown.
       if (BUILDINGS[b.kind].residents > 0 && b.level >= 2 && b.residents > 0 && b.reached) {

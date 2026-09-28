@@ -8,6 +8,7 @@ import { ATOLL_LOOK } from "./atoll";
 import { FJORD_LOOK } from "./fjord";
 import { DELTA_LOOK } from "./delta";
 import { CINDER_LOOK } from "./cinder";
+import { DUNES_LOOK } from "./dunes";
 
 export type BoatKit = "dory" | "longboat" | "outrigger" | "sampan" | "dugout" | "dhow";
 export type HatKit = "straw" | "knit" | "hood" | "conical" | "bandana" | "wrap";
@@ -29,7 +30,7 @@ export interface BiomeLook {
   /** The water over lagoon cells is pulled toward this colour by `mix`. */
   lagoon: { tint: string; mix: number };
   /** Sky: the fog and horizon are pulled toward `fogTint` by `fogMix`; `aurora` 0..1 draws the curtains at night. */
-  sky: { fogTint: string; fogMix: number; aurora: number };
+  sky: { fogTint: string; fogMix: number; aurora: number; stars?: number };
   walls: readonly string[];
   roofs: readonly string[];
   /** Doors and shutters; trim on the hut kits. */
@@ -81,6 +82,7 @@ registerLook(FJORD_LOOK);
 registerLook(ATOLL_LOOK);
 registerLook(DELTA_LOOK);
 registerLook(CINDER_LOOK);
+registerLook(DUNES_LOOK);
 
 /** The look for a biome id; Tidewater's for anything not registered. */
 export function lookOf(id: BiomeId): BiomeLook {

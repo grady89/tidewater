@@ -14,6 +14,10 @@ export const TIDE_PERIOD = 120;
 export const SIM_TICK = 1 / 20;
 /** How far the view shivers while the Cinder's mountain trembles (screen offset, world units at the target). */
 export const TREMOR_SHAKE = 0.05;
+/** A coast's storm haze (the sandstorm's `fog`) at full: how far it pulls the fog's near and far edges in, how far it tints toward the sand. */
+export const HAZE_NEAR = 0.6;
+export const HAZE_FAR = 0.45;
+export const HAZE_TINT = 0.8;
 
 /** Water above this is "high water" (boats sail, high-water producers run); below LOW is "low water". Between is slack. */
 export const HIGH_WATER_MARK = 0.25;

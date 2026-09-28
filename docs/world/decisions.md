@@ -105,3 +105,9 @@ wins and is noted). Numbered as they came up; the code cites them.
 22. **Timberless coasts and the harbor:** the Atoll, the Delta, the Cinder and the Dunes make no planks, and the
     harbor costs 60. Until Stage 4 lanes bring planks the company's visit waits on the old plank order (which needs
     the harbor it pays for); Stage 5 decides.
+23. **The Dunes' view:** `stars` on the look's sky drives a new sky uniform (`starField`: a second, denser, fainter
+    layer of stars, additive; 0 elsewhere). The sandstorm's `fog` (0.75) is the haze: the terrain and water fog pull
+    in (near ×0.4, far ×0.55 at full) and tint toward the sand, and the scene fog carries the same haze to the
+    pieces, trees and boats only while it blows (so nothing floats clear of a hazed ground). The night market
+    crowds the square and the tavern with six walkers each for the night. The island's outline is a superellipse
+    with a ragged edge (the first cut was a hard box).

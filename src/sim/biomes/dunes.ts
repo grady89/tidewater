@@ -23,7 +23,7 @@ import type { Grid } from "../grid";
 import { Biome, registerBiome } from "./registry";
 
 const MAIN_BACK = -27, LAGOON_FROM = 1, LAGOON_TO = 8, BARS = [11, 16, 20.5], BAR_HALF = 1.9, SEA_EDGE = 24;
-const HEADLAND = { x: 19, z: -9, r: 7.5, h: 3.4 };
+const HEADLAND = { x: 19, z: -9, r: 7, h: 4.6 };
 
 function smooth(a: number, b: number, x: number): number {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -75,8 +75,10 @@ export function dunesHeight(seed: number): HeightFn {
     if (hd < 1) h = Math.max(h, (HEADLAND.h + n) * (1 - smooth(0.2, 1, hd)));
     // The oases: shallow hollows with water at the bottom.
     for (const o of oases) { const d = Math.max(Math.abs(x - o.x), Math.abs(z - o.z)); if (d < 3.4) h = h + (0.72 - h) * (1 - smooth(1.8, 3.4, d)); }
-    // The island's outline: sea past the bars and round the ends.
-    const edge = Math.max(smooth(SEA_EDGE, SEA_EDGE + 4, z), smooth(MAIN_BACK + 4, MAIN_BACK, z), smooth(24, 28.5, Math.abs(x)));
+    // The island's outline: a rounded box (a superellipse) with a ragged edge; sea past the bars and round the ends.
+    const zc = (MAIN_BACK + SEA_EDGE) / 2, az = (SEA_EDGE - MAIN_BACK) / 2 + 2;
+    const round = Math.pow(Math.pow(Math.abs(x) / 27, 4) + Math.pow(Math.abs(z - zc) / az, 4), 0.25) + 0.1 * (fbm(x * 0.7 - 11, z * 0.7 + 5, 3, 1 / 6) - 0.5);
+    const edge = smooth(0.86, 1.0, round);
     h = h * (1 - edge) - 4 * edge;
     h += detail;
     const w = isleWeight(x, z);

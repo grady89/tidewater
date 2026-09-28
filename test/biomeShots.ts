@@ -13,6 +13,7 @@ const BIOMES: { id: "tidewater" | "fjord" | "atoll" | "delta" | "cinder" | "dune
   { id: "atoll", face: 6, seed: 2 },
   { id: "delta", face: 2, seed: 2 },
   { id: "cinder", face: 7, seed: 2 },
+  { id: "dunes", face: 3, seed: 2 },
 ];
 
 async function waitReady(page: Page): Promise<void> {

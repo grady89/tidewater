@@ -5,7 +5,7 @@ whenever unsure: re-read CLAUDE.md, BIOMES.md and this file, then continue from 
 DONE. Update after every step. Build + test + smoke green before every commit; commit per step; push `world`
 after each stage; never push `main`. Calls BIOMES.md leaves open go in `docs/world/decisions.md`.
 
-Last thing that worked: 3a — the Dunes' ledger (bars, lagoon, tidal flats, dunes, headland, oases; five kinds; sandstorm silt and the dredger; drought; the night market); 164 unit tests, smoke green.
+Last thing that worked: 3b — the Dunes' view (look, cube houses and domes, the kinds' meshes, the clearest stars, the sandstorm haze, the night market's crowd); smoke green. Stage 3 pushed.
 
 ## Stages
 
@@ -18,7 +18,7 @@ Last thing that worked: 3a — the Dunes' ledger (bars, lagoon, tidal flats, dun
 | 2a | Cinder, sim (§3.5): shaper (cone, radial ridges, black flats, lava band, fertile band, vents, springs), taro / cocoa terraces, glassworks, sulfur works, hot-spring bathhouse, basalt sea walls, the eruption (tremors, ash, lava flow, new land cooling three cycles), a tsunami queued for the neighbours; validation; tests | DONE | decisions #15–#17; the wave goes to `state.outbox` for the World event bus (4d) |
 | 2b | Cinder, view: look, dugouts, flat-roofed basalt houses, bandanas, iguanas / boobies / glowing plankton, lava glow, tremor shake and steam, ash, rumble / hiss; the kinds' meshes; smoke; shots | DONE | the glow is one additive term on a material code (uniforms only); the material code is read from the nearest texel, so a blend of two codes is no third material (it drew seams on every coast) |
 | 3a | Dunes, sim (§3.6): shaper (sandbars, lagoon, dunes, headland, oases), date grove, coffee terrace, sponge divers' hut, Great Cistern, dredger, wells cover 3, sandstorm (no rain, fire up, harbor silts), drought, night market; validation; tests | DONE | decisions #19–#22; the oases are dry plates, not tidal hollows; the salt pan is shared with the Delta |
-| 3b | Dunes, view: look, dhows, domed cube houses, head wraps, pelicans / dolphins / ghost crabs, sandstorm haze, the clearest stars, dry wind and sand; meshes; smoke; shots | TODO | |
+| 3b | Dunes, view: look, dhows, domed cube houses, head wraps, pelicans / dolphins / ghost crabs, sandstorm haze, the clearest stars, dry wind and sand; meshes; smoke; shots | DONE | the haze reaches the pieces through the scene fog while it blows; the island's outline is a ragged rounded box |
 | 4a | World ledger: the world clock (idle World settles every built sea once per TIDE_PERIOD; in a sea, at the active peaks), the World record, order-independent settlement; test that two orderings give one hash | TODO | |
 | 4b | Routing: consignments on shortest lane paths, a hop a cycle, lane throughput = cargo ships × CARGO_HOLD, hub caps, cargo ships from the shipyard (planks + iron) | TODO | |
 | 4c | People: migration from unhappy or full seas to connected seas with room, on a cargo ship | TODO | |
@@ -43,3 +43,4 @@ Last thing that worked: 3a — the Dunes' ledger (bars, lagoon, tidal flats, dun
 - 2a: Cinder ledger; 157 unit tests, smoke green (131 s)
 - 2b: Cinder view; the first smoke failed (terraces unreached: a steep join), placeJoined now tries the next nearest street; green
 - 3a: Dunes ledger; 164 unit tests, smoke green
+- 3b: Dunes view; smoke green (153 s)
