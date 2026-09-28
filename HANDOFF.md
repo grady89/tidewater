@@ -107,8 +107,8 @@ screenOf, migrated, setClock, clock, setNotice, scene).
 What it is: the game opens on a dodecahedron of twelve seas floating in the island's own sky; each face is a
 sea, a built one shows a miniature of its town's real island, and diving into one is a camera flight that hands
 over to the resident island scene at the same framing. Read docs/globe/direction.md → experience.md → hero.md
-→ motion.md for the design, decisions.md for what the brief left open (15 items), review.md for what the
-frame-by-frame pass found and fixed, audit.md for the launch checklist, PROGRESS.md for the ledger.
+→ motion.md for the design, decisions.md for what the briefs left open (24 items), review.md for what the
+frame-by-frame pass found and fixed (and "Polish two"), audit.md for the launch checklist, PROGRESS.md for the ledger.
 
 How it is built (ARCHITECTURE.md "The World" has the detail): a second Babylon `Scene` on the one engine;
 `main.ts` owns `mode`, hides the island's DOM with `body[data-mode]`, and skips the island's loop/tick/autosave
@@ -123,8 +123,16 @@ What to know:
   listed "uncharted" and disabled. `BAND_GATING` (config.ts, off) confines each coast to its band when on.
 - **Escape at the island's top level returns to the World** (it used to open the Town menu; the speed bar's
   Town… still does, and the menu has the World button). Every dialog is in-page (`ui/dialog.ts`).
-- **The sun follows the player's clock** (06:00 dawn, 12:00 noon, 18:00 sunset); the World has a moonlit floor
-  at night. `world.setClock(hours)` pins it for shots.
+- **Polish two (2026-09-28)**: the globe stands on a dusk stage (a vertex-coloured dome: navy above, indigo at
+  the globe's height, a lavender glow behind it, instanced stars) inside a fresnel atmosphere shell that carries
+  15–20 small white clouds in two bands; a cloud over the hovered or selected face thins to 20 %. Each face is
+  lit by its own sun (the island's, in its frame); a fixed stage light puts a gentle terminator (62 % floor) on
+  the far limb. Miniatures lift their colour bands (`coastLift`) so a sand band shows at any tide. An empty
+  face's card previews its seed's island; the hover lift is 5 units. docs/globe/review.md "Polish two" and
+  decisions #18–24 have the why; shots/globe/ has the frames (world-hover-preview.png is new).
+- **The light's colour follows the player's clock** (06:00 dawn, 12:00 noon, 18:00 sunset), and the World has a
+  moonlit floor at night; the light's direction is fixed on the stage since polish two. `world.setClock(hours)`
+  pins it for shots.
 - **Touch is untested** beyond Babylon's own pinch/drag inputs and the click path (first tap opens the card,
   second dives). **Integrated graphics unmeasured** for the World as for the island.
 - The first-launch quality probe now measures the World (that is what a first launch shows); its verdict

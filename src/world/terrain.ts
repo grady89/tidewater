@@ -12,7 +12,7 @@ import { FOG_FAR, FOG_NEAR } from "./water";
 
 /** Every uniform the terrain shader takes (the World builds its own materials from the same list). */
 export const TERRAIN_UNIFORMS = ["world", "worldViewProjection", "sunDir", "sunColor", "skyAmb", "groundAmb", "fogColor", "camPos", "waterLevel", "wetLevel", "clipY", "frame", "fogNear", "fogFar",
-  "sandDeep", "sand", "grassLo", "grassHi", "rock", "snowLine", "snowColor", "matTints", "matMix", "tideScale"];
+  "sandDeep", "sand", "grassLo", "grassHi", "rock", "snowLine", "snowColor", "matTints", "matMix", "tideScale", "coastLift"];
 export const TERRAIN_SAMPLERS = ["heightTex"];
 
 /** The biome's look on a terrain material: the band colours, the snow line, the material tints, the tide scale. */
@@ -20,7 +20,7 @@ export function applyTerrainLook(material: ShaderMaterial, look: BiomeLook, tide
   const c = (h: string) => { const k = Color3.FromHexString(h); return new Vector3(k.r, k.g, k.b); };
   const t = look.terrain;
   material.setVector3("sandDeep", c(t.sandDeep)).setVector3("sand", c(t.sand)).setVector3("grassLo", c(t.grassLo)).setVector3("grassHi", c(t.grassHi)).setVector3("rock", c(t.rock))
-    .setFloat("snowLine", t.snowLine).setVector3("snowColor", c(t.snow)).setFloat("tideScale", tideScale);
+    .setFloat("snowLine", t.snowLine).setVector3("snowColor", c(t.snow)).setFloat("tideScale", tideScale).setFloat("coastLift", 0);
   const tints: number[] = [], mixes: number[] = [];
   for (const m of MATERIALS) {
     const tint = look.materialTints[m as keyof BiomeLook["materialTints"]];

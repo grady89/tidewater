@@ -278,6 +278,7 @@ const worldUi = new WorldUi(worldRoot, {
     if (json && m) download(`tinytides-${m.name.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.json`, json);
   },
   importFile: (file, face) => { void importSectorFile(file, face); },
+  preview: (face, seed, biome) => world.setPreview(face, seed, biome),
   defaultName: () => defaultName(store),
 });
 /** The framing the island shows first: the town's centroid at frameTown's distance (docs/globe/hero.md). */
@@ -804,6 +805,69 @@ const api = {
     setReducedMotion: (on: boolean | null) => { reducedOverride = on; },
     /** Faces that show a miniature, with how many roof instances each carries. */
     miniatures: () => world.faces.map(f => ({ face: f.face.index, built: !!f.record, roofs: f.roofs.reduce((n, m) => n + m.thinInstanceCount, 0), level: f.water.position.y })),
+    /** The seed preview on an empty face's card: which face, seed and coast, and whether its ground is up. */
+    preview: () => { const p = world.previewing; return p ? { ...p, ground: !!world.faces[p.face].terrain, surfaced: world.faces[p.face].surfaced } : null; },
+    /** Each face's terminator shade (1 lit, down to the floor turned away) and hover lift. */
+    faceLight: () => world.faceLight,
+    /** The stage as rendered: the mean colour of a strip along the top and of one beside the globe at its height (0–255), and the stars. */
+    async stage() {
+      const W = engine.getRenderWidth(), H = engine.getRenderHeight();
+      const read = (x: number, y: number, w: number, h: number) => new Promise<number[]>(res => world.scene.onAfterRenderObservable.addOnce(() => { void engine.readPixels(Math.round(x * W), Math.round(H - (y + h) * H), Math.round(w * W), Math.round(h * H)).then(px => { const a = px as Uint8Array; const s = [0, 0, 0]; for (let i = 0; i < a.length; i += 4) { s[0] += a[i]; s[1] += a[i + 1]; s[2] += a[i + 2]; } const n = a.length / 4; res(s.map(v => Math.round(v / n))); }); }));
+      const top = await read(0.3, 0.02, 0.4, 0.04);
+      const side = await read(0.02, 0.47, 0.1, 0.06);
+      return { top, side, stars: world.starCount };
+    },
+    /** The clouds over a face: how many, the most opaque of them and of the rest, their mean radius. */
+    clouds: (face: number) => world.cloudProbe(face),
+    /**
+     * The coast of a face's miniature as rendered. Pixels around the face's centre are classed sea (water, foam, or
+     * flats seen through the water: sand hues darker than 0.68), sand (sand hues, lit and dry), green; then every
+     * row and column is walked for runs of sand with sea on one side and green on the other. Returns how many such
+     * runs there are and their median width in CSS pixels — the sand band between the foam and the green.
+     */
+    async coast(face: number, halfPx = 120) {
+      const c = api.world.screenOf(face);
+      const k = engine.getHardwareScalingLevel();
+      const r = canvas.getBoundingClientRect();
+      const W = engine.getRenderWidth(), H = engine.getRenderHeight();
+      const half = Math.round(halfPx / k);
+      const cx = Math.round((c.x - r.left) / k), cy = Math.round((c.y - r.top) / k);
+      const x0 = Math.max(0, cx - half), x1 = Math.min(W, cx + half), yTop = Math.max(0, cy - half), yBot = Math.min(H, cy + half);
+      const w = x1 - x0, h = yBot - yTop;
+      const px = await new Promise<ArrayBufferView>(res => world.scene.onAfterRenderObservable.addOnce(() => { void engine.readPixels(x0, H - yBot, w, h).then(res); }));
+      const a = px as Uint8Array;
+      const SEA = 1, SAND = 2, GREEN = 3;
+      const cls = new Uint8Array(w * h);
+      let sand = 0, green = 0, sea = 0;
+      for (let i = 0; i < w * h; i++) {
+        const R = a[i * 4] / 255, G = a[i * 4 + 1] / 255, B = a[i * 4 + 2] / 255;
+        const mx = Math.max(R, G, B), mn = Math.min(R, G, B), v = mx, s = mx > 0 ? (mx - mn) / mx : 0;
+        let hue = 0;
+        if (mx > mn) { if (mx === R) hue = 60 * (((G - B) / (mx - mn)) % 6); else if (mx === G) hue = 60 * ((B - R) / (mx - mn) + 2); else hue = 60 * ((R - G) / (mx - mn) + 4); }
+        if (hue < 0) hue += 360;
+        const sandHue = hue >= 20 && hue <= 62 && s >= 0.12;
+        const cl = sandHue && v >= 0.68 && s <= 0.55 ? SAND : sandHue ? SEA : hue > 65 && hue < 165 && s > 0.15 && v > 0.2 ? GREEN : (s < 0.12 && v > 0.75) || (hue >= 170 && hue <= 240 && s > 0.12) ? SEA : 0;
+        cls[i] = cl;
+        if (cl === SAND) sand++; else if (cl === GREEN) green++; else if (cl === SEA) sea++;
+      }
+      // Runs of sand along rows and columns, bounded by sea on one side and green on the other.
+      const widths: number[] = [];
+      const walk = (len: number, at: (t: number) => number) => {
+        let t = 0;
+        while (t < len) {
+          if (at(t) !== SAND) { t++; continue; }
+          const from = t;
+          while (t < len && at(t) === SAND) t++;
+          const before = from > 0 ? at(from - 1) : 0, after = t < len ? at(t) : 0;
+          if ((before === SEA && after === GREEN) || (before === GREEN && after === SEA)) widths.push((t - from) * k);
+        }
+      };
+      for (let y = 0; y < h; y++) walk(w, x => cls[y * w + x]);
+      for (let x = 0; x < w; x++) walk(h, y => cls[y * w + x]);
+      widths.sort((p, q) => p - q);
+      const median = widths.length ? widths[Math.floor(widths.length / 2)] : 0;
+      return { sand, green, sea, runs: widths.length, median, box: [x0, yTop, w, h] };
+    },
     lookAt: (face: number) => world.lookAt(face, true),
     hoverFace: (face: number | null) => { world.setHover(face); if (face !== null) worldUi.showCard(face, faceMeta(face)); },
     migrated: () => migrated.map(m => m.name),

@@ -9,8 +9,8 @@ the future sea-lane gate — so a neighbour reads as a place a boat could cross 
 triangles at the island's own water density, ~5,900 vertices) in the face's own frame (y up = face normal),
 carrying the island's water ShaderMaterial with per-face uniforms: `frame` (inverse of the face's world
 matrix), its own 128² heightmap, `waterLevel` as the mesh's offset along the normal, `fogNear/fogFar` (300/700
-built, 250/430 uncharted), and the lighting set (the per-face `skyColor`/`sunColor` are dimmed by how far the
-face turns from the sun, down to a 55 % shade floor, which is what makes the night side).
+built, 250/430 uncharted, towards the atmosphere's blue), and the lighting set: the face's own sun (the island's,
+in the face's frame) and `skyColor`/`sunColor` dimmed by the terminator (decisions #18–19).
 
 **Miniature.** For a built face, the sector's island: `island(seed).height` sampled on 2-unit cells across the
 whole pentagon (landfill cells raised to `LANDFILL_HEIGHT`; beyond the island's 64-unit square the heights
@@ -20,11 +20,13 @@ thin-instanced roof primitives per face (pyramid / gable / hipped, 1.2 units wid
 centre and floor) coloured from the real SimState. An empty face: the ocean alone, half fog at the front,
 caustics off — the uncharted wash.
 
-**Clouds.** Thin instances of one 5-sphere blob (sail colour, flat-shaded), 40 on High / 24 on Medium / 8 on
+**Clouds** (as first built; polish two replaced them — decisions #23: 15–20 small white clouds in two bands on the
+atmosphere shell, thinning over the hovered or selected face). Thin instances of one 5-sphere blob (sail colour, flat-shaded), 40 on High / 24 on Medium / 8 on
 Low, on random orbits 18–30 units above the faces, drifting 0.02 rad/s, each with its own tilt so they cross
 faces instead of ringing the equator.
 
-**Night side.** One sun by the real clock; faces whose normal faces away from it get the shaders' ambient only
+**Night side** (as first built; polish two fixed the light on the stage and gave each face its own sun — decisions
+#18–20). One sun by the real clock; faces whose normal faces away from it get the shaders' ambient only
 and darker per-face sky/sun uniforms; the sky shows moon and stars when the clock says night.
 
 **Camera and spin.** The camera sits still on the globe's centre (radius 340, zoom 230–420 by wheel and
@@ -43,8 +45,8 @@ easeOutCubic, while the fog pulls back from (20/60) to each face's band. 0.4–2
 last); at each surfacing a ring of foam (the water's own foam band, driven by the terrain rising) marks it.
 Then the card fades in. Reduced motion: everything at its final value on the first frame, card after 200 ms.
 
-**Hover.** The face's group rises 2 units along its normal over 180 ms (easeOutCubic) and its `sunColor` gains
-20 %; the edges around it brighten. Leaving reverses over 240 ms.
+**Hover.** The face's group rises 5 units (2 as first built) along its normal over 180 ms (easeOutCubic) and its `sunColor` gains
+25 %; the edges around it brighten. Leaving reverses over 240 ms.
 
 **Dive.** 1) `adopt(sector.state)` in the resident island scene (silent, off-screen). 2) The World camera
 detaches from its orbit and flies (1.4 s, easeInOutCubic) to the pose that equals the island's `frameTown`

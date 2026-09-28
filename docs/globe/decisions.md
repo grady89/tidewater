@@ -51,3 +51,32 @@ One line each, in the order they were made. The reasoning is "most consistent wi
 17. **Selection ring.** The face whose card is open wears five lantern-lit rails just inside its outline (a
     merged flat mesh per face, one shown at a time), because the hover lift alone did not say which sea a click
     would dive into.
+18. **Each face is lit by its own sun** (polish two): the island's sun by the clock, expressed in the face's frame,
+    for its water and its miniature — so every sea reads as its island does from any side of the globe, and the
+    dive's cut lands on matching light. Before, one world sun lit every face, and at 11:00 it stood behind the
+    globe: the faces in view were backlit and their islands nearly black.
+19. **The stage light is fixed** (upper left, a little in front) and only drives the terminator: a face turned from
+    it keeps 62 % of its light (the brief's "gentle"), eased over facing −0.35 … 0.3. The clock keeps the
+    light's colour and the moonlit night, not its direction (replacing that half of #4): the night side now sits
+    on the far limb and the faces pass through it as the globe turns.
+20. **The stage is a vertex-coloured dome**, not the sky shader: the sky's gradient is pow(height, 0.4) clamped at
+    its horizon, so a horizon at the globe's height drew a crease across the frame, and its stars are cells a
+    few pixels square at the World's field of view. The dome's gradient and glow are computed per vertex in code
+    (navy #0e1633 at the top, indigo #33295a at the globe's height, #221c40 below, a #7d6fb0 glow behind the
+    globe); the stars are 420 thin-instanced octahedra (~2 px), none below the globe's height. The island's sky
+    shader is untouched; the World no longer uses it.
+21. **The atmosphere** is a sphere at the solid's circumradius + 5 with Babylon's opacity and emissive fresnel.
+    Babylon's term is pow(bias + |N·V|, power) — 1 facing the camera — and the opacity term is *added* to the
+    material's alpha, so that alpha stays ~0 (at 1 the shell was opaque). It fades with the clouds on a flight.
+22. **The miniature's coast**: a terrain uniform `coastLift` (0 = the island, which renders as before) lifts the
+    band mapping so dry sand runs 0.45 above the miniature's water line at any tide, then grass, then rock, in the
+    look's own hexes. Measured with `api.world.coast`: a median band of 4 CSS px on the smoke's seed-0 sea (101 bounded runs), 4.7 px on a Tidewater face at high tide and 3.3 px on an Atoll face in the browser pane, and at least 4 px on seed 0 at every tide from −0.35 to 0.85.
+23. **Clouds**: 18 on High and Medium, 15 on Low (one draw call either way; the brief asks 15–20), a third of the
+    old size, #f4f2ec over a #d9dbe0 underside (by facet normal), in two drifting bands (latitude +24° tilted
+    about x, −20° about z) on the atmosphere shell. A cloud over the hovered or selected face thins to 20 %
+    through its per-instance colour alpha, over about a tenth of a second.
+24. **"Seed preview and hover lift from the previous polish list"**: no earlier list exists in the repo or the
+    transcripts, so read at face value. The seed preview: an empty face's new-sea card shows its seed's island
+    on the face (roofless, water at mean sea level, surfacing over 0.5 s), following the seed field with a
+    150 ms debounce, Random and the coast buttons; founding the sea replaces it with the real miniature. The
+    hover lift: 5 units and +25 % light (review.md had noted 2 units barely read at the orbit).
