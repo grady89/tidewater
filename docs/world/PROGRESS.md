@@ -1,11 +1,11 @@
-# The connected World — progress ledger (branch `world`)
+DONE | `LANES_ENABLED = true` in config.ts, the flag kept (settleWorld is a no-op without it) |DONE | globe/lanes.ts (dashes through the edge gates, cargo ships, storm knots), the in-sea cargo ship, the ledger line, the card rows, the Trade panel — #30 |DONE | #29; money stays per sea (#26) |DONE | World storms (born, drift, seen a cycle early); eruption waves to built neighbours; `pending` for stored seas, applied on entry — #28 |DONE | #27 |DONE | consignments on shortest lane paths, a hop a settlement, split to the lane's hold and a hub's warehouse room; cargo ships from the shipyard — #25 |DONE | `tidewater.world`; the World clock in main (idle: every TIDE_PERIOD of wall time; in a sea: at its peaks, before the autosave); orderings tested (unit + fuzzer) — decision #24 |# The connected World — progress ledger (branch `world`)
 
 The truth for the overnight build. Statuses: TODO / IN PROGRESS / DONE / BLOCKED. After any compaction, or
 whenever unsure: re-read CLAUDE.md, BIOMES.md and this file, then continue from the first item that is not
 DONE. Update after every step. Build + test + smoke green before every commit; commit per step; push `world`
 after each stage; never push `main`. Calls BIOMES.md leaves open go in `docs/world/decisions.md`.
 
-Last thing that worked: 3b — the Dunes' view (look, cube houses and domes, the kinds' meshes, the clearest stars, the sandstorm haze, the night market's crowd); smoke green. Stage 3 pushed.
+Last thing that worked: Stage 4 — the sea lanes and the World ledger (routing, hubs, migration, storms, eruption waves, the company route, the World's view, the flag on); 173 unit tests, the World fuzz mode, smoke green (160 s). Stage 4 pushed.
 
 ## Stages
 
@@ -26,7 +26,7 @@ Last thing that worked: 3b — the Dunes' view (look, cube houses and domes, the
 | 4e | The Trade Company sails the lanes: one route per connected component, one harbor a cycle, the price slide persisting, the favourite-coast premium; unconnected seas keep the standalone visit | TODO | |
 | 4f | View: lanes on the World, cargo ships travelling them, the storm knot; in a sea a cargo ship from the deep edge and a ledger line "from <sea>: …"; the card's connections, imports and exports; a World Trade panel | TODO | |
 | 4g | LANES_ENABLED = true (flag kept) | TODO | |
-| 4h | Tests (multi-hop + hub limit, migration, storm drift, eruption across faces, company route, idle World), smoke (adjacent harbors trade within three cycles, the lane and a ship on the World, an eruption warns its neighbour), fuzzer World mode (goods conserved across a hop, no negative stock, hash-stable ordering) | TODO | |
+| 4h | Tests (multi-hop + hub limit, migration, storm drift, eruption across faces, company route, idle World), smoke (adjacent harbors trade within three cycles, the lane and a ship on the World, an eruption warns its neighbour), fuzzer World mode (goods conserved across a hop, no negative stock, hash-stable ordering) | DONE | test/lanes.test.ts (15), fuzz.test.ts World run (two orderings, one hash), fuzzWorker plays a three-sea World on every seventh seed; the smoke's lanes section |
 | 5 | Balance: each new coast's starter positive in 4 cycles, level 2 ~8, level 3 ~15 with a company purchase; two connected seas reach level 3 without purchases by ~20; a hub without a warehouse throttles; NOTES.md | TODO | |
 | 6 | Review and audit: each new coast beside Tidewater at noon and dusk (biomeShots.ts), cohesion audit, the World with four seas, two lanes and a ship; fixes; monkey 5 min from the World with lanes on | TODO | |
 | 7 | Docs: ARCHITECTURE.md, HANDOFF.md (World section), BIOMES.md deviations, NOTES.md, this file | TODO | |
@@ -44,3 +44,4 @@ Last thing that worked: 3b — the Dunes' view (look, cube houses and domes, the
 - 2b: Cinder view; the first smoke failed (terraces unreached: a steep join), placeJoined now tries the next nearest street; green
 - 3a: Dunes ledger; 164 unit tests, smoke green
 - 3b: Dunes view; smoke green (153 s)
+- 4: sea lanes; the first smokes failed on the card (it showed the wrong face) and on a ship hidden under the miniature's water; green

@@ -23,6 +23,7 @@ import { applyWaterLook, WATER_UNIFORMS } from "../world/water";
 import { lookOf, TIDEWATER_LOOK } from "../view/biomes";
 import { clampToPentagon, EDGE, EDGES, Face, FACE_CIRCUMRADIUS, FACES, faceToward, insidePentagon, pentagonDisc, SOLID_CIRCUMRADIUS, toLocal, V3 } from "./geometry";
 import { MINI_CELLS, miniatureHeights, roofPlacements } from "./miniature";
+import { LaneShip, LaneStorm, LaneView } from "./lanes";
 
 // ---------- tuning (docs/globe/motion.md) ----------
 const CAM_RADIUS = 340, CAM_MIN = 230, CAM_MAX = 420;
@@ -156,6 +157,10 @@ export class World {
   private cloudCount = CLOUD_COUNT.high;
   /** The thirty edge rails with their sea-lane gates, one merged mesh. */
   readonly edges: Mesh;
+  /** The sea lanes, their cargo ships and the storms crossing the World (globe/lanes.ts). */
+  readonly lanes: LaneView;
+  /** How far through the World's cycle the ships are (0..1), set by main. */
+  laneClock = 0;
   hover: number | null = null;
   private selected: number | null = null;
   private lastInput = 0;
@@ -219,6 +224,7 @@ export class World {
     this.ringMat.emissiveColor = Color3.FromHexString("#ffb859").scale(0.45);
     for (const face of FACES) this.faces.push(this.buildFace(face));
     this.edges = this.buildEdges();
+    this.lanes = new LaneView(scene, this.root);
     this.atmosphere = this.buildAtmosphere();
     this.stars = this.buildStars();
     this.cloudMesh = this.buildClouds();
@@ -1017,7 +1023,13 @@ export class World {
       }
     }
     this.syncClouds(dt);
+    this.lanes.update(this.laneClock, this.time);
     this.scene.render();
+  }
+
+  /** The lanes to draw, the legs with cargo at sea, the storms crossing the World. */
+  setLanes(lanes: [number, number][], legs: LaneShip[], storms: LaneStorm[]): void {
+    this.lanes.set(lanes, legs, storms);
   }
 
   /** For the audit: the current lighting. */

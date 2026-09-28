@@ -22,6 +22,9 @@ import { Building, buildingList, Cell, SimState } from "../src/sim/state";
 import { tick } from "../src/sim/tick";
 import { companyCarries, orderGood } from "../src/sim/trade";
 import { jobsAt } from "../src/sim/workers";
+import { neighboursOf, readLedger, settleWorldNow, WorldLedger, WorldSettlement } from "../src/sim/lanes";
+import { readSector, Store, writeSector } from "../src/sim/sectors";
+import { placeHarbor, starterTown } from "./scenario";
 
 export interface Failure {
   seed: number;
@@ -316,4 +319,105 @@ export function runSeed(seed: number, cycles: number, onProgress?: (cycle: numbe
     auditMoney(null);
   }
   return { seed, cycles: state.tide.cycle, actions, placed, failures, hash: stateHash(state), negativeMoneyCycles, ms: performance.now() - t0, biome };
+}
+
+// ---------- the World: three seas and their lanes ----------
+
+class MemStore implements Store {
+  readonly map = new Map<string, string>();
+  getItem(k: string) { return this.map.has(k) ? this.map.get(k)! : null; }
+  setItem(k: string, v: string) { this.map.set(k, v); }
+  removeItem(k: string) { this.map.delete(k); }
+}
+
+/** The World's own invariants after a settlement: every sea's stocks finite and not negative; every consignment on a
+ *  real lane path with whole, positive units; the flow conserved (in transit before + loaded = landed + returned +
+ *  dropped + in transit after, good by good); the ledger a plain JSON round trip. */
+export function checkWorld(store: Store, states: Map<number, SimState>, before: Map<string, number>, out: WorldSettlement): string[] {
+  const bad: string[] = [];
+  for (const [f, s] of states) for (const g of GOODS) if (!Number.isFinite(s.resources[g]) || s.resources[g] < -1e-9) bad.push(`sea ${f} stock ${g} = ${s.resources[g]}`);
+  const L = readLedger(store);
+  for (const c of L.consignments) {
+    if (!(c.units >= 1) || !Number.isFinite(c.units)) bad.push(`consignment #${c.id} units ${c.units}`);
+    if (c.at < 0 || c.at >= c.path.length - 1) bad.push(`consignment #${c.id} at ${c.at} of ${c.path.length}`);
+    for (let k = 0; k + 1 < c.path.length; k++) if (!neighboursOf(c.path[k]).includes(c.path[k + 1])) bad.push(`consignment #${c.id} path ${c.path.join(">")} jumps`);
+  }
+  const after = inTransit(L);
+  const keys = new Set([...before.keys(), ...after.keys(), ...Object.keys(out.flow.loaded), ...Object.keys(out.flow.landed), ...Object.keys(out.flow.returned), ...Object.keys(out.flow.dropped)]);
+  for (const k of keys) {
+    const lhs = (before.get(k) ?? 0) + (out.flow.loaded[k] ?? 0);
+    const rhs = (out.flow.landed[k] ?? 0) + (out.flow.returned[k] ?? 0) + (out.flow.dropped[k] ?? 0) + (after.get(k) ?? 0);
+    if (Math.abs(lhs - rhs) > 1e-6) bad.push(`cargo ${k} not conserved across the hop: ${lhs.toFixed(3)} in, ${rhs.toFixed(3)} out`);
+  }
+  if (JSON.stringify(JSON.parse(JSON.stringify(L))) !== JSON.stringify(L)) bad.push("the World ledger is not plain JSON");
+  return bad;
+}
+function inTransit(L: WorldLedger): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const c of L.consignments) m.set(c.good, (m.get(c.good) ?? 0) + c.units);
+  return m;
+}
+
+/**
+ * A three-sea World: faces 1 and 6 and a neighbour of 6 that does not touch 1 (so goods cross a hub), each a random
+ * charted coast with a harbor; face 1 is played (a few random grants and orders a cycle), the others settle through
+ * the ledger. `order` is the order the stored seas settle in. Returns the World's hash and any failures.
+ */
+export function runWorld(seed: number, cycles: number, order: "up" | "down" = "up"): FuzzResult {
+  const t0 = performance.now();
+  const rand = rng(seed * 104729 + 7);
+  const pick = <T>(xs: readonly T[]): T => xs[Math.floor(rand() * xs.length)];
+  const A = 1, B = 6, C = neighboursOf(B).find(f => f !== A && !neighboursOf(A).includes(f))!;
+  const store = new MemStore();
+  const failures: Failure[] = [];
+  const actions: Record<string, number> = {};
+  const recent: string[] = [];
+  const coasts = chartedBiomes();
+  let active: { state: SimState; grid: Grid } | null = null;
+  for (const face of [A, B, C]) {
+    const biome = pick(coasts);
+    const { state, grid } = newGame(face, seed * 3 + face, biome);
+    const town = starterTown(state, grid);
+    state.resources.money += 6000; state.resources.planks += 200;
+    placeHarbor(state, grid, town.pier.cells[0]);
+    for (const g of GOODS) if (rand() < 0.3) addCapped(state, g, 30 + rand() * 40);
+    if (face === A) active = { state, grid };
+    else writeSector(store, face, state, { name: `Sea ${face}`, biome, created: 1 }, 1);
+  }
+  const { state, grid } = active!;
+  writeSector(store, A, state, { name: `Sea ${A}`, biome: state.world.biome, created: 1 }, 1);
+  const faces = [...Array(12).keys()];
+  try {
+    for (let cycle = 0; cycle < cycles; cycle++) {
+      // The sea being played: a grant, an order, a harbor lost now and then, then its tides to the next peak.
+      const roll = rand();
+      if (roll < 0.25) { const g = pick(GOODS); addCapped(state, g, 20 + rand() * 30); recent.push(`c${cycle} grant ${g}`); actions.grant = (actions.grant ?? 0) + 1; }
+      else if (roll < 0.35) { const g = pick(companyCarries(state)); orderGood(state, g); recent.push(`c${cycle} order ${g}`); actions.order = (actions.order ?? 0) + 1; }
+      else if (roll < 0.37) { state.happiness = 0.1; recent.push(`c${cycle} misery`); actions.misery = (actions.misery ?? 0) + 1; }
+      if (recent.length > RECENT) recent.shift();
+      const target = state.tide.cycle + 1;
+      for (let k = 0; k < TICKS_PER_CYCLE * 2 && state.tide.cycle < target; k++) tick(state, grid);
+      const states = new Map<number, SimState>([[A, state]]);
+      const L0 = readLedger(store);
+      const before = inTransit(L0);
+      const out = settleWorldNow(store, A, state, grid, { now: 1, order: order === "up" ? faces : faces.slice().reverse() });
+      for (const f of [B, C]) states.set(f, readSector(store, f)!.state);
+      const bad = checkWorld(store, states, before, out);
+      if (bad.length) {
+        failures.push({ seed, cycle, invariant: bad[0], detail: bad.slice(0, 6).join(" | "), recent: recent.slice() });
+        if (failures.length >= 3) break;
+      }
+      writeSector(store, A, state, { name: `Sea ${A}`, biome: state.world.biome, created: 1 }, 1);
+    }
+  } catch (e) {
+    failures.push({ seed, cycle: state.tide.cycle, invariant: "exception", detail: (e as Error).stack ?? String(e), recent: recent.slice() });
+  }
+  const dump = [...store.map.entries()].sort().map(([k, v]) => `${k}=${v}`).join("\n");
+  return { seed, cycles, actions, placed: {}, failures, hash: stateHash(state) + ":" + hashText(dump), negativeMoneyCycles: 0, ms: performance.now() - t0, biome: "world" };
+}
+
+function hashText(s: string): string {
+  let h = 2166136261;
+  for (let k = 0; k < s.length; k++) { h ^= s.charCodeAt(k); h = Math.imul(h, 16777619); }
+  return (h >>> 0).toString(16);
 }

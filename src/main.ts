@@ -3,7 +3,7 @@ import { ArcRotateCamera, Color4, DefaultRenderingPipeline, Engine, Matrix, Scen
 import { CameraControl } from "./build/cameraControl";
 import { Placement, Tool } from "./build/placement";
 import { HAZE_FAR, HAZE_NEAR, HAZE_TINT, LANES_ENABLED, SIM_TICK, SIZE, TIDE_PERIOD, TREMOR_SHAKE } from "./config";
-import { BUILDINGS, STORM_WAVE_AMP, WAVE_WIDTH } from "./sim/balance";
+import { BUILDINGS, COMPANY_SLIDE_UNITS, STORM_WAVE_AMP, WAVE_WIDTH } from "./sim/balance";
 import { districtOf } from "./sim/districts";
 import { startStorm, startTsunami } from "./sim/events";
 import { ignite } from "./sim/fire";
@@ -11,14 +11,14 @@ import { biomeFor } from "./sim/biomes";
 import { hatching } from "./sim/biomes/atoll";
 import { seaIce, whaleSeason } from "./sim/biomes/fjord";
 import { materialCode } from "./sim/materials";
-import { GoodId } from "./sim/goods";
+import { GoodId, GOODS } from "./sim/goods";
 import { Grid } from "./sim/grid";
 import { crossCommuters, ferryTerminals } from "./sim/network";
 import { deserialize, serialize } from "./sim/save";
-import { settleWorld } from "./sim/lanes";
+import { applyPending, forgetFace, lanesFromMetas, readLedger, settleWorld, shipsAtSea } from "./sim/lanes";
 import { Biome, biomeAllowed, defaultName, deleteSector, exportSector, FACES, importSector, listMetas, migrateLegacy, readActive, readMeta, readSector, renameSector, SectorMeta, Store, writeActive, writeSector } from "./sim/sectors";
 import { newGame } from "./sim/start";
-import { WorldUi } from "./globe/ui";
+import { CardTrade, TradePanel, WorldUi } from "./globe/ui";
 import { Framing, World } from "./globe/world";
 import { closeDialog, confirmDialog, dialogOpen, noticeDialog, promptDialog } from "./ui/dialog";
 import { notify, onNotify, population, SimState } from "./sim/state";
@@ -117,6 +117,7 @@ const trees = new Trees(scene);
 const overlays = new Overlays(scene, grid);
 const effects = new Effects(scene);
 const ship = new Ship(scene, grid);
+const cargoShip = new Ship(scene, grid, "cargo");
 const wildlife = new Wildlife(scene, grid);
 const fauna = new CoastFauna(scene, grid);
 const audio = new Audio();
@@ -222,6 +223,52 @@ const worldRoot = document.getElementById("world")!;
 function faceMeta(face: number): SectorMeta | null { return readMeta(store, face); }
 function refreshFace(face: number): void { world.setSector(face, readSector(store, face)); }
 for (let f = 0; f < FACES; f++) refreshFace(f);
+/** The lanes, the cargo ships at sea and the storms on the globe, from the sectors' metadata and the World ledger. */
+function refreshLanes(): void {
+  if (!LANES_ENABLED) return;
+  const L = readLedger(store);
+  world.setLanes(lanesFromMetas(listMetas(store)), shipsAtSea(L).map(l => ({ from: l.from, to: l.to })), L.storms.map(s => ({ face: s.face, next: s.next })));
+}
+refreshLanes();
+/** Seconds the World has been up since its last settlement (its clock: a settlement every TIDE_PERIOD). */
+let worldIdle = 0;
+/** One World cycle while the World itself is up: every built sea settles, cargo sails, the globe and the card follow. */
+function settleIdleWorld(): void {
+  const out = settleWorld(store, null, null);
+  if (!out) return;
+  refreshLanes();
+  if (worldUi.shownFace !== null && faceMeta(worldUi.shownFace)) worldUi.showCard(worldUi.shownFace, faceMeta(worldUi.shownFace));
+  worldUi.refreshTrade();
+}
+function goodsLine(g: Partial<Record<GoodId, number>> | undefined): string {
+  const parts = Object.entries(g ?? {}).filter(([, u]) => (u as number) >= 1).map(([k, u]) => `${Math.round(u as number)} ${GOODS[k as GoodId].name}`);
+  return parts.length ? parts.join(", ") : "nothing";
+}
+/** A built sea's card: its lanes (the neighbours they reach), what the last World tide landed and loaded. */
+function cardTrade(face: number): CardTrade | null {
+  if (!LANES_ENABLED) return null;
+  const metas = listMetas(store);
+  const lanes = lanesFromMetas(metas).filter(([a, b]) => a === face || b === face).map(([a, b]) => metas[a === face ? b : a]!.name);
+  const last = readLedger(store).last[face];
+  return {
+    lanes: lanes.length ? lanes.join(", ") : metas[face]?.harbor ? "none: no harbor next door" : "none: build a harbor",
+    imports: goodsLine(last?.imports) + (last?.arrived ? ` · ${last.arrived} settlers` : ""),
+    exports: goodsLine(last?.exports) + (last?.left ? ` · ${last.left} left` : ""),
+  };
+}
+/** The Trade panel: every lane, what is at sea, the company's next calls and its prices, the storms. */
+function tradePanel(): TradePanel {
+  const metas = listMetas(store);
+  const name = (f: number) => metas[f]?.name ?? "open sea";
+  const L = readLedger(store);
+  const lanes = lanesFromMetas(metas).map(([a, b]) => `${name(a)} ⇄ ${name(b)}`);
+  const atSea = shipsAtSea(L).map(s => `${name(s.from)} → ${name(s.to)}: ${[goodsLine(s.goods) === "nothing" ? "" : goodsLine(s.goods), s.people ? `${s.people} settlers` : ""].filter(Boolean).join(" · ")}`);
+  const company = Object.entries(L.company.visits).map(([key, visit]) => `Calls next at ${name(visit)} (its route: ${key.split("-").map(f => name(Number(f))).join(", ")})`);
+  const slid = Object.entries(L.company.sold).filter(([, u]) => (u as number) >= 1).map(([g, u]) => `${GOODS[g as GoodId].name} ${Math.round(100 / (1 + (u as number) / COMPANY_SLIDE_UNITS))}%`);
+  if (slid.length) company.push(`Its prices after what it bought lately: ${slid.join(", ")}`);
+  const storms = L.storms.map(s => `A storm over ${name(s.face)}, bound for ${name(s.next)}`);
+  return { lanes, atSea, company, storms };
+}
 function download(name: string, text: string): void {
   const blob = new Blob([text], { type: "application/json" });
   const url = URL.createObjectURL(blob);
@@ -272,6 +319,8 @@ const worldUi = new WorldUi(worldRoot, {
     const ok = await confirmDialog(`Clear ${m.name}? The town on it is gone for good.`, { ok: "Clear the sea", danger: true });
     if (!ok || mode !== "world") return; // the World's actions only land in the World
     deleteSector(store, face);
+    forgetFace(store, face);
+    refreshLanes();
     if (activeFace === face) activeFace = readActive(store);
     refreshFace(face);
     worldUi.showCard(face, null);
@@ -283,6 +332,8 @@ const worldUi = new WorldUi(worldRoot, {
   },
   importFile: (file, face) => { void importSectorFile(file, face); },
   preview: (face, seed, biome) => world.setPreview(face, seed, biome),
+  trade: LANES_ENABLED ? face => cardTrade(face) : undefined,
+  tradePanel: LANES_ENABLED ? () => tradePanel() : undefined,
   defaultName: () => defaultName(store),
 });
 /** The framing the island shows first: the town's centroid at Home's distance (docs/globe/hero.md). */
@@ -394,6 +445,7 @@ async function enterSector(face: number, opts: { instant?: boolean } = {}): Prom
     activeFace = face;
     writeActive(store, face);
     adopt(rec.state);
+    if (LANES_ENABLED) applyPending(store, face, state, grid); // what the World sent while it was away (an eruption's wave)
     if (rec.state.tide.cycle === 0) tutorial.reset(); // a fresh sea gets the walkthrough, whatever an earlier town did
     const framing = townFraming();
     const instant = !!opts.instant || reducedMotion();
@@ -419,6 +471,8 @@ async function returnToWorld(opts: { instant?: boolean } = {}): Promise<boolean>
   const homeless = activeFace === null;
   const run = async () => {
     if (!homeless) { save(); refreshFace(face); }
+    refreshLanes();
+    worldIdle = 0;
     const framing = islandFraming();
     const instant = homeless || !!opts.instant || reducedMotion();
     showWorld();
@@ -602,6 +656,7 @@ function syncView(): void {
   const shiver = reducedMotion() ? 0 : effects.shake * TREMOR_SHAKE;
   camera.targetScreenOffset.set(Math.sin(viewTime * 41) * shiver, Math.sin(viewTime * 29 + 1) * shiver);
   ship.sync(state, viewTime);
+  cargoShip.sync(state, viewTime);
   wildlife.sync(state, viewTime);
   fauna.sync(state, viewTime);
   pierMarker.sync(state, viewTime);
@@ -635,6 +690,10 @@ engine.runRenderLoop(() => {
     return;
   }
   if (mode === "world") {
+    // The World's clock: while it is up, every built sea settles once per TIDE_PERIOD (sim/lanes.ts).
+    worldIdle += realDt;
+    world.laneClock = Math.min(1, worldIdle / TIDE_PERIOD);
+    if (LANES_ENABLED && worldIdle >= TIDE_PERIOD && !transition) { worldIdle = 0; settleIdleWorld(); }
     world.setSelected(worldUi.shownFace);
     world.render(realDt);
     if (cardAfterEntrance !== null && world.entranceDone) { worldUi.showCard(cardAfterEntrance, faceMeta(cardAfterEntrance)); cardAfterEntrance = null; }
@@ -648,7 +707,11 @@ engine.runRenderLoop(() => {
   while (acc >= SIM_TICK) {
     tick(state, grid);
     acc -= SIM_TICK;
-    if (state.tide.peaked) { save(); if (LANES_ENABLED) settleWorld(store, activeFace, state); }
+    if (state.tide.peaked) {
+      // The World settles on the sea's peaks while it is played (before the autosave, which then holds what sailed).
+      if (LANES_ENABLED && activeFace !== null) settleWorld(store, activeFace, state, grid);
+      save();
+    }
   }
   if (probe) probeFrame();
   syncView();
@@ -782,6 +845,8 @@ const api = {
     /** The mountain (the Cinder): steam puffs, ash flakes, the shiver, the lava's glow this frame. */
     mountain: () => ({ steam: effects.steamCount, ash: effects.ashCount, shake: effects.shake, glow: look.glow ? look.glow.amount : 0 }),
     ferry: () => ferry.pose,
+    /** The lanes' cargo ship in this sea, when it is in view. */
+    cargoShip: () => cargoShip.pose,
     ferryTerminals: () => { const t = ferryTerminals(grid); return t ? { harbor: t.harbor.id, isle: t.isle.map(b => b.id) } : null; },
     commuters: () => crossCommuters(state, grid),
     riders: () => ferry.riders().length,
@@ -889,7 +954,7 @@ const api = {
   /** A fresh town on face `n` (island `seed`, named), not entered. */
   newSector,
   /** Clear a face without the confirm (the smoke). */
-  clearSector(face: number) { deleteSector(store, face); if (activeFace === face) activeFace = readActive(store); refreshFace(face); },
+  clearSector(face: number) { deleteSector(store, face); forgetFace(store, face); if (activeFace === face) activeFace = readActive(store); refreshFace(face); refreshLanes(); },
   /** Dive into face `n` (the sector must exist); `instant` skips the flight. Resolves true once the island is up. */
   enterSector,
   /** Back to the World from the island; `instant` skips the flight. */
@@ -902,6 +967,15 @@ const api = {
     hover: () => world.hover,
     front: () => world.frontFace,
     shownCard: () => worldUi.shownFace,
+    /** The sea lanes as drawn (lanes, cargo ships, storm knots), the World ledger, and a World settlement now. */
+    lanes: () => ({ lanes: world.lanes.laneCount, ships: world.lanes.shipCount, storms: world.lanes.stormCount }),
+    ledger: () => readLedger(store),
+    /** A World settlement now: from inside a sea, as at its peak (the sea being played takes part); from the World, as its clock would. */
+    settle: () => { if (mode === "island" && activeFace !== null) { settleWorld(store, activeFace, state, grid); save(); syncView(); } else settleIdleWorld(); },
+    openTrade: () => { const b = document.querySelector<HTMLButtonElement>("#world .trade-toggle"); if (b && !worldUi.tradeOpen) b.click(); return [...document.querySelectorAll("#world .trade-line")].map(e => e.textContent ?? ""); },
+    cardText: () => document.querySelector("#world .world-card")?.textContent ?? "",
+    /** Open a face's card (as a click would) and return its text. */
+    card: (face: number) => { worldUi.showCard(face, faceMeta(face)); return document.querySelector("#world .world-card")?.textContent ?? ""; },
     pose: () => world.pose,
     /** Hold a running dive or return at a fraction of its time (null lets it run on); the hand-over as it stands. */
     holdFlight: (u: number | null) => world.holdFlight(u),

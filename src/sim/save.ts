@@ -32,7 +32,9 @@ export function deserialize(json: string): SimState {
   s.version = 3;
   s.achievements ??= []; // saves from before backlog 7
   s.extraTrees ??= []; s.landfill ??= []; // saves from before the land tools
-  s.newLand ??= []; s.outbox ??= []; s.inbox ??= []; // saves from before the Cinder and the World's event bus
+  s.newLand ??= []; s.outbox ??= []; // saves from before the Cinder and the World's event bus
+  s.cargoShips ??= 0; s.cargo ??= { due: -1, cycle: -1 }; s.stormComing ??= null; // saves from before the sea lanes
+  delete (s as { inbox?: unknown }).inbox;
   s.loan ??= { owed: 0, perCycle: 0, taken: 0 };
   s.world ??= { seed: 0, biome: "tidewater" }; // saves from before seeded islands: the original island
   for (const b of Object.values(s.buildings ?? {})) (b as Partial<Building>).rot ??= 0; // saves from before rotation

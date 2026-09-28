@@ -15,7 +15,8 @@ import { biomeFor, BiomeId, costOf } from "./biomes";
 import { whaleSeason } from "./biomes/fjord";
 import { consumeLuxury, eat, favouriteInStock, foodsInStock, foodTotal, levelAllowed } from "./food";
 import { goodsOfRole } from "./goods";
-import { REMOVE_REFUND, STILT_COST_PER_UNIT } from "./balance";
+import { CARGO_SHIP_COST, CARGO_SHIP_IRON, CARGO_SHIPS_MAX, REMOVE_REFUND, STILT_COST_PER_UNIT } from "./balance";
+import { LANES_ENABLED } from "../config";
 import { repayLoan } from "./loan";
 import { Grid } from "./grid";
 import { moveMoney } from "./money";
@@ -261,6 +262,21 @@ function produce(state: SimState, grid: Grid, buildings: Building[]): void {
       case "shipyard": {
         const berth = buildings.filter(h => isHarbour(h) && freeSlots(h) > 0)
           .sort((x, y) => dist(x, b) - dist(y, b) || x.id - y.id)[0];
+        // Every berth full: with the lanes open, a harbor and iron in stock, it builds a cargo ship instead.
+        if (!berth && LANES_ENABLED && buildings.some(h => h.kind === "harbor") && (state.cargoShips ?? 0) < CARGO_SHIPS_MAX
+          && canAfford(state, CARGO_SHIP_COST) && state.resources.iron >= CARGO_SHIP_IRON) {
+          b.progress += s;
+          b.output = 0;
+          if (b.progress >= SHIPYARD_CYCLES) {
+            b.progress = 0;
+            pay(state, CARGO_SHIP_COST, "shipyard");
+            state.resources.iron -= CARGO_SHIP_IRON;
+            state.cargoShips = (state.cargoShips ?? 0) + 1;
+            b.output = 1;
+            notify(state, "The shipyard launched a cargo ship for the lanes");
+          }
+          break;
+        }
         if (!berth || !canAfford(state, SHIPYARD_BOAT_COST)) { b.output = 0; break; }
         b.progress += s;
         if (b.progress >= SHIPYARD_CYCLES) {

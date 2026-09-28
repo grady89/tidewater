@@ -316,7 +316,8 @@ export class Hud {
     this.loanButton.hidden = loan.owed > 0;
     const ts = state.tsunami.stage;
     const uneasy = ts === null && state.tsunami.due >= 0;
-    const season = biomeFor(state).seasonLabel?.(state) ?? "";
+    const coming = state.stormComing && state.stormComing.at === state.tide.cycle + 1 && !state.storm.active ? `A storm from ${state.stormComing.from} reaches us next tide` : "";
+    const season = coming || (biomeFor(state).seasonLabel?.(state) ?? "");
     this.tideEvent.textContent = ts === "drawdown" ? "The sea is pulling back" : ts === "wave" ? "A wave is coming in" : ts === "settle" ? "The water returns" : uneasy ? "The sea is uneasy: a wave at the next peak" : state.storm.active ? "Storm: the boats stay in" : season;
     this.tideEvent.classList.toggle("now", ts !== null || state.storm.active || uneasy);
 

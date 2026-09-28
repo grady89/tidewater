@@ -111,3 +111,40 @@ wins and is noted). Numbered as they came up; the code cites them.
     pieces, trees and boats only while it blows (so nothing floats clear of a hazed ground). The night market
     crowds the square and the tavern with six walkers each for the night. The island's outline is a superellipse
     with a ragged edge (the first cut was a hard box).
+24. **The World ledger** lives beside the sectors (`tidewater.world`, `sim/lanes.ts`): the World's cycle, its own
+    32-bit RNG (storms), the consignments at sea, the storms, events waiting for seas not being played, the
+    company's route positions and recent purchases, and the last settlement's traffic per face. The World's clock:
+    with the World up, every built sea settles once per TIDE_PERIOD of wall time (the World has no speed control);
+    inside a sea, the World settles at each of that sea's peaks, just before the autosave (so what sailed is saved
+    with the sea that sent it). The order the stored seas settle in is a parameter and never changes the result:
+    every later step walks faces, goods and consignments in a fixed order (tested both ways, and in the fuzzer).
+25. **Routing:** each settlement, for each good (registry order) and each harbor that wants it (face order), the
+    nearest sea with a surplus (lane distance, then face) loads up to the want, the surplus and the first lane's
+    room; the path is the shortest lane path. A consignment sails one hop a settlement. A lane out of a sea carries
+    its cargo ships × CARGO_HOLD shared over its lanes (a harbor sails CARGO_SHIPS_PER_HARBOR; the shipyard builds
+    up to CARGO_SHIPS_MAX more for 60$ + 30 planks + 10 iron once every fishing berth is full). A hub holds
+    through-cargo overnight: HUB_BASE_PASS (5) units of a good a cycle on the quay, plus WAREHOUSE_CAP (100) per
+    warehouse; what does not fit waits, split to what fits. Cargo whose lane has gone sails home; cargo that
+    would overflow its destination's cap sails home. A cleared sea's cargo is lost with it.
+26. **Money stays per sea.** BIOMES.md §4's "one treasury" is not in the stage list and would change every sea's
+    ledger and the fuzzer's money audit; each sea keeps its purse, and the lanes move goods and people only.
+27. **Migration:** a sea whose happiness is under IMMIGRATION_HAPPINESS, or that is full while content, sends up to
+    MIGRANTS_PER_CYCLE residents (the unhappiest homes first) to the nearest connected sea that is content, has
+    food and has connected homes free; they sail as passengers (outside the hold) and move in on landing.
+28. **Weather and the event bus:** from the World's 6th cycle a storm is born on a random built face at 6 % a
+    cycle; it blows there, then each settlement drifts to the neighbour it chose the settlement before, for four
+    cycles. The sea it will reach next has `stormComing` and its tide clock says so a cycle early. A storm reaching
+    the sea being played starts there at once (the settlement is its peak); one reaching a stored sea blows through
+    it quietly (boats kept in, no losses: absence stays safe). An eruption's wave (a sea's outbox) goes to every
+    built neighbour: the sea being played is warned at once ("the sea is uneasy", the wave at its next peak); a
+    stored one holds it in the ledger until it is entered, then the same. Local storm rolls are unchanged.
+29. **The company on the lanes:** every connected group of two or more harbors is one route, sorted by face; the
+    ship calls at one harbor a cycle, in turn (`trade.routed`; a sea off every route keeps its own ship's clock).
+    What it bought lately World-wide slides its prices: ×1 / (1 + bought / 60), the bought units fading ×0.85 a
+    cycle. On a route it also buys a coast's favourite luxury beyond the town's own want line, at ×1.5.
+30. **The World's view:** a lane is a dashed line of lantern light from one face through the edge's gate into the
+    next; a cargo ship sails each leg with cargo on it through the World's cycle; a storm is a grey knot over its
+    face, leaning toward its next. Inside a sea, the lanes' cargo ship (the trade ship in rust red, berthed further
+    out) sails in the high water a consignment lands, and the ledger says "From <sea>: …". The card lists the
+    sea's lanes and last tide's cargo in and out; the Trade panel lists every lane, what is at sea, the company's
+    next calls and its slid prices, and the storms.

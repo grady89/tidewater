@@ -1324,6 +1324,75 @@ try {
     // Back to Tidewater's sea, the coast's sector cleared so the World checks below count what they expect.
     await page.evaluate(async (face: number) => { const api = (window as unknown as { __tidewater: Api }).__tidewater; await api.returnToWorld({ instant: true }); api.clearSector(face); await api.enterSector(1, { instant: true }); }, coast.face);
   }
+  // ---- The sea lanes (BIOMES.md §4, docs/world): two neighbouring harbors trade within three World cycles, the
+  // World draws the lane and a cargo ship on it, the Trade panel and the card say so; a Cinder's eruption sends its
+  // wave to a neighbouring sea, which finds it waiting when it is entered. The seas are cleared afterwards.
+  const lanes = await page.evaluate(async () => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    const url6 = "/test/scenario.ts", url7 = "/src/globe/geometry.ts";
+    const sc6 = (await import(url6)) as typeof import("./scenario");
+    const geo = (await import(url7)) as typeof import("../src/globe/geometry");
+    await api.returnToWorld({ instant: true });
+    // Two neighbouring faces away from the Smoke sea (face 1), and a third beside the first for the volcano.
+    const X = 8, Y = geo.FACES[X].neighbours.find(f => f !== 1)!;
+    const Z = geo.FACES[X].neighbours.find(f => f !== 1 && f !== Y && !geo.FACES[Y].neighbours.includes(f))!;
+    for (const [face, seed] of [[X, 21], [Y, 22]]) {
+      api.newSector(face, seed, `Lane ${face}`, "tidewater");
+      await api.enterSector(face, { instant: true });
+      const s = api.sim, g = api.grid;
+      const t = sc6.starterTown(s, g);
+      api.grant(6000); s.resources.planks += 200;
+      const h = sc6.placeHarbor(s, g, t.pier.cells[0]);
+      if (!h) return { error: `no harbor site on face ${face}` };
+      if (face === X) api.grantGood("cocoa", 60);
+      api.advance(1);
+      await api.returnToWorld({ instant: true });
+    }
+    const wait = (ms: number) => new Promise(r => setTimeout(r, ms));
+    let tradedBy = -1, shipsSeen = 0, cardY = "";
+    for (let k = 1; k <= 3 && tradedBy < 0; k++) {
+      api.world.settle();
+      await wait(250);
+      shipsSeen = Math.max(shipsSeen, api.world.lanes().ships);
+      if ((api.world.ledger().last[Y]?.imports.cocoa ?? 0) > 0) { tradedBy = k; cardY = api.world.card(Y); }
+    }
+    const drawn = api.world.lanes();
+    const trade = api.world.openTrade();
+    api.world.lookAt(X);
+    // A cargo ship at sea for the shot: more cocoa to carry.
+    await api.enterSector(X, { instant: true });
+    api.grantGood("pearls", 60);
+    await api.returnToWorld({ instant: true });
+    api.world.settle();
+    await wait(300);
+    const atSea = api.world.lanes().ships;
+    // The volcano beside X: it erupts while it is being played; X, stored, holds the wave until it is entered.
+    api.newSector(Z, 23, "Volcano", "cinder");
+    await api.enterSector(Z, { instant: true });
+    const erupted = api.forceBiome("eruption");
+    const outbox = api.sim.outbox.length;
+    api.world.settle();
+    const pending = api.world.ledger().pending[X]?.length ?? 0;
+    await api.returnToWorld({ instant: true });
+    await api.enterSector(X, { instant: true });
+    const warned = { due: api.sim.tsunami.due, cycle: api.sim.tide.cycle, log: api.sim.log.filter(m => /erupted/.test(m)).length, label: document.querySelector("#hud .tide-event")?.textContent ?? "" };
+    await api.returnToWorld({ instant: true });
+    api.world.lookAt(X);
+    return { X, Y, Z, tradedBy, shipsSeen, drawn, atSea, trade, cardY, eruptions: erupted.biomeState.eruptions ?? 0, outbox, pending, warned };
+  });
+  console.log("Lanes:", JSON.stringify(lanes));
+  assert(!("error" in lanes), "the lane seas have harbor sites: " + JSON.stringify(lanes));
+  if (!("error" in lanes)) {
+    assert(lanes.tradedBy > 0 && lanes.tradedBy <= 3, "two neighbouring harbors trade within three World cycles");
+    assert(lanes.drawn.lanes >= 1 && lanes.shipsSeen + lanes.atSea >= 1, "the World draws the lane and a cargo ship on it");
+    assert(lanes.trade.some(l => /⇄/.test(l)) && lanes.trade.some(l => /Calls next at/.test(l)), "the Trade panel lists the lane and the company's route");
+    assert(/Lanes/.test(lanes.cardY) && /cocoa/i.test(lanes.cardY), "the card shows the sea's lane and its imports");
+    assert(lanes.eruptions >= 1 && lanes.pending >= 1, "a Cinder's eruption sends a wave to its built neighbour");
+    assert(lanes.warned.due === lanes.warned.cycle + 1 && lanes.warned.log > 0 && /uneasy/.test(lanes.warned.label), "the neighbour finds the wave waiting when it is entered: the sea is uneasy");
+  }
+  await page.waitForTimeout(600);
+  await page.screenshot({ path: "shots/globe/world-lanes.png" });
+  await page.evaluate(async (faces: number[]) => { const api = (window as unknown as { __tidewater: Api }).__tidewater; for (const f of faces) api.clearSector(f); await api.enterSector(1, { instant: true }); }, "error" in lanes ? [] : [lanes.X, lanes.Y, lanes.Z]);
   await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.newTown());
 
   // ---- The World (docs/globe) ----

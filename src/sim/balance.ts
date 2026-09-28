@@ -517,6 +517,23 @@ export const NIGHT_MARKET_TOURISM = 2;
 // Sea lanes (BIOMES.md §4; sim/lanes.ts, behind LANES_ENABLED)
 export const CARGO_SHIPS_PER_HARBOR = 1;
 export const CARGO_HOLD = 20;
+/** A shipyard builds a cargo ship for the lanes (once every fishing berth is full) from planks, money and iron; a sea keeps at most CARGO_SHIPS_MAX of its own. */
+export const CARGO_SHIP_COST: Cost = { money: 60, planks: 30 };
+export const CARGO_SHIP_IRON = 10;
+export const CARGO_SHIPS_MAX = 4;
+/** What a hub passes of one good in a cycle without a warehouse; each warehouse adds its cap (WAREHOUSE_CAP). */
+export const HUB_BASE_PASS = 5;
+/** Residents who leave an unhappy or full sea a cycle, for the nearest connected sea with homes free. */
+export const MIGRANTS_PER_CYCLE = 2;
+/** World storms: from the World's sixth cycle a storm is born on a built face at this chance a cycle; each blows this many cycles, a face a cycle. */
+export const WORLD_STORM_FIRST = 6;
+export const WORLD_STORM_CHANCE = 0.06;
+export const WORLD_STORM_LIFE = 4;
+/** The company's World-wide price slide: a good's price is 1 / (1 + recently bought / COMPANY_SLIDE_UNITS); what it bought fades by this each World cycle. */
+export const COMPANY_SLIDE_UNITS = 60;
+export const COMPANY_SLIDE_RECOVERY = 0.85;
+/** The company pays this much more for a luxury sold by the coast whose favourite it is. */
+export const FAVOURITE_PREMIUM = 1.5;
 /** Non-food goods keep this fraction of their cap before any sails; an island wants a good it cannot make up to this fraction of its cap. */
 export const LANE_RESERVE_FRACTION = 0.3;
 export const LANE_WANT_FRACTION = 0.5;

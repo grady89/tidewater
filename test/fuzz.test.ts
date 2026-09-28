@@ -2,7 +2,7 @@
 // `npm run fuzz` (50 seeds × 2000 cycles); this keeps the fuzzer itself honest on every `npm run test`.
 import { describe, expect, it } from "vitest";
 import { chartedBiomes } from "../src/sim/biomes";
-import { runSeed } from "./fuzzCore";
+import { runSeed, runWorld } from "./fuzzCore";
 
 describe("sim fuzzer", () => {
   it("plays random valid actions with every invariant holding, and replays a seed to the same hash", () => {
@@ -19,5 +19,11 @@ describe("sim fuzzer", () => {
       expect(c.failures.map(f => f.invariant + " · " + f.detail)).toEqual([]);
       expect(c.biome).toBe(coasts[k]);
     }
+  });
+  it("plays a three-sea World over its lanes with every lane invariant holding, and the order the seas settle in never changes its hash", () => {
+    const up = runWorld(3, 14, "up"), down = runWorld(3, 14, "down");
+    expect(up.failures.map(f => f.invariant + " · " + f.detail)).toEqual([]);
+    expect(down.failures.map(f => f.invariant + " · " + f.detail)).toEqual([]);
+    expect(up.hash).toBe(down.hash);
   });
 });

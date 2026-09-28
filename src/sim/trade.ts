@@ -3,11 +3,11 @@
 // surplus fish, delivers the order book (any good the island cannot make, plus planks), swaps the tourists, and
 // the view sails it in and out through that high water.
 import {
-  COMPANY_FULL_PRICE_UNITS, COMPANY_PRICE_FLOOR, COMPANY_PRICE_SLOPE_UNITS, FOOD_PER_CYCLE, FOOD_RESERVE_CYCLES, IMMIGRANTS_PER_CYCLE, INN_CAPACITY,
+  COMPANY_FULL_PRICE_UNITS, COMPANY_PRICE_FLOOR, COMPANY_PRICE_SLOPE_UNITS, FAVOURITE_PREMIUM, FOOD_PER_CYCLE, LANE_WANT_FRACTION, FOOD_RESERVE_CYCLES, IMMIGRANTS_PER_CYCLE, INN_CAPACITY,
   ORDER_SIZE, PLANK_ORDER_SIZE, TOURIST_BORED_FACTOR, TOURIST_SPEND, TOURISTS_PER_SHIP, TRADE_EVERY, TRADE_EVERY_LIGHTHOUSE, TRADE_PLANK_PRICE,
 } from "./balance";
-import { biomeFor, makesOf } from "./biomes";
-import { addCapped } from "./economy";
+import { biomeFor, favouriteOf, makesOf } from "./biomes";
+import { addCapped, capFor as capOf } from "./economy";
 import { GOOD_IDS, GoodId, GOODS } from "./goods";
 import { Grid } from "./grid";
 import { moveMoney } from "./money";
@@ -42,10 +42,14 @@ export function companyCarries(state: SimState): GoodId[] {
   return GOOD_IDS.filter(g => g === "planks" || (GOODS[g].sells > 0 && !makes.includes(g)));
 }
 
-/** What the company buys here: the island's own goods with a buying price (never the cargo it delivered). */
+/**
+ * What the company buys here: the island's own goods with a buying price (never the cargo it delivered); on a
+ * lane route (sim/lanes.ts) also the coast's favourite luxury, which it pays a premium for from this coast.
+ */
 export function companyBuys(state: SimState): GoodId[] {
   const makes = makesOf(state.world.biome);
-  return GOOD_IDS.filter(g => GOODS[g].buys > 0 && makes.includes(g));
+  const fav = favouriteOf(state.world.biome);
+  return GOOD_IDS.filter(g => GOODS[g].buys > 0 && (makes.includes(g) || (state.trade.routed === true && g === fav)));
 }
 
 /** The company's delivered price per unit. */
@@ -58,8 +62,8 @@ export function companySells(good: GoodId): number {
  * price, then a price sliding to COMPANY_PRICE_FLOOR of it over COMPANY_PRICE_SLOPE_UNITS more. Fish is surplus,
  * not a luxury: flat price.
  */
-export function companyPays(good: GoodId, units: number): number {
-  const base = GOODS[good].buys;
+export function companyPays(good: GoodId, units: number, factor = 1): number {
+  const base = GOODS[good].buys * factor;
   if (good === "fish") return units * base;
   let total = 0;
   for (let n = 0; n < Math.floor(units); n++) total += base * Math.max(COMPANY_PRICE_FLOOR, 1 - Math.max(0, n - COMPANY_FULL_PRICE_UNITS) / COMPANY_PRICE_SLOPE_UNITS);
@@ -109,7 +113,7 @@ export function settleTrade(state: SimState, grid: Grid): { trade: number; touri
     if (state.tourists > 0) { state.tourists = 0; notify(state, "Without a harbor the tourists have gone"); }
     return { trade, tourism };
   }
-  if (t.nextVisit < 0) t.nextVisit = state.tide.cycle + 1;
+  if (t.nextVisit < 0 && !t.routed) t.nextVisit = state.tide.cycle + 1;
 
   // Tourists spend every cycle they're here.
   if (state.tourists > 0) {
@@ -122,17 +126,22 @@ export function settleTrade(state: SimState, grid: Grid): { trade: number; touri
     t.nextVisit = state.tide.cycle + 1;
     notify(state, "The trade ship turned back from the ice");
   }
-  if (state.tide.cycle >= t.nextVisit) {
+  if (t.nextVisit >= 0 && state.tide.cycle >= t.nextVisit) {
     t.shipCycle = state.tide.cycle;
+    t.bought = {};
     t.visits++;
     // Buy the island's own goods (smoked goods here; a Fjord's stockfish and whale oil) and any fish beyond the
     // town's reserve. Prices slide with the volume of one visit (companyPays).
     const bought: string[] = [];
     const reserve = (population(state) + IMMIGRANTS_PER_CYCLE) * FOOD_PER_CYCLE * FOOD_RESERVE_CYCLES;
+    const fav = favouriteOf(state.world.biome);
     for (const good of companyBuys(state)) {
-      const units = good === "fish" ? Math.max(0, r[good] - reserve) : r[good];
+      const foreign = !makesOf(state.world.biome).includes(good);
+      // The favourite, bought on a route: only what the town holds beyond its own want of it.
+      const units = good === "fish" ? Math.max(0, r[good] - reserve) : foreign ? Math.max(0, r[good] - LANE_WANT_FRACTION * capOf(state, good)) : r[good];
       if (units <= 0) continue;
-      r[good] -= units; trade += companyPays(good, units);
+      r[good] -= units; trade += companyPays(good, units, (t.slide?.[good] ?? 1) * (foreign && good === fav ? FAVOURITE_PREMIUM : 1));
+      t.bought[good] = units;
       bought.push(`${Math.round(units)} ${GOODS[good].name}`);
     }
     // Deliver what was ordered, good by good in registry order, as much as the purse allows.
@@ -156,7 +165,7 @@ export function settleTrade(state: SimState, grid: Grid): { trade: number; touri
     if (bought.length) parts.push(`bought ${bought.join(" and ")}`);
     if (arriving > 0) parts.push(`${arriving} tourists stepped ashore`);
     notify(state, parts.join(" · "));
-    t.nextVisit = state.tide.cycle + tradeInterval(state);
+    t.nextVisit = t.routed ? -1 : state.tide.cycle + tradeInterval(state);
   }
   return { trade, tourism };
 }
