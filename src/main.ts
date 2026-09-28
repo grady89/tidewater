@@ -2,8 +2,8 @@
 import { ArcRotateCamera, Color4, DefaultRenderingPipeline, Engine, Matrix, Scene, Vector3 } from "@babylonjs/core";
 import { CameraControl } from "./build/cameraControl";
 import { Placement, Tool } from "./build/placement";
-import { LANES_ENABLED, SIM_TICK, SIZE, TIDE_PERIOD } from "./config";
-import { BUILDINGS, STORM_WAVE_AMP, WAVE_WIDTH } from "./sim/balance";
+import { HAZE_FAR, HAZE_NEAR, HAZE_TINT, LANES_ENABLED, SIM_TICK, SIZE, TIDE_PERIOD, TREMOR_SHAKE } from "./config";
+import { BUILDINGS, COMPANY_SLIDE_UNITS, STORM_WAVE_AMP, WAVE_WIDTH } from "./sim/balance";
 import { districtOf } from "./sim/districts";
 import { startStorm, startTsunami } from "./sim/events";
 import { ignite } from "./sim/fire";
@@ -11,14 +11,14 @@ import { biomeFor } from "./sim/biomes";
 import { hatching } from "./sim/biomes/atoll";
 import { seaIce, whaleSeason } from "./sim/biomes/fjord";
 import { materialCode } from "./sim/materials";
-import { GoodId } from "./sim/goods";
+import { GoodId, GOODS } from "./sim/goods";
 import { Grid } from "./sim/grid";
 import { crossCommuters, ferryTerminals } from "./sim/network";
 import { deserialize, serialize } from "./sim/save";
-import { settleWorld } from "./sim/lanes";
+import { applyPending, forgetFace, lanesFromMetas, readLedger, shipsAtSea, worldJob, WorldSettlement } from "./sim/lanes";
 import { Biome, biomeAllowed, defaultName, deleteSector, exportSector, FACES, importSector, listMetas, migrateLegacy, readActive, readMeta, readSector, renameSector, SectorMeta, Store, writeActive, writeSector } from "./sim/sectors";
 import { newGame } from "./sim/start";
-import { WorldUi } from "./globe/ui";
+import { CardTrade, TradePanel, WorldUi } from "./globe/ui";
 import { Framing, World } from "./globe/world";
 import { closeDialog, confirmDialog, dialogOpen, noticeDialog, promptDialog } from "./ui/dialog";
 import { notify, onNotify, population, SimState } from "./sim/state";
@@ -49,6 +49,7 @@ import { Trees } from "./view/trees";
 import { PERSON_SCALE, Walkers } from "./view/walkers";
 import { setGroundSampler } from "./view/ground";
 import { Wildlife } from "./view/wildlife";
+import { CoastFauna } from "./view/fauna";
 import { computeLighting, createLights, dayFraction, duskAt, Lighting, MORNING } from "./world/lighting";
 import { createSky } from "./world/sky";
 import { createTerrain } from "./world/terrain";
@@ -116,7 +117,9 @@ const trees = new Trees(scene);
 const overlays = new Overlays(scene, grid);
 const effects = new Effects(scene);
 const ship = new Ship(scene, grid);
+const cargoShip = new Ship(scene, grid, "cargo");
 const wildlife = new Wildlife(scene, grid);
+const fauna = new CoastFauna(scene, grid);
 const audio = new Audio();
 const ferry = new Ferry(scene, grid);
 const pierMarker = new PierMarker(scene, grid);
@@ -142,6 +145,8 @@ function applyLook(): void {
   boats.setLook(look);
   trees.setLook(look);
   wildlife.setLook(look);
+  fauna.setLook(look);
+  effects.setLook(look);
   audio.setLook(look);
 }
 function syncGround(): void {
@@ -218,6 +223,80 @@ const worldRoot = document.getElementById("world")!;
 function faceMeta(face: number): SectorMeta | null { return readMeta(store, face); }
 function refreshFace(face: number): void { world.setSector(face, readSector(store, face)); }
 for (let f = 0; f < FACES; f++) refreshFace(f);
+/** The lanes, the cargo ships at sea and the storms on the globe, from the sectors' metadata and the World ledger. */
+function refreshLanes(): void {
+  if (!LANES_ENABLED) return;
+  const L = readLedger(store);
+  world.setLanes(lanesFromMetas(listMetas(store)), shipsAtSea(L).map(l => ({ from: l.from, to: l.to })), L.storms.map(s => ({ face: s.face, next: s.next })));
+}
+refreshLanes();
+/** Seconds the World has been up since its last settlement (its clock: a settlement every TIDE_PERIOD). */
+let worldIdle = 0;
+/**
+ * The World settlement runs as a job, a slice of at most WORLD_SLICE_MS a frame (sim/lanes.ts worldJob: it yields
+ * after each stored sea), so a peak never stalls the frame however many seas are built. Anything else that reads or
+ * writes the stored seas or the World ledger finishes the running job first.
+ */
+let worldRun: { job: Generator<void, WorldSettlement, void>; done: (out: WorldSettlement) => void } | null = null;
+const WORLD_SLICE_MS = 4;
+function startWorldJob(active: number | null, done: (out: WorldSettlement) => void): void {
+  finishWorldJob();
+  const job = active !== null ? worldJob(store, active, state, grid) : worldJob(store, null, null, null);
+  if (job) worldRun = { job, done };
+}
+function stepWorldJob(budgetMs = WORLD_SLICE_MS): void {
+  const t0 = performance.now();
+  while (worldRun) {
+    const r = worldRun.job.next();
+    if (r.done) { const run = worldRun; worldRun = null; run.done(r.value); return; }
+    if (performance.now() - t0 >= budgetMs) return;
+  }
+}
+function finishWorldJob(): void { stepWorldJob(Infinity); }
+window.addEventListener("pagehide", () => finishWorldJob());
+/** One World cycle while the World itself is up: every built sea settles, cargo sails, the globe and the card follow. */
+function settleIdleWorld(): void {
+  startWorldJob(null, () => {
+    refreshLanes();
+    if (mode === "world" && worldUi.shownFace !== null && faceMeta(worldUi.shownFace)) worldUi.showCard(worldUi.shownFace, faceMeta(worldUi.shownFace));
+    worldUi.refreshTrade();
+  });
+}
+/** One World cycle at the played sea's peak: its changes (cargo landed and loaded) are saved when the job lands. */
+function settleAtPeak(): void {
+  const face = activeFace;
+  if (face === null) return;
+  startWorldJob(face, () => { if (activeFace === face) save(); });
+}
+function goodsLine(g: Partial<Record<GoodId, number>> | undefined): string {
+  const parts = Object.entries(g ?? {}).filter(([, u]) => (u as number) >= 1).map(([k, u]) => `${Math.round(u as number)} ${GOODS[k as GoodId].name}`);
+  return parts.length ? parts.join(", ") : "nothing";
+}
+/** A built sea's card: its lanes (the neighbours they reach), what the last World tide landed and loaded. */
+function cardTrade(face: number): CardTrade | null {
+  if (!LANES_ENABLED) return null;
+  const metas = listMetas(store);
+  const lanes = lanesFromMetas(metas).filter(([a, b]) => a === face || b === face).map(([a, b]) => metas[a === face ? b : a]!.name);
+  const last = readLedger(store).last[face];
+  return {
+    lanes: lanes.length ? lanes.join(", ") : metas[face]?.harbor ? "none: no harbor next door" : "none: build a harbor",
+    imports: goodsLine(last?.imports) + (last?.arrived ? ` · ${last.arrived} settlers` : ""),
+    exports: goodsLine(last?.exports) + (last?.left ? ` · ${last.left} left` : ""),
+  };
+}
+/** The Trade panel: every lane, what is at sea, the company's next calls and its prices, the storms. */
+function tradePanel(): TradePanel {
+  const metas = listMetas(store);
+  const name = (f: number) => metas[f]?.name ?? "open sea";
+  const L = readLedger(store);
+  const lanes = lanesFromMetas(metas).map(([a, b]) => `${name(a)} ⇄ ${name(b)}`);
+  const atSea = shipsAtSea(L).map(s => `${name(s.from)} → ${name(s.to)}: ${[goodsLine(s.goods) === "nothing" ? "" : goodsLine(s.goods), s.people ? `${s.people} settlers` : ""].filter(Boolean).join(" · ")}`);
+  const company = Object.entries(L.company.visits).map(([key, visit]) => `Calls next at ${name(visit)} (its route: ${key.split("-").map(f => name(Number(f))).join(", ")})`);
+  const slid = Object.entries(L.company.sold).filter(([, u]) => (u as number) >= 1).map(([g, u]) => `${GOODS[g as GoodId].name} ${Math.round(100 / (1 + (u as number) / COMPANY_SLIDE_UNITS))}%`);
+  if (slid.length) company.push(`Its prices after what it bought lately: ${slid.join(", ")}`);
+  const storms = L.storms.map(s => `A storm over ${name(s.face)}, bound for ${name(s.next)}`);
+  return { lanes, atSea, company, storms };
+}
 function download(name: string, text: string): void {
   const blob = new Blob([text], { type: "application/json" });
   const url = URL.createObjectURL(blob);
@@ -228,6 +307,7 @@ function download(name: string, text: string): void {
 }
 /** A fresh town on a face (not entered): island `seed`, named, on the chosen coast (an uncharted one falls back to Tidewater). */
 function newSector(face: number, seed: number, name: string, biome: Biome = "tidewater"): SectorMeta {
+  finishWorldJob();
   const coast: Biome = biomeAllowed(face, biome) ? biome : "tidewater";
   const meta = writeSector(store, face, newGame(SEED, seed, coast).state, { name: name.trim() || defaultName(store), biome: coast });
   refreshFace(face);
@@ -235,6 +315,7 @@ function newSector(face: number, seed: number, name: string, biome: Biome = "tid
 }
 async function importSectorFile(file: File, face: number | null): Promise<void> {
   const text = await file.text();
+  finishWorldJob();
   let target = face !== null && !faceMeta(face) ? face : listMetas(store).findIndex(m => !m);
   if (face !== null && faceMeta(face)) {
     const ok = await confirmDialog(`Replace ${faceMeta(face)!.name} with the imported sea?`, { ok: "Replace", danger: true });
@@ -260,6 +341,7 @@ const worldUi = new WorldUi(worldRoot, {
     const name = await promptDialog("Name this sea", m.name, { ok: "Rename" });
     if (name === null) return;
     renameSector(store, face, name);
+    if (face === activeFace) hud.setTitle(faceMeta(face)?.name ?? name);
     worldUi.showCard(face, faceMeta(face));
   },
   remove: async face => {
@@ -267,7 +349,10 @@ const worldUi = new WorldUi(worldRoot, {
     if (!m) return;
     const ok = await confirmDialog(`Clear ${m.name}? The town on it is gone for good.`, { ok: "Clear the sea", danger: true });
     if (!ok || mode !== "world") return; // the World's actions only land in the World
+    finishWorldJob();
     deleteSector(store, face);
+    forgetFace(store, face);
+    refreshLanes();
     if (activeFace === face) activeFace = readActive(store);
     refreshFace(face);
     worldUi.showCard(face, null);
@@ -279,6 +364,8 @@ const worldUi = new WorldUi(worldRoot, {
   },
   importFile: (file, face) => { void importSectorFile(file, face); },
   preview: (face, seed, biome) => world.setPreview(face, seed, biome),
+  trade: LANES_ENABLED ? face => cardTrade(face) : undefined,
+  tradePanel: LANES_ENABLED ? () => tradePanel() : undefined,
   defaultName: () => defaultName(store),
 });
 /** The framing the island shows first: the town's centroid at Home's distance (docs/globe/hero.md). */
@@ -329,9 +416,20 @@ function handoverFrame(dt: number): void {
   syncView();
   scene.render();
 }
+let fogExtra = 0, haze = 0;
 function setIslandFog(extra: number): void {
-  terrain.material.setFloat("fogNear", FOG_NEAR + extra).setFloat("fogFar", FOG_FAR + extra);
-  water.material.setFloat("fogNear", FOG_NEAR + extra).setFloat("fogFar", FOG_FAR + extra);
+  fogExtra = extra;
+  applyIslandFog();
+}
+/** The island's fog distances: pushed back during the dive's hand-over, pulled in by a coast's haze (a sandstorm). */
+function applyIslandFog(): void {
+  const near = (FOG_NEAR + fogExtra) * (1 - HAZE_NEAR * haze), far = (FOG_FAR + fogExtra) * (1 - HAZE_FAR * haze);
+  terrain.material.setFloat("fogNear", near).setFloat("fogFar", far);
+  water.material.setFloat("fogNear", near).setFloat("fogFar", far);
+  // The pieces, trees and boats take the same haze through the scene fog, only while there is haze.
+  const mode = haze > 0 ? Scene.FOGMODE_LINEAR : Scene.FOGMODE_NONE;
+  if (scene.fogMode !== mode) scene.fogMode = mode;
+  scene.fogStart = near; scene.fogEnd = far;
 }
 /** The island's HUD fades in as the dive lands (it was hidden with the World up). */
 function arrive(): void {
@@ -373,12 +471,15 @@ let transition: Promise<void> | null = null;
 /** The dive: adopt the sector's town in the resident island, fly the World camera into its face, cut, settle. */
 async function enterSector(face: number, opts: { instant?: boolean } = {}): Promise<boolean> {
   if (transition || mode !== "world" || dialogOpen()) return false;
+  finishWorldJob();
   const rec = readSector(store, face);
   if (!rec) return false;
   const run = async () => {
     activeFace = face;
     writeActive(store, face);
     adopt(rec.state);
+    hud.setTitle(rec.meta.name);
+    if (LANES_ENABLED) applyPending(store, face, state, grid); // what the World sent while it was away (an eruption's wave)
     if (rec.state.tide.cycle === 0) tutorial.reset(); // a fresh sea gets the walkthrough, whatever an earlier town did
     const framing = townFraming();
     const instant = !!opts.instant || reducedMotion();
@@ -402,8 +503,11 @@ async function returnToWorld(opts: { instant?: boolean } = {}): Promise<boolean>
   // A town with no sea to save into (its sea was cleared under it) still gets back to the World: a cut.
   const face = activeFace ?? world.frontFace;
   const homeless = activeFace === null;
+  finishWorldJob();
   const run = async () => {
     if (!homeless) { save(); refreshFace(face); }
+    refreshLanes();
+    worldIdle = 0;
     const framing = islandFraming();
     const instant = homeless || !!opts.instant || reducedMotion();
     showWorld();
@@ -542,6 +646,9 @@ let lastLight: Lighting = MORNING;
 let stormMix = 0;
 let iceMix = 0;
 let lastBleachCycle = -1;
+/** The ground is redrawn when a lava flow makes land, and again when it cools (the Cinder). */
+const landKeyOf = (s: SimState) => s.newLand.length + ":" + (s.biomeState.eruptions ?? 0) + ":" + s.world.seed + s.world.biome;
+let lastLandKey = landKeyOf(state);
 let bleachShown = false;
 let lastFrameTime = 0;
 
@@ -552,14 +659,20 @@ function syncView(): void {
   const target = state.storm.active ? 1 : 0;
   stormMix += (target - stormMix) * Math.min(1, frameDt / 3);
   // A storm drags the light toward the study's dusk palette; the tsunami crest rides the water shader.
-  const light = computeLighting(Math.max(duskAt(state.time), stormMix * 0.95), dayFraction(state.time), { tint: look.sky.fogTint, mix: look.sky.fogMix });
+  const hazeNow = stormMix * (biomeFor(state).storm?.fog ?? 0);
+  if (Math.abs(hazeNow - haze) > 0.005 || (hazeNow === 0 && haze !== 0)) { haze = hazeNow; applyIslandFog(); }
+  const light = computeLighting(Math.max(duskAt(state.time), stormMix * 0.95), dayFraction(state.time), { tint: look.sky.fogTint, mix: look.sky.fogMix + (1 - look.sky.fogMix) * haze * HAZE_TINT });
   lastLight = light;
+  if (haze > 0) scene.fogColor.set(light.fog.x, light.fog.y, light.fog.z);
   lights.apply(light);
   terrain.setLighting(light);
+  if (look.glow) terrain.setGlow(look.glow.amount * (0.3 + 0.7 * Math.min(1, light.lamp)));
   water.setLighting(light);
   sky.setLighting(light);
   sky.setAurora(look.sky.aurora * (1 - stormMix), viewTime);
+  sky.setStars((look.sky.stars ?? 0) * (1 - stormMix));
   // The reef's bleaching reaches the water shader once a cycle (it only changes at the settlement).
+  if (landKeyOf(state) !== lastLandKey) { lastLandKey = landKeyOf(state); syncGround(); }
   if (state.tide.cycle !== lastBleachCycle) { lastBleachCycle = state.tide.cycle; if (look.lagoon.mix > 0 || bleachShown) { terrain.setBleach(look.lagoon.mix > 0 ? state.fields.bleach : null); bleachShown = look.lagoon.mix > 0; } }
   const iceTarget = (state.biomeState.seaIce ?? 0) > 0 ? 1 : 0;
   iceMix += (iceTarget - iceMix) * Math.min(1, frameDt / 4);
@@ -573,9 +686,14 @@ function syncView(): void {
   boats.sync(state, viewTime);
   ferry.sync(state, viewTime, crossCommuters(state, grid));
   walkers.sync(state, viewTime, ferry.riders());
-  effects.sync(state, viewTime);
+  effects.sync(state, grid, viewTime);
+  // The mountain trembles: the view shivers (not with reduced motion); the target itself never moves.
+  const shiver = reducedMotion() ? 0 : effects.shake * TREMOR_SHAKE;
+  camera.targetScreenOffset.set(Math.sin(viewTime * 41) * shiver, Math.sin(viewTime * 29 + 1) * shiver);
   ship.sync(state, viewTime);
+  cargoShip.sync(state, viewTime);
   wildlife.sync(state, viewTime);
+  fauna.sync(state, viewTime);
   pierMarker.sync(state, viewTime);
   cameraControl.setWaterLevel(state.tide.level);
   terrain.update(camera.position, state.tide.level, state.tide.wetLevel);
@@ -607,6 +725,11 @@ engine.runRenderLoop(() => {
     return;
   }
   if (mode === "world") {
+    // The World's clock: while it is up, every built sea settles once per TIDE_PERIOD (sim/lanes.ts).
+    worldIdle += realDt;
+    world.laneClock = Math.min(1, worldIdle / TIDE_PERIOD);
+    if (LANES_ENABLED && worldIdle >= TIDE_PERIOD && !transition && !worldRun) { worldIdle = 0; settleIdleWorld(); }
+    stepWorldJob();
     world.setSelected(worldUi.shownFace);
     world.render(realDt);
     if (cardAfterEntrance !== null && world.entranceDone) { worldUi.showCard(cardAfterEntrance, faceMeta(cardAfterEntrance)); cardAfterEntrance = null; }
@@ -620,8 +743,13 @@ engine.runRenderLoop(() => {
   while (acc >= SIM_TICK) {
     tick(state, grid);
     acc -= SIM_TICK;
-    if (state.tide.peaked) { save(); if (LANES_ENABLED) settleWorld(store, activeFace, state); }
+    if (state.tide.peaked) {
+      save();
+      // The World settles on the sea's peaks while it is played; the sea is saved again when that lands.
+      if (LANES_ENABLED) settleAtPeak();
+    }
   }
+  stepWorldJob();
   if (probe) probeFrame();
   syncView();
   scene.render();
@@ -733,8 +861,11 @@ const api = {
     dusk: () => duskAt(state.time),
     sky: () => ({ day: dayFraction(state.time), sun: { x: lastLight.skySun.x, y: lastLight.skySun.y, z: lastLight.skySun.z }, moon: lastLight.moon, night: lastLight.night, lit: { x: lastLight.sunDir.x, y: lastLight.sunDir.y, z: lastLight.sunDir.z } }),
     stormMix: () => stormMix,
+    /** A coast's storm haze this frame (the sandstorm), 0..1; the night market's crowd. */
+    haze: () => haze,
+    crowd: () => walkers.nightCrowd,
     drawCalls: () => scene.getActiveMeshes().length,
-    audio: () => ({ started: audio.started, state: audio.state, muted: audio.muted, cries: audio.cries, hammers: audio.hammers, bells: audio.bells, horns: audio.horns, creaks: audio.creaks, chirps: audio.chirps }),
+    audio: () => ({ started: audio.started, state: audio.state, muted: audio.muted, cries: audio.cries, hammers: audio.hammers, bells: audio.bells, horns: audio.horns, creaks: audio.creaks, chirps: audio.chirps, frogs: audio.frogs }),
     netFloats: () => ({ count: effects.netFloatCount, y: effects.netFloatY }),
     personScale: () => PERSON_SCALE,
     porters: () => ({ now: walkers.porters, spawned: walkers.portersSpawned }),
@@ -745,10 +876,14 @@ const api = {
     gulls: () => wildlife.gullCount,
     crabs: () => wildlife.crabCount,
     /** Every fauna kit's live count (the coast's picks). */
-    fauna: () => ({ gulls: wildlife.gullCount, crabs: wildlife.crabCount, seals: wildlife.sealCount, puffins: wildlife.puffinCount, whales: wildlife.whaleCount, turtles: wildlife.turtleCount, shoals: wildlife.shoalCount }),
+    fauna: () => ({ gulls: wildlife.gullCount, crabs: wildlife.crabCount, seals: wildlife.sealCount, puffins: wildlife.puffinCount, whales: wildlife.whaleCount, turtles: wildlife.turtleCount, shoals: wildlife.shoalCount, ...fauna.counts } as Record<string, number>),
     /** What the view shows of the coast: the look in use, sea ice, the aurora, the hatching's dark lanterns, the bleached count. */
-    biome: () => ({ look: look.id, ice: iceMix, aurora: look.sky.aurora, hatching: hatching(state), lanterns: views.lanternCounts, bleached: state.biomeState.bleached ?? 0, palms: look.trees.kit, boat: look.boat, hat: look.walker.hat, house: look.house }),
+    biome: () => ({ look: look.id, ice: iceMix, aurora: look.sky.aurora, hatching: hatching(state), lanterns: views.lanternCounts, bleached: state.biomeState.bleached ?? 0, palms: look.trees.kit, boat: look.boat, hat: look.walker.hat, house: look.house, stars: look.sky.stars ?? 0 }),
+    /** The mountain (the Cinder): steam puffs, ash flakes, the shiver, the lava's glow this frame. */
+    mountain: () => ({ steam: effects.steamCount, ash: effects.ashCount, shake: effects.shake, glow: look.glow ? look.glow.amount : 0 }),
     ferry: () => ferry.pose,
+    /** The lanes' cargo ship in this sea, when it is in view. */
+    cargoShip: () => cargoShip.pose,
     ferryTerminals: () => { const t = ferryTerminals(grid); return t ? { harbor: t.harbor.id, isle: t.isle.map(b => b.id) } : null; },
     commuters: () => crossCommuters(state, grid),
     riders: () => ferry.riders().length,
@@ -811,7 +946,7 @@ const api = {
   },
   /** Force the weather: a storm through this cycle, or the tsunami sequence now. */
   /** Force a coast's hazard or moment (the smoke): advances the clock to it, or starts it, and syncs the view. */
-  forceBiome(event: "whaleSeason" | "seaIce" | "avalanche" | "hatching" | "bleach" | "cyclone") {
+  forceBiome(event: string) {
     const cycle0 = state.tide.cycle;
     const until = (done: () => boolean) => { for (let k = 0; k < 40 && !done(); k++) advanceCycles(state, grid, 1); };
     switch (event) {
@@ -828,6 +963,12 @@ const api = {
         break;
       }
       case "cyclone": startStorm(state, grid); break;
+      default: {
+        // The later coasts name their own moments (Biome.force): the king tide, the eruption, the drought…
+        const own = biomeFor(state).force?.[event];
+        if (!own) throw new Error(`${state.world.biome} has no moment called ${event}`);
+        own(state, grid);
+      }
     }
     viewTime += (state.tide.cycle - cycle0) * TIDE_PERIOD;
     syncView();
@@ -850,7 +991,7 @@ const api = {
   /** A fresh town on face `n` (island `seed`, named), not entered. */
   newSector,
   /** Clear a face without the confirm (the smoke). */
-  clearSector(face: number) { deleteSector(store, face); if (activeFace === face) activeFace = readActive(store); refreshFace(face); },
+  clearSector(face: number) { finishWorldJob(); deleteSector(store, face); forgetFace(store, face); if (activeFace === face) activeFace = readActive(store); refreshFace(face); refreshLanes(); },
   /** Dive into face `n` (the sector must exist); `instant` skips the flight. Resolves true once the island is up. */
   enterSector,
   /** Back to the World from the island; `instant` skips the flight. */
@@ -863,6 +1004,17 @@ const api = {
     hover: () => world.hover,
     front: () => world.frontFace,
     shownCard: () => worldUi.shownFace,
+    /** The sea lanes as drawn (lanes, cargo ships, storm knots), the World ledger, and a World settlement now. */
+    lanes: () => ({ lanes: world.lanes.laneCount, ships: world.lanes.shipCount, storms: world.lanes.stormCount }),
+    ledger: () => readLedger(store),
+    /** A World settlement now: from inside a sea, as at its peak (the sea being played takes part); from the World, as its clock would. */
+    settle: () => { if (mode === "island" && activeFace !== null) { settleAtPeak(); finishWorldJob(); syncView(); } else { settleIdleWorld(); finishWorldJob(); } },
+    /** Is a World settlement still running a slice a frame? */
+    settling: () => worldRun !== null,
+    openTrade: () => { const b = document.querySelector<HTMLButtonElement>("#world .trade-toggle"); if (b && !worldUi.tradeOpen) b.click(); return [...document.querySelectorAll("#world .trade-line")].map(e => e.textContent ?? ""); },
+    cardText: () => document.querySelector("#world .world-card")?.textContent ?? "",
+    /** Open a face's card (as a click would) and return its text. */
+    card: (face: number) => { worldUi.showCard(face, faceMeta(face)); return document.querySelector("#world .world-card")?.textContent ?? ""; },
     pose: () => world.pose,
     /** Hold a running dive or return at a fraction of its time (null lets it run on); the hand-over as it stands. */
     holdFlight: (u: number | null) => world.holdFlight(u),

@@ -30,7 +30,8 @@ src/sim/
   tides.ts               the tide's numbers per biome: tidesFor(scale) rederives every level, mark, flood line and floor
   food.ts                food variety (any food feeds, eaten in proportion), the luxury rule, the favourite
   biomes/                registry.ts (the Biome interface and registry), index.ts (imports every biome), tidewater.ts,
-                         fjord.ts, atoll.ts — each a delta on the catalog: tide, goods, kinds, shaper, validation, hooks
+                         fjord.ts, atoll.ts, delta.ts, cinder.ts, dunes.ts — each a delta on the catalog: tide, goods,
+                         kinds, shaper, validation, hooks
   state.ts               SimState, Building, Fields; createState; notify (+ onNotify hook); population
   cells.ts               the 64×64 lattice helpers: HALF, DIRS, inBounds, cellIndex, cellCenter, worldToCell
   heightfield.ts         islandHeight(seed): the analytic terrain; terrainHeight = seed 0; cellClass(h)
@@ -56,7 +57,8 @@ src/sim/
   trees.ts               tree sites (from the island) and ages; felling and regrowth
   sea.ts                 sea BFS: grounds for boats, sea paths for the ship and the ferry
   trade.ts               the trade ship as the Trade Company's carrier: what it carries and buys here, sliding prices, the order book, tourists
-  lanes.ts               sea lanes v0 behind LANES_ENABLED (off): the World ledger (settlement-only ticks for inactive seas), cargo between adjacent harbors
+  lanes.ts               the World ledger (LANES_ENABLED, on): quiet settlements for the stored seas, cargo on the lanes,
+                         migrants, World storms, the eruption's wave, the company's route (below, "The World ledger")
   loan.ts                one loan at a time, repaid per settlement
   events.ts              storms and the tsunami (warning, drawdown, wave, strike, shielding)
   districts.ts           named clusters of buildings (view/info only)
@@ -74,7 +76,8 @@ src/globe/
   miniature.ts           a sector's island on a 32-cell grid and its roof placements, from the SimState (Babylon-free)
   world.ts               World: the second Scene — per-face oceans, miniatures, roof instances, edges, clouds, the
                          sun by the clock, hover/idle/keyboard motion, the entrance, the dive and return flights
-  ui.ts                  WorldUi: title, sector card (built / new-sector flow), notice, hint, import control
+  lanes.ts               LaneView: the lanes' dashes through the edge gates, cargo ships at sea, storm knots
+  ui.ts                  WorldUi: title, sector card (built / new-sector flow, lane rows), the Trade panel, notice, hint, import
 src/view/
   buildings.ts           one factory per kind → merged flat mesh; rotation baked about the footprint; damage tint
   buildingViews.ts       chunk merge (8×8 cells → one mesh), lantern thin instances
@@ -82,7 +85,9 @@ src/view/
                          thin-instanced or pooled meshes driven by the ledger + view time; walkers ride the ferry
   ground.ts              the ground sampler every prop stands on (the rendered terrain, landfill included)
   roofs.ts               roof shape and colour per building (shared by the island's meshes and the World's miniatures)
-  biomes/                the looks: index.ts (BiomeLook, lookFor, Tidewater's look), fjord.ts, atoll.ts
+  biomes/                the looks: index.ts (BiomeLook, lookFor, Tidewater's look), fjord.ts, atoll.ts, delta.ts, cinder.ts, dunes.ts
+  pieces/                the later coasts' building meshes (delta.ts, cinder.ts, dunes.ts), index.ts: COAST_PIECES, COAST_HOMES
+  fauna.ts               the later coasts' creatures (flamingos … ghost crabs), thin instances picked by the look
   audio.ts               procedural Web Audio (surf, bell, thrum, pad, gulls, hammering)
 src/build/
   placement.ts           pointer → cell, ghost (fate tint, stilts, door tab), drag-to-paint, lift, turn, place/remove
@@ -101,7 +106,9 @@ test/
   smoke.ts               headless Chrome launches into the World, dives into a sea, plays every milestone, comes back
   monkey.ts / quality.ts / deploycheck.ts   random real input; preset fps (island, World, each coast); the built site under /tidewater/
   fjord.test.ts / atoll.test.ts / biomes.test.ts / goods.test.ts   the coasts, the framework, the registry and the base additions
-  biomeShots.ts          shots/biomes/: every charted coast beside Tidewater, day and night, wide and close
+  biomeShots.ts          shots/biomes/: every charted coast beside Tidewater at noon, dusk and night, contact sheets,
+                         and the World with four seas, two lanes and a cargo ship (shots/globe/world-four-seas.png)
+  balance.test.ts        the balance probe (BALANCE=1): a scripted player per coast, two connected seas
 ```
 
 ## The World
@@ -265,8 +272,59 @@ meets them:
 - **The Fjord** (`sim/biomes/fjord.ts`, `view/biomes/fjord.ts`) and **the Atoll** (`atoll.ts`): BIOMES.md §3.3
   and §3.2 in full — see docs/biomes/decisions.md #16–#23 for every number the design left open.
 
-- **Sea lanes v0** (`sim/lanes.ts`, behind `LANES_ENABLED`, off): `settleWorld(store, activeFace, state)` at each
-  peak autosave settles every other built sea once (`settleOnly`, quiet) and moves cargo one hop along every lane
-  (both faces built with a harbor, sharing an edge); decisions.md #30, PROGRESS.md Stage 9 for where it stopped.
+- **Sea lanes:** see "The World ledger" below (branch `world`).
 
 `docs/biomes/PROGRESS.md` is the stage ledger, `decisions.md` the calls made where BIOMES.md was silent.
+
+## The later coasts and the World ledger (docs/world, branch `world`)
+
+- **The Biome hooks the later coasts added** (`sim/biomes/registry.ts`, docs/world/decisions.md #1), each data or a
+  function, never a branch on an id: `producers` (settlement-time output per kind), `shiftEnd` (low/high-water
+  work: crab pots, paddies, sponge divers), `surge` (a river swell every n cycles; on a spring peak a king tide,
+  which `Tides.floodHi` and every building floor clear), `predator` (what takes swimmers), `coverage` (ground
+  that serves: the Delta's river, the Dunes' oases), `serviceRadius` / `serviceStrength` (wells reach 3 on the
+  Dunes, a drought dries them), `costs` (basalt sea walls, timberless harbors), `homeHappiness`, `harbourFactor`
+  (a silted harbour), `storm` variants (`rain`, `fire`, `fog`, `chance`), `catch` (the Delta lands crab), and
+  `force` (named moments for the console and the smoke). Catalog fields: `nearMaterial`, `pollution`,
+  `fireRisk`, `stopsPredators`.
+- **The Delta, the Cinder, the Dunes** (`sim/biomes/delta.ts`, `cinder.ts`, `dunes.ts`; looks in `view/biomes/`,
+  meshes in `view/pieces/<coast>.ts` registered in `view/pieces/index.ts` and dispatched by `view/buildings.ts`
+  through `COAST_PIECES` / `COAST_HOMES`; creatures in `view/fauna.ts`). The Cinder's eruption writes
+  `state.newLand` (landfill that stays lava until it cools: `Grid.coolNewLand`) and a wave into `state.outbox`.
+- **View additions, uniforms only:** terrain `glowMat/glowColor/glowAmount` (one self-lit material, the lava) and
+  the material code read from the nearest texel; sky `starField` (the Dunes' second layer of stars). The
+  sandstorm's haze is fog distances plus the scene fog while it blows; the tremors shiver the camera's
+  `targetScreenOffset`.
+
+### The World ledger (`sim/lanes.ts`, `LANES_ENABLED` on)
+
+`tidewater.world` in the store holds the World cycle, its RNG, the consignments at sea, the storms, events waiting
+for seas not being played (`pending`), the company's route positions and recent purchases, and last cycle's
+traffic per face. A **World settlement** (`settleWorldSteps`, a generator; `settleWorldNow` drains it, `worldJob`
+hands it to main):
+
+1. every built sea but the played one settles once, quietly (`settleOnly`: its two shifts, then the settlement;
+   no hazards), in any order — nothing after this step depends on it;
+2. consignments sail one hop (id order): as much as the lane's hold allows (the sending sea's cargo ships ×
+   `CARGO_HOLD`, shared over its lanes) and, into a hub, what the hub holds overnight (`hubRoom`); what reaches
+   its sea lands (`addCapped`; the rest sails home); passengers move into homes with room;
+3. outboxes are read: an eruption's wave goes to every built neighbour — at once to the played sea
+   (`warnTsunami`), into `pending` for a stored one (`applyPending` on entry);
+4. storms drift to the face they were bound for, choose their next (the World RNG), and the sea they will reach
+   next gets `stormComing` (the tide clock); one may be born; a storm reaching a stored sea blows through quietly;
+5. goods load (for each good, each wanting harbor takes from the nearest sea that can spare it: `surplusOf` /
+   `wantOf`, `lanePath`), then migrants board (an unhappy or full sea to the nearest content one with homes free);
+6. the company is routed: one harbor a cycle along each connected group (`laneGroups`; `trade.routed`,
+   `trade.nextVisit`), its prices sliding with what it bought lately (`trade.slide`);
+7. the stored seas and the ledger are written back.
+
+The **clock** is main's: with the World up, a settlement every `TIDE_PERIOD` of wall time; inside a sea, one at
+each of its peaks. Main runs the job at most 4 ms a frame (`stepWorldJob`) and finishes it before anything else
+touches the stored seas (`finishWorldJob`). The **view**: `globe/lanes.ts` draws the lanes (lanesFromMetas: a
+sector's meta records whether it has a harbor), a cargo ship per leg at sea (`shipsAtSea`) and a knot per storm;
+the in-sea cargo ship is `view/ship.ts` on `state.cargo`; the card's lane rows and the Trade panel are
+`globe/ui.ts` fed by main (`cardTrade`, `tradePanel`). **Invariants** (the fuzzer's World mode, `runWorld` in
+`test/fuzzCore.ts`, every seventh seed): no sea's stock negative, every consignment on a real lane path with whole
+units, cargo conserved across each settlement (`WorldSettlement.flow`), the ledger plain JSON, and one hash
+whichever order the seas settle in.
+

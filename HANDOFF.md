@@ -5,13 +5,17 @@ daytime playtest session that followed it on 2026-09-26 — nine rounds of Grady
 their Midjourney reference sheets, and the systems those turned up — and the second overnight build on branch
 `globe``globe` (2026-09-27): the World, a floating globe of twelve seas the game now launches into (see "The World"
 below), and the third overnight build on branch `biomes` (2026-09-27): the six-biome framework with the Fjord and
-the Atoll (see "Biomes" below). Read CLAUDE.md first; NOTES.md has every decision the brief didn't make, section by section (the
+the Atoll (see "Biomes" below), and the fourth on branch `world` (2026-09-28): the Delta, the Cinder and the Dunes,
+and the sea lanes that join the seas (see "The connected World" below). Read CLAUDE.md first; NOTES.md has every decision the brief didn't make, section by section (the
 playtest sections are at the end, before "Chunk merge"); PROGRESS.md has the per-milestone status and run log;
 docs/globe/ has the World's design notes, decisions, review, audit and its own ledger. This file is the summary.
 Everything through the `qa` merge is on `origin/main` (github.com/grady89/tidewater); the World is on
 `origin/globe`, not merged — CI deploys `main` to GitHub Pages, so merging is the switch that publishes it.
 
 ## Run it
+
+(The connected World adds `BALANCE=1 npx vitest run test/balance.test.ts`, the balance probe, and
+`npm run shots:biomes` now writes contact sheets and the four-sea World shot.)
 
 ```bash
 npm install
@@ -201,6 +205,63 @@ Three things next:
 3. **Delta, Cinder, Dunes** (BIOMES.md §3.4–3.6): each is a `sim/biomes/<id>.ts` + `view/biomes/<id>.ts` pair
    following the Fjord and Atoll files; the materials (mangrove, lava, dune, oasis, vent, spring, fertile) and
    the shader tints are already there for them.
+
+## The connected World (branch `world`, 2026-09-28)
+
+What exists: every coast BIOMES.md lists is charted, and the seas are one World. Read BIOMES.md (the design, and its
+new "As built" section), docs/world/decisions.md (every number and reading the design left open, #1–#36),
+ARCHITECTURE.md "The later coasts and the World ledger", NOTES.md "Session F" (the balance numbers).
+docs/world/PROGRESS.md is the stage ledger.
+
+- **The Delta** (§3.4): a river through the levee, braided channels, mangroves; the river swell every sixth cycle and
+  the king tide on a spring peak (every building and fixed deck clears it; low walkways go under; low paddies wash
+  out); rice paddies (they grow at low water; a spring low brings the harvest in), crab pots (crab is the catch),
+  salt pans, indigo vats (they foul the water), a warden tower and croc nets; crocodiles in the sharks' role; fever
+  season. Reed stilt houses, sampans, conical hats, flamingos, herons, crocodiles, fireflies, frogs and rain.
+- **The Cinder** (§3.5): a cone with a lava band to the sea, a fertile band, steam vents and a hot spring; taro and
+  cocoa terraces, glassworks (sulfur, else timber), sulfur works, the hot-spring bathhouse (the widest leisure);
+  basalt sea walls; the eruption — two cycles of tremors (steam, a shivering view, the tide clock), then ash and a
+  lava flow that damages what it crosses and makes land that glows three cycles before it can be built on, and
+  a wave for every built neighbour. Flat-roofed basalt houses, dugouts, bandanas, iguanas, boobies, plankton.
+- **The Dunes** (§3.6): dunes and a rocky headland, tidal flats, a lagoon behind three sandbars, two or three oases
+  (the only fresh water; date palms only there); tide ×0.8; date groves, coffee terraces, sponge divers, the great
+  cistern (wells reach 3), the dredger, salt pans; the sandstorm (no rain, more fire, a haze, the harbour silts),
+  a drought every tenth cycle, the night market. Cube houses with domes, dhows, head wraps, the clearest stars.
+- **The sea lanes** (§4): two built seas that share an edge and both have a harbor are joined. The World settles
+  every built sea once per tide (on the World, every 120 s; inside a sea, at its peaks, a slice a frame); goods go
+  by the shortest lane path a hop a cycle, as much as the cargo ships hold, and a hub passes only what its
+  warehouses hold; a sea sends a quarter of each food it grows and all of its own luxury; unhappy or full seas send
+  migrants; storms drift across the World a face a cycle (seen a cycle early); an eruption's wave reaches the
+  neighbours; the company's ship calls at one harbor a cycle along each group and its prices slide with what it
+  bought. On the World: lanes of lantern light through the edge gates, cargo ships on them, storm knots, the card's
+  lane rows, a Trade panel. In a sea: the cargo ship sails in from the deep edge and the ledger says "From <sea>: …".
+  `LANES_ENABLED` (config.ts) is on and kept.
+
+Known-rough:
+- **Balance** is measured, not tuned to the brief's ~8 / ~15 / ~20 everywhere: the base game's 0.8 level-up
+  threshold still needs every resident employed and water, which sets the pace on most coasts (NOTES.md Session F
+  has the table). The Dunes reach level 2 at ~10 and a connected Dunes level 3 at ~22 without purchases.
+- **Money stays per sea** (decisions #26): BIOMES.md's "one treasury" was left out; lanes move goods and people.
+- **A stored sea's absence is safe**: it works its shifts but no fires, sharks, storms' losses or waves reach it until it
+  is entered (a wave waits in the ledger; a drifting storm only keeps its boats in).
+- **The World ledger is one localStorage key** beside the sectors; an export of a sea does not carry cargo bound
+  for it. Clearing a sea drops what was at sea to or from it.
+- The globe's cargo ships and lanes are small at the default zoom; the storm knot is a cluster of puffs, not weather.
+- **A reload with twelve seas stalls one frame for ~2.2 s** (measured the same on the original main, so not the
+  lanes): the UI monkey's slow runs sit on its forced reloads (1.84 s and 2.08 s against its 2 s limit). The World
+  settlement itself now runs a slice a frame (`worldJob`, 4 ms) and the sector packer is ten times faster
+  (~100 ms for eleven stored seas, all told); the boot stall is the next thing to profile.
+- The balance probe's player is simple (`test/balance.test.ts`); it never builds a tavern or a bathhouse, so its
+  happiness ceiling is lower than a person's.
+
+Three things next:
+1. **Play two neighbouring seas with a mouse**: found both, build harbors, watch the first cargo cross on the globe,
+   open the Trade panel, go back in and see the cargo ship arrive; force an eruption next door (`forceBiome("eruption")`)
+   and enter the neighbour. Everything has only been driven headless.
+2. **Tune level 3 against real play**: the lanes now carry variety and luxuries; the pace is the base happiness.
+   Consider showing, on the info panel, which of "three foods" and "a foreign luxury" a home is missing.
+3. **Merge `world`** once played: CI deploys `main`. Pirates exist as a v0 in the ledger behind `PIRATES_ENABLED`
+   (off; decisions #38 lists what it lacks: patrol ships, the Haven, reputation, anything on screen).
 
 ## Balance observations from the playtests
 

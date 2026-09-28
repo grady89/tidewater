@@ -14,7 +14,14 @@ export interface WorldUiHooks {
   defaultName(): string;
   /** Preview the island a seed would make on an empty face (null clears it). */
   preview(face: number | null, seed: number, biome: Biome): void;
+  /** A built sea's lanes and last tide's cargo, for its card (null: the lanes are off). */
+  trade?(face: number): CardTrade | null;
+  /** The World's trade at a glance, for the Trade panel. */
+  tradePanel?(): TradePanel;
 }
+
+export interface CardTrade { lanes: string; imports: string; exports: string }
+export interface TradePanel { lanes: string[]; atSea: string[]; company: string[]; storms: string[] }
 
 /** How long the seed field must rest before the preview follows it (typing a number is several changes). */
 const PREVIEW_DEBOUNCE_MS = 150;
@@ -34,13 +41,32 @@ export class WorldUi {
       <div class="world-title"><h1>Tiny Tides</h1><p class="world-sub">A world of tidal towns. Pick a sea.</p></div>
       <div class="world-card glass" hidden></div>
       <div class="world-notice glass" hidden></div>
-      <div class="world-bottom"><div class="world-hint">Drag to spin · Click a sea · Enter to dive</div><div class="world-actions glass"><button type="button" class="import">Import a sea…</button><input type="file" accept="application/json,.json" hidden></div></div>`;
+      <div class="world-bottom"><div class="world-hint">Drag to spin · Click a sea · Enter to dive</div><div class="world-actions glass"><button type="button" class="trade-toggle">Trade</button><button type="button" class="import">Import a sea…</button><input type="file" accept="application/json,.json" hidden></div></div>
+      <div class="world-trade glass" hidden></div>`;
     this.card = root.querySelector<HTMLElement>(".world-card")!;
     this.notice = root.querySelector<HTMLElement>(".world-notice")!;
     const file = root.querySelector<HTMLInputElement>('input[type="file"]')!;
     root.querySelector(".import")!.addEventListener("click", () => file.click());
     file.addEventListener("change", () => { const f = file.files?.[0]; if (f) hooks.importFile(f, this.shown); file.value = ""; });
+    this.trade = root.querySelector<HTMLElement>(".world-trade")!;
+    const toggle = root.querySelector<HTMLButtonElement>(".trade-toggle")!;
+    toggle.hidden = !hooks.tradePanel;
+    toggle.addEventListener("click", () => { this.trade.hidden = !this.trade.hidden; toggle.classList.toggle("active", !this.trade.hidden); this.refreshTrade(); });
   }
+
+  private readonly trade: HTMLElement;
+
+  /** The Trade panel: the lanes, what is at sea, the company's route and prices, the storms. Refreshed while open. */
+  refreshTrade(): void {
+    if (this.trade.hidden || !this.hooks.tradePanel) return;
+    const t = this.hooks.tradePanel();
+    const section = (title: string, lines: string[], empty: string) => `<div class="trade-section"><div class="trade-title">${title}</div>${(lines.length ? lines : [empty]).map(() => `<div class="trade-line"></div>`).join("")}</div>`;
+    this.trade.innerHTML = `<h2 class="card-name">Trade</h2>${section("Lanes", t.lanes, "No lanes yet: two harbors on neighbouring seas make one")}${section("At sea", t.atSea, "Nothing at sea")}${section("The company", t.company, "The company calls at each harbor on its own")}${section("Weather", t.storms, "Fair across the World")}`;
+    // Text goes in as text (sea names are the player's).
+    const lines = [...(t.lanes.length ? t.lanes : ["No lanes yet: two harbors on neighbouring seas make one"]), ...(t.atSea.length ? t.atSea : ["Nothing at sea"]), ...(t.company.length ? t.company : ["The company calls at each harbor on its own"]), ...(t.storms.length ? t.storms : ["Fair across the World"])];
+    this.trade.querySelectorAll<HTMLElement>(".trade-line").forEach((el, i) => { el.textContent = lines[i] ?? ""; });
+  }
+  get tradeOpen(): boolean { return !this.trade.hidden; }
 
   get shownFace(): number | null { return this.shown; }
 
@@ -60,9 +86,19 @@ export class WorldUi {
           <div class="row"><span>Cycles played</span><span>${meta.cycles}</span></div>
           <div class="row"><span>Buildings</span><span>${meta.buildings}</span></div>
           <div class="row"><span>Last played</span><span>${agoLabel(meta.lastPlayed, now)}</span></div>
+          <div class="row trade-row" hidden><span>Lanes</span><span class="lanes"></span></div>
+          <div class="row trade-row" hidden><span>Last tide in</span><span class="imports"></span></div>
+          <div class="row trade-row" hidden><span>Last tide out</span><span class="exports"></span></div>
         </div>
         <div class="card-actions"><button type="button" class="enter primary">Enter</button><button type="button" class="rename">Rename</button><button type="button" class="export">Export</button><button type="button" class="delete">Delete</button></div>`;
       this.card.querySelector<HTMLElement>(".card-name")!.textContent = meta.name;
+      const trade = this.hooks.trade?.(face) ?? null;
+      if (trade) {
+        for (const row of this.card.querySelectorAll<HTMLElement>(".trade-row")) row.hidden = false;
+        this.card.querySelector<HTMLElement>(".lanes")!.textContent = trade.lanes;
+        this.card.querySelector<HTMLElement>(".imports")!.textContent = trade.imports;
+        this.card.querySelector<HTMLElement>(".exports")!.textContent = trade.exports;
+      }
       this.card.querySelector(".enter")!.addEventListener("click", () => this.hooks.enter(face));
       this.card.querySelector(".rename")!.addEventListener("click", () => this.hooks.rename(face));
       this.card.querySelector(".export")!.addEventListener("click", () => this.hooks.exportSector(face));

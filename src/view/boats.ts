@@ -87,8 +87,8 @@ export class Boats {
     const scene = this.scene;
     const hullParts: Mesh[] = [];
     const sailParts: Mesh[] = [];
-    const stretch = kit === "longboat" ? 3.1 : kit === "outrigger" ? 2.6 : 2.4;
-    const beam = kit === "longboat" ? 0.8 : kit === "outrigger" ? 0.62 : 1;
+    const stretch = kit === "longboat" ? 3.1 : kit === "outrigger" || kit === "dugout" ? 2.6 : kit === "dhow" ? 2.9 : kit === "sampan" ? 2.5 : 2.4;
+    const beam = kit === "longboat" ? 0.8 : kit === "outrigger" || kit === "dugout" ? 0.62 : kit === "sampan" ? 1.05 : kit === "dhow" ? 0.95 : 1;
     const upper = MeshBuilder.CreateCylinder("hb", { diameter: 0.5, height: 0.16, tessellation: 6 }, scene);
     upper.scaling.set(stretch, 1, beam);
     upper.position.set(0, 0.2, 0);
@@ -159,6 +159,63 @@ export class Boats {
       const stripe = MeshBuilder.CreateBox("sailStripe", { width: 0.025, height: 0.6, depth: 0.1 }, scene);
       stripe.position.set(0.02, 0.86, 0.18);
       sailParts.push(tint(stripe, "#8a3f33"));
+    } else if (kit === "sampan") {
+      // A flat-bottomed sampan: a woven bamboo canopy arched over the middle, a long stern oar (yuloh), a pole.
+      const canopy = MeshBuilder.CreateCylinder("canopy", { diameter: 0.46, height: 0.46, tessellation: 8, arc: 0.5 }, scene);
+      canopy.rotation.z = Math.PI / 2;
+      canopy.rotation.y = Math.PI / 2;
+      canopy.position.set(-0.05, 0.32, 0);
+      canopy.scaling.set(1, 1, 1);
+      sailParts.push(tint(canopy, "#b89a63"));
+      for (const tx of [-0.28, 0.18]) {
+        const hoop = MeshBuilder.CreateTorus("hoop", { diameter: 0.46, thickness: 0.025, tessellation: 10 }, scene);
+        hoop.rotation.z = Math.PI / 2;
+        hoop.position.set(tx, 0.32, 0);
+        sailParts.push(tint(hoop, "#8a6f52"));
+      }
+      const oar = MeshBuilder.CreateBox("yuloh", { width: 0.9, height: 0.03, depth: 0.04 }, scene);
+      oar.position.set(-0.85, 0.3, 0.04);
+      oar.rotation.z = 0.25;
+      sailParts.push(tint(oar, PALETTE.wood));
+      const pole = MeshBuilder.CreateCylinder("pole", { diameter: 0.025, height: 1.1, tessellation: 4 }, scene);
+      pole.rotation.z = Math.PI / 2 - 0.15;
+      pole.position.set(0.2, 0.36, -0.2);
+      sailParts.push(tint(pole, "#b9a377"));
+    } else if (kit === "dugout") {
+      // A dugout log with one square-ish sail on a short mast, a paddle across it.
+      const mast = MeshBuilder.CreateCylinder("mast", { diameter: 0.035, height: 0.85, tessellation: 4 }, scene);
+      mast.position.set(0.12, 0.66, 0);
+      sailParts.push(tint(mast, PALETTE.wood));
+      const sail = MeshBuilder.CreateBox("sail", { width: 0.02, height: 0.5, depth: 0.46 }, scene);
+      sail.position.set(0.1, 0.72, 0);
+      sail.rotation.x = 0.1;
+      sailParts.push(tint(sail, "#e6dccb"));
+      const band = MeshBuilder.CreateBox("sailBand", { width: 0.022, height: 0.1, depth: 0.46 }, scene);
+      band.position.set(0.1, 0.84, 0);
+      sailParts.push(tint(band, "#c9674f"));
+      const paddle = MeshBuilder.CreateBox("paddle", { width: 0.04, height: 0.02, depth: 0.7 }, scene);
+      paddle.position.set(-0.35, 0.32, 0);
+      paddle.rotation.y = 0.4;
+      sailParts.push(tint(paddle, PALETTE.planks));
+    } else if (kit === "dhow") {
+      // A dhow: a raked mast with a long lateen yard and a great triangular sail, a high stern.
+      const mast = MeshBuilder.CreateCylinder("mast", { diameter: 0.045, height: 1.1, tessellation: 4 }, scene);
+      mast.position.set(0.15, 0.8, 0);
+      mast.rotation.z = 0.18;
+      sailParts.push(tint(mast, PALETTE.wood));
+      const yard = MeshBuilder.CreateCylinder("yard", { diameter: 0.03, height: 1.7, tessellation: 4 }, scene);
+      yard.rotation.z = Math.PI / 2 - 0.5;
+      yard.position.set(0.1, 1.05, 0.02);
+      sailParts.push(tint(yard, PALETTE.wood));
+      const sail = MeshBuilder.CreateCylinder("sail", { diameter: 1.0, height: 0.02, tessellation: 3 }, scene);
+      sail.rotation.x = Math.PI / 2;
+      sail.rotation.z = -0.5;
+      sail.position.set(0.05, 0.9, 0.04);
+      sail.scaling.set(1.2, 1, 1.0);
+      sailParts.push(tint(sail, PALETTE.sail));
+      const stern = MeshBuilder.CreateBox("stern", { width: 0.22, height: 0.2, depth: 0.44 }, scene);
+      stern.position.set(-0.6, 0.38, 0);
+      sailParts.push(tint(stern, "#8a6f52"));
     } else {
       // The float (ama) on two booms to port, and a crab-claw sail leaning with its mast.
       const ama = MeshBuilder.CreateCylinder("ama", { diameter: 0.14, height: 1.1, tessellation: 5 }, scene);

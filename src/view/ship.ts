@@ -1,5 +1,6 @@
 // The trade ship: one mesh that sails in from the open sea through the visit's high water, lies at the harbor
-// around the peak, and sails out again. Position is a function of ledger + view time. View only.
+// around the peak, and sails out again. Position is a function of ledger + view time. View only. The lanes' cargo
+// ship is the same ship in the lanes' colours, on the cargo schedule (`state.cargo`), berthed a little further out.
 import { Mesh, MeshBuilder, Scene, Vector3 } from "@babylonjs/core";
 import { SIZE } from "../config";
 import { cellCenter, Grid } from "../sim/grid";
@@ -20,14 +21,15 @@ export class Ship {
   private pathFor: { id: number; path: Vector3[] } | null = null;
   pose: ShipPose | null = null;
 
-  constructor(scene: Scene, private readonly grid: Grid) {
+  /** Which schedule this ship keeps: the company's calls, or the lanes' cargo landing (sim/lanes.ts). */
+  constructor(scene: Scene, private readonly grid: Grid, private readonly kind: "company" | "cargo" = "company") {
     // After reference/ships: a blue double-ended hull with a pale sheer line, a bowsprit, two masts with a
     // jib and furled sails on their booms, cargo crates on deck.
     const parts: Mesh[] = [];
     const hull = MeshBuilder.CreateCylinder("th", { diameter: 1.1, height: 0.42, tessellation: 6 }, scene);
     hull.scaling.set(3.1, 1, 1);
     hull.position.set(0, 0.36, 0);
-    parts.push(tint(hull, "#2f6f8f"));
+    parts.push(tint(hull, kind === "cargo" ? "#c9674f" : "#2f6f8f"));
     const lower = MeshBuilder.CreateCylinder("tl", { diameterTop: 1.1, diameterBottom: 0.6, height: 0.3, tessellation: 6 }, scene);
     lower.scaling.set(3.1, 1, 1);
     lower.position.set(0, 0.0, 0);
@@ -62,7 +64,8 @@ export class Ship {
     jib.rotation.x = Math.PI / 2; jib.rotation.y = Math.PI;
     jib.position.set(1.15, 1.75, 0.03); jib.scaling.set(1.0, 1, 1.7);
     parts.push(tint(jib, PALETTE.sail));
-    this.mesh = mergeFlat("tradeShip", parts, scene);
+    this.mesh = mergeFlat(kind === "cargo" ? "cargoShip" : "tradeShip", parts, scene);
+    if (kind === "cargo") this.mesh.scaling.set(0.8, 0.8, 0.8);
     this.mesh.isPickable = false;
     this.mesh.setEnabled(false);
   }
@@ -78,7 +81,7 @@ export class Ship {
 
   sync(state: SimState, viewTime: number): void {
     const harbor = Object.values(state.buildings).find(b => b.kind === "harbor");
-    const t = state.trade;
+    const t = this.kind === "cargo" ? { nextVisit: state.cargo?.due ?? -1, shipCycle: state.cargo?.cycle ?? -1 } : state.trade;
     let leg: ShipLeg = "away";
     if (harbor && state.phase === "high") {
       const rising = isRising(state.tide);
@@ -89,7 +92,7 @@ export class Ship {
         const path = this.path(harbor);
         if (path.length > 2) {
           // path[0] is inside the harbor; the berth is the first cell outside it; the entry is the last.
-          const berth = 1, last = path.length - 1;
+          const berth = Math.min(path.length - 2, this.kind === "cargo" ? 3 : 1), last = path.length - 1;
           let idx: number;
           if (leg === "in") idx = last - (u / IN_END) * (last - berth);
           else if (leg === "berthed") idx = berth;

@@ -6,25 +6,31 @@ import type { BiomeId } from "../../sim/biomes";
 import type { RoofShape } from "../roofs";
 import { ATOLL_LOOK } from "./atoll";
 import { FJORD_LOOK } from "./fjord";
+import { DELTA_LOOK } from "./delta";
+import { CINDER_LOOK } from "./cinder";
+import { DUNES_LOOK } from "./dunes";
 
-export type BoatKit = "dory" | "longboat" | "outrigger";
-export type HatKit = "straw" | "knit" | "hood";
-export type TreeKit = "conifer" | "pine" | "palm";
-export type HouseKit = "cottage" | "stave" | "round";
-export type FaunaKind = "gulls" | "crabs" | "seals" | "whales" | "puffins" | "turtles" | "reefFish" | "frigatebirds";
+export type BoatKit = "dory" | "longboat" | "outrigger" | "sampan" | "dugout" | "dhow";
+export type HatKit = "straw" | "knit" | "hood" | "conical" | "bandana" | "wrap";
+export type TreeKit = "conifer" | "pine" | "palm" | "mangrove";
+export type HouseKit = "cottage" | "stave" | "round" | "reed" | "basalt" | "cube";
+export type FaunaKind = "gulls" | "crabs" | "seals" | "whales" | "puffins" | "turtles" | "reefFish" | "frigatebirds"
+  | "flamingos" | "herons" | "crocodiles" | "fireflies" | "iguanas" | "boobies" | "plankton" | "pelicans" | "dolphins" | "ghostCrabs";
 
 export interface BiomeLook {
   id: BiomeId;
   /** The water shader's three depth tints. */
   water: { shallow: string; mid: string; deep: string };
   /** The terrain shader's height bands, and the snow line (999 = no snow). */
-  terrain: { sandDeep: string; sand: string; grassLo: string; grassHi: string; rock: string; snowLine: number; snow: string };
+  terrain: { sandDeep: string; sand: string; grassLo: string; grassHi: string; rock: string; snowLine: number; snow: string;
+    /** Shift of the colour bands in metres (the terrain shader's coastLift): negative brings the green down the flats (the Delta's reeds). */
+    bands?: number };
   /** Tints per cell material (materials.ts codes 1..8; missing = no tint) and how strongly they show. */
   materialTints: Partial<Record<"lagoon" | "mangrove" | "lava" | "dune" | "oasis" | "vent" | "spring" | "fertile", { tint: string; mix: number }>>;
   /** The water over lagoon cells is pulled toward this colour by `mix`. */
   lagoon: { tint: string; mix: number };
   /** Sky: the fog and horizon are pulled toward `fogTint` by `fogMix`; `aurora` 0..1 draws the curtains at night. */
-  sky: { fogTint: string; fogMix: number; aurora: number };
+  sky: { fogTint: string; fogMix: number; aurora: number; stars?: number };
   walls: readonly string[];
   roofs: readonly string[];
   /** Doors and shutters; trim on the hut kits. */
@@ -36,8 +42,12 @@ export interface BiomeLook {
   walker: { hat: HatKit; colors: readonly string[] };
   trees: { kit: TreeKit; trunk: string; leaves: readonly string[] };
   fauna: readonly FaunaKind[];
+  /** A material that glows of itself (the Cinder's lava field): its colour and strength by day; the night brings it up. */
+  glow?: { material: "lava" | "vent" | "spring"; color: string; amount: number };
   /** Ambience parameters for view/audio.ts (0..1 levels; `padRoot` in Hz). */
-  ambience: { surf: number; gulls: boolean; wind: number; ice: number; palms: number; birds: number; padRoot: number };
+  ambience: { surf: number; gulls: boolean; wind: number; ice: number; palms: number; birds: number; padRoot: number;
+    /** The later coasts' layers (0..1, absent = off): frogs and insects at night, rain, a low rumble, steam hiss, blown sand. */
+    frogs?: number; insects?: number; rain?: number; rumble?: number; hiss?: number; sand?: number };
 }
 
 const LOOKS = new Map<BiomeId, BiomeLook>();
@@ -70,6 +80,9 @@ export const TIDEWATER_LOOK: BiomeLook = registerLook({
 // module's registry before it exists.
 registerLook(FJORD_LOOK);
 registerLook(ATOLL_LOOK);
+registerLook(DELTA_LOOK);
+registerLook(CINDER_LOOK);
+registerLook(DUNES_LOOK);
 
 /** The look for a biome id; Tidewater's for anything not registered. */
 export function lookOf(id: BiomeId): BiomeLook {

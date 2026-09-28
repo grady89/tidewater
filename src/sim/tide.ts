@@ -3,6 +3,7 @@
 import { SPRING_EVERY, SPRING_HI, SPRING_LO, TIDE_HI, TIDE_LO, TIDE_PERIOD, WET_SAND_DRY_RATE } from "../config";
 import { TideState } from "./state";
 import { BASE_TIDES, Tides } from "./tides";
+import type { Surge } from "./biomes/registry";
 
 const TAU = Math.PI * 2;
 
@@ -10,9 +11,19 @@ const TAU = Math.PI * 2;
 export function isSpringCycle(k: number): boolean {
   return k > 0 && k % SPRING_EVERY === 0;
 }
-/** Levels scale with the biome (TideState.scale; tides.ts). */
-export function peakLevel(k: number, scale = 1): number {
-  return (isSpringCycle(k) ? SPRING_HI : TIDE_HI) * scale;
+/** Is cycle k a river swell (a coast with a surge; the Delta)? */
+export function isSwellCycle(k: number, surge?: Surge): boolean {
+  return !!surge && k >= surge.first && (k - surge.first) % surge.every === 0;
+}
+/** A swell that lands on a spring peak: the king tide. */
+export function isKingCycle(k: number, surge?: Surge): boolean {
+  return isSwellCycle(k, surge) && isSpringCycle(k);
+}
+/** Levels scale with the biome (TideState.scale; tides.ts); a river swell lifts its peak, a king tide more. */
+export function peakLevel(k: number, scale = 1, surge?: Surge): number {
+  const base = (isSpringCycle(k) ? SPRING_HI : TIDE_HI);
+  const swell = isSwellCycle(k, surge) ? (isSpringCycle(k) ? surge!.king : surge!.rise) : 0;
+  return (base + swell) * scale;
 }
 export function troughLevel(k: number, scale = 1): number {
   return (isSpringCycle(k) ? SPRING_LO : TIDE_LO) * scale;
@@ -28,8 +39,8 @@ export function levelAt(t: TideState): number {
   const f = cycleFraction(t);
   let a: number, b: number, u: number;
   const s = t.scale ?? 1;
-  if (f < 0.5) { a = peakLevel(t.cycle, s); b = troughLevel(t.cycle + 1, s); u = f / 0.5; }
-  else { a = troughLevel(t.cycle + 1, s); b = peakLevel(t.cycle + 1, s); u = (f - 0.5) / 0.5; }
+  if (f < 0.5) { a = peakLevel(t.cycle, s, t.surge); b = troughLevel(t.cycle + 1, s); u = f / 0.5; }
+  else { a = troughLevel(t.cycle + 1, s); b = peakLevel(t.cycle + 1, s, t.surge); u = (f - 0.5) / 0.5; }
   return a + (b - a) * (0.5 - 0.5 * Math.cos(Math.PI * u));
 }
 
@@ -99,6 +110,6 @@ export function phaseProgress(t: TideState, highMark: number, lowMark: number): 
 /** Fate of a deck at `floorY`: which tides put it under water. */
 export function floodFate(floorY: number, tides: Tides = BASE_TIDES): "safe" | "spring" | "always" {
   if (floorY <= tides.hi) return "always";
-  if (floorY <= tides.springHi) return "spring";
+  if (floorY <= tides.floodHi) return "spring";
   return "safe";
 }

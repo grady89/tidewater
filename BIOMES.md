@@ -201,3 +201,29 @@ no boats lost to storms anywhere connected), Pearl Temple (Atoll: +tourism every
 ship per harbor), Great Sluice (Delta: king tides do no damage on connected faces), Observatory (Cinder: eruptions and
 storms foreseen two cycles out everywhere), Great Cistern of the Coast (Dunes: droughts end). Filling the World and
 raising all six is the long game.
+
+## 8. As built (where the build departs from the above; docs/world/decisions.md has the reasons)
+
+- **Delta:** rice grows at low water and the harvest comes at a spring low (the spring-low bonus never paid before
+  this build: decisions #3); the river swell is +0.15 every sixth cycle, the king tide +0.30 on a spring peak; indigo
+  counts open flats near the vats, not mangroves; fever season every eighth cycle lays a quarter of the residents up
+  away from a clinic.
+- **Cinder:** the hot-spring bathhouse stands on the spring's flat cells (the design said shore); basalt is not a good
+  but a cheaper sea wall (half the timber); the eruption rolls from cycle 12 at 8 % a cycle, 16 apart; the flow's new
+  land stays unbuildable three cycles; ash the cycle after halves the terraces and costs every home 0.15.
+- **Dunes:** the oases are low plates above the tide (not tidal hollows) and the first sits just behind the starting
+  flats; the great cistern costs 200$; "the harbor capacity halves" is half the catch while silted; the drought dries
+  the wells and halves the cistern; the night market is decided at the dusk settlement.
+- **Timberless coasts** (Atoll, Delta, Cinder, Dunes) build their harbor for 780$ and no planks.
+- **§4 What crosses a lane:** goods — foods by a share (a quarter of what a sea grows, the market having sold the rest
+  above the reserve), a maker's luxury from the first unit, everything else above 0.3 of its cap; a hub passes 5 units
+  of a good a cycle plus 100 per warehouse. People — up to 2 a cycle from an unhappy or full sea. **Money — not
+  shared:** each sea keeps its purse. Weather — World storms are born on built faces (6 % a cycle from the sixth World
+  cycle), blow four cycles, and a stored sea only keeps its boats in; the local storm roll is unchanged. Eruptions
+  send a wave to every built neighbour (a stored one gets it on entry). The company visits one harbor a cycle along
+  each connected group; its price slide is World-wide and lasting (×1 / (1 + recently bought / 60), fading ×0.85 a
+  cycle); the favourite premium is ×1.5 for a luxury sold by the coast whose favourite it is.
+- **Pirates** are a v0 in the World ledger behind `PIRATES_ENABLED` (off): presence on unbuilt faces beside busy
+  lanes, raids that take a cargo ship's hold, and the Fort (half the chance at either end). No patrol ships, Haven or
+  reputation yet.
+- **Not built:** the capstones, one treasury.

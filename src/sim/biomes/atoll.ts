@@ -5,7 +5,7 @@
 // on their own and the town earns a lasting tourism bonus.
 import {
   BLEACH_POLLUTION, BLEACH_RATE, BLEACH_RECOVER, BUILDINGS, HATCHING_BONUS, HATCHING_BONUS_MAX, HATCHING_LANTERN_RADIUS,
-  NURSERY_POLLUTION_MAX, NURSERY_RADIUS, NURSERY_RECOVER,
+  NURSERY_POLLUTION_MAX, NURSERY_RADIUS, NURSERY_RECOVER, TIMBERLESS_HARBOR,
 } from "../balance";
 import { cellIndex, HALF, inBounds } from "../cells";
 import { at, CELLS } from "../fields";
@@ -180,6 +180,7 @@ export const ATOLL: Biome = registerBiome({
   industrials: [],
   minor: ["sponges"],
   cannotMake: ["timber", "planks", "shellfish", "smoked", "rice", "iron"],
+  costs: { harbor: TIMBERLESS_HARBOR },
   favourite: "smoked",
   unique: ["divePlatform", "pearlHouse", "coconutGrove", "reefNursery"],
   excluded: ["oysterBed", "clamCamp", "lumberCamp", "sawmill", "smokehouse", "tallHouse"],

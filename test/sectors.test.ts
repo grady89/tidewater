@@ -26,7 +26,7 @@ function town(seed = 7) {
 }
 
 describe("the World's sectors: bands and biomes", () => {
-  it("has two polar, five temperate and five tropical faces; Tidewater, the Fjord and the Atoll are charted", () => {
+  it("has two polar, five temperate and five tropical faces; the coasts built so far are charted", () => {
     expect([0, 11].map(bandOf)).toEqual(["polar", "polar"]);
     expect([1, 2, 3, 4, 5].map(bandOf)).toEqual(Array(5).fill("temperate"));
     expect([6, 7, 8, 9, 10].map(bandOf)).toEqual(Array(5).fill("tropical"));
@@ -38,7 +38,7 @@ describe("the World's sectors: bands and biomes", () => {
       expect(biomeAllowed(f, "tidewater")).toBe(!BAND_GATING || bandOf(f) === "temperate");
       for (const b of biomesFor(f)) expect(b.charted).toBe(isCharted(b.biome) && (!BAND_GATING || BIOMES_BY_BAND[bandOf(f)].includes(b.biome)));
     }
-    expect(isCharted("fjord")).toBe(true); expect(isCharted("atoll")).toBe(true); expect(isCharted("delta")).toBe(false);
+    expect(isCharted("fjord")).toBe(true); expect(isCharted("atoll")).toBe(true); expect(isCharted("delta")).toBe(true); expect(isCharted("cinder")).toBe(true); expect(isCharted("dunes")).toBe(true);
     expect(biomeBlurb("fjord")).toMatch(/stockfish/);
     expect(BAND_GATING).toBe(false);
   });

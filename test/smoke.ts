@@ -1080,10 +1080,11 @@ try {
   assert(t4after.seed === 7 && Math.abs(t4after.h - t4.h) < 1e-6, "the island survives a reload");
   assert(t4zero.seed === 0 && Math.abs(t4zero.h - t4before.h) < 1e-6, "seed 0 is the original island again");
 
-  // ---- Biomes (docs/biomes): the Fjord and the Atoll beside Tidewater ----
+  // ---- Biomes (docs/biomes, docs/world): the Fjord, the Atoll and the later coasts beside Tidewater ----
   // Each coast: a sector of its own, the starter town positive over four cycles, every unique kind producing, its
   // hazard and its moment forced through the console API and seen by the view, and shots by day and night.
-  for (const coast of [{ id: "fjord" as const, face: 0, seed: 2 }, { id: "atoll" as const, face: 6, seed: 2 }]) {
+  const COAST_FOOD: Record<string, string> = { fjord: "stockfish", atoll: "coconut", delta: "rice", cinder: "taro", dunes: "dates" };
+  for (const coast of [{ id: "fjord" as const, face: 0, seed: 2 }, { id: "atoll" as const, face: 6, seed: 2 }, { id: "delta" as const, face: 2, seed: 2 }, { id: "cinder" as const, face: 7, seed: 2 }, { id: "dunes" as const, face: 3, seed: 2 }]) {
     const founded = await page.evaluate(async ({ id, face, seed }) => {
       const api = (window as unknown as { __tidewater: Api }).__tidewater;
       const url = "/test/scenario.ts";
@@ -1110,7 +1111,7 @@ try {
     assert(founded.ok && founded.meta.biome === coast.id && founded.biome === coast.id && founded.look === coast.id, `${coast.id}: the sector carries its coast and the view wears its look`);
     assert(founded.money4 > founded.money0 && founded.spent < 0, `${coast.id}: the starter town nets positive money over four cycles`);
     assert(!founded.catalogHasOyster && founded.extras.length >= 3, `${coast.id}: the catalog is the coast's own and its kinds went up: ${founded.extras.join(",")}`);
-    assert(founded.goodsShown.includes(coast.id === "fjord" ? "stockfish" : "coconut") && !founded.goodsShown.includes("shellfish"), `${coast.id}: the resource bar shows the coast's foods, not Tidewater's shellfish`);
+    assert(founded.goodsShown.includes(COAST_FOOD[coast.id]) && !founded.goodsShown.includes("shellfish"), `${coast.id}: the resource bar shows the coast's foods, not Tidewater's shellfish`);
     if (coast.id === "fjord") {
       assert(founded.tide === 1.6 && founded.boat === "longboat" && founded.hat === "hood" && founded.house === "stave" && founded.palms === "pine", "the Fjord's tide, longboats, hoods, stave houses and pines");
       const fj = await page.evaluate(async () => {
@@ -1161,6 +1162,121 @@ try {
       assert(fj.ice.seaIce === 1 && fj.ice.view > 0.5 && /frozen/.test(fj.ice.label), "Fjord: sea ice: the water whitens and the tide clock says so");
       assert(fj.slopeHut && fj.buried && fj.avalanches > 0, "Fjord: a storm's avalanche buried the hut on the slope");
       assert(fj.aurora === 1 && (fj.fauna.seals + fj.fauna.puffins) > 0, "Fjord: the aurora is on and seals or puffins are about");
+    } else if (coast.id === "cinder") {
+      assert(founded.tide === 1 && founded.boat === "dugout" && founded.hat === "bandana" && founded.house === "basalt", "the Cinder's tide, dugouts, bandanas and basalt houses");
+      const cn = await page.evaluate(async () => {
+        const api = (window as unknown as { __tidewater: Api }).__tidewater;
+        const s = api.sim;
+        const kinds = (k: string) => (Object.values(s.buildings) as Building[]).filter(b => b.kind === k);
+        // Hands for the terraces up the slope (nearest-first fills them last).
+        const url4 = "/test/scenario.ts";
+        const sc4 = (await import(url4)) as typeof import("./scenario");
+        api.grant(3000);
+        sc4.placeByWalkway(s, api.grid, "house", 6);
+        for (const b of Object.values(s.buildings) as Building[]) if (["hut", "house"].includes(b.kind)) b.residents = api.grid.capacityOf(b);
+        api.grantGood("timber", 20);
+        api.advance(2);
+        const produced = { taroOut: kinds("taroTerrace").reduce((n, b) => n + b.output, 0), cocoaOut: kinds("cocoaTerrace").reduce((n, b) => n + b.output, 0), taro: s.resources.taro, cocoa: s.resources.cocoa, sulfur: s.resources.sulfur, glass: s.resources.glass, terraces: kinds("taroTerrace").length + kinds("cocoaTerrace").length, vents: kinds("sulfurWorks").length, spring: kinds("hotSpring").length };
+        const day = api.view.fauna();
+        const calm = api.view.mountain();
+        // The mountain trembles (steam thickens, the view shivers), then erupts: ash, a lava flow, new land, a wave for the neighbours.
+        api.forceBiome("tremors");
+        await new Promise(r => setTimeout(r, 400));
+        const tremor = { ...api.view.mountain(), label: document.querySelector("#hud .tide-event")?.textContent ?? "" };
+        const land0 = s.landfill.length;
+        const erupted = api.forceBiome("eruption");
+        await new Promise(r => setTimeout(r, 500));
+        const eruption = { n: erupted.biomeState.eruptions ?? 0, log: s.log.filter(m => /mountain erupts/.test(m)), outbox: s.outbox.filter(e => e.kind === "tsunami" && e.from === "eruption").length, newLand: s.newLand.length, landfill: s.landfill.length - land0, ...api.view.mountain() };
+        api.advance(1);
+        await new Promise(r => setTimeout(r, 300));
+        const ash = { falling: (s.biomeState.ash ?? -1) === s.tide.cycle, flakes: api.view.mountain().ash };
+        api.frameTown(30);
+        return { produced, day, calm, tremor, eruption, ash, fauna: api.view.fauna() };
+      });
+      console.log("Biome cinder:", JSON.stringify(cn));
+      assert(cn.produced.terraces >= 2 && cn.produced.vents >= 1 && cn.produced.spring >= 1 && (cn.produced.taro > 0 || cn.produced.taroOut > 0) && cn.produced.sulfur > 0, "Cinder: terraces on the fertile band, sulfur works on a vent, the hot spring; taro and sulfur made");
+      assert(cn.calm.glow > 0 && cn.calm.steam > 0, "Cinder: the lava field glows and the vents steam");
+      assert(cn.tremor.shake > 0 && cn.tremor.steam > cn.calm.steam && /trembles/.test(cn.tremor.label), "Cinder: the tremors thicken the steam, shiver the view and the tide clock says so");
+      assert(cn.eruption.n >= 1 && cn.eruption.log.length > 0 && cn.eruption.outbox > 0 && cn.eruption.landfill > 0 && cn.eruption.newLand > 0, "Cinder: the eruption: a lava flow makes new land, and a wave goes out to the neighbours");
+      assert(cn.ash.falling && cn.ash.flakes > 0, "Cinder: ash falls over the town the cycle after");
+      assert(cn.fauna.iguanas + cn.fauna.boobies > 0, "Cinder: iguanas or boobies about");
+    } else if (coast.id === "dunes") {
+      assert(founded.tide === 0.8 && founded.boat === "dhow" && founded.hat === "wrap" && founded.house === "cube" && founded.palms === "palm", "the Dunes' tide, dhows, head wraps, cube houses and date palms");
+      const du = await page.evaluate(async () => {
+        const api = (window as unknown as { __tidewater: Api }).__tidewater;
+        const s = api.sim, grid = api.grid;
+        const kinds = (k: string) => (Object.values(s.buildings) as Building[]).filter(b => b.kind === k);
+        const wait = (ms: number) => new Promise(r => setTimeout(r, ms));
+        const url5 = "/test/scenario.ts";
+        const sc5 = (await import(url5)) as typeof import("./scenario");
+        api.grant(3000);
+        sc5.placeByWalkway(s, grid, "house", 6);
+        const tavern = sc5.placeByWalkway(s, grid, "tavern", 1)[0];
+        const mk = kinds("market")[0];
+        const square = mk ? sc5.placeJoined(s, grid, "marketSquare", mk.cells[0]) : null;
+        for (const b of Object.values(s.buildings) as Building[]) if (["hut", "house"].includes(b.kind)) b.residents = grid.capacityOf(b);
+        api.advance(2);
+        const produced = { dates: s.resources.dates, coffee: s.resources.coffee, salt: s.resources.salt, sponges: s.resources.sponges, groves: kinds("dateGrove").length, cisterns: kinds("greatCistern").length, divers: kinds("spongeDivers").length };
+        const day = api.view.fauna();
+        // The sandstorm: the haze comes down over the town; when it passes, the harbour is silted.
+        api.forceStorm();
+        let haze = 0;
+        for (let k = 0; k < 14; k++) { await wait(300); haze = Math.max(haze, api.view.haze()); }
+        const named = s.log.filter(m => /sandstorm is coming/.test(m)).length;
+        api.advance(1);
+        await wait(200);
+        const silt = { silted: (s.biomeState.silt ?? 0) > 0, label: document.querySelector("#hud .tide-event")?.textContent ?? "", log: s.log.filter(m => /silted/.test(m)).length };
+        const dr = api.forceBiome("drought");
+        await wait(200);
+        const drought = { n: dr.biomeState.droughts ?? 0, label: document.querySelector("#hud .tide-event")?.textContent ?? "" };
+        const nm = api.forceBiome("nightMarket");
+        let crowd = 0;
+        for (let k = 0; k < 16 && crowd === 0; k++) { await wait(500); crowd = api.view.crowd(); }
+        api.frameTown(26);
+        return { produced, day, haze, named, silt, drought, market: { n: nm.biomeState.nightMarkets ?? 0, tavern: !!tavern, square: !!square, log: s.log.filter(m => /night market/.test(m)).length }, crowd, stars: api.view.biome().stars, fauna: api.view.fauna() };
+      });
+      console.log("Biome dunes:", JSON.stringify(du));
+      assert(du.produced.groves >= 1 && du.produced.cisterns >= 1 && du.produced.divers >= 1 && du.produced.dates > 0 && du.produced.salt > 0, "Dunes: a date grove at an oasis, the great cistern, the sponge divers; dates and salt made");
+      assert(du.named > 0 && du.haze > 0.3, "Dunes: the storm is a sandstorm and its haze comes down");
+      assert(du.silt.silted && du.silt.log > 0 && /silted/.test(du.silt.label), "Dunes: the sandstorm silted the harbour and the tide clock says so");
+      assert(du.drought.n > 0 && /Drought/.test(du.drought.label), "Dunes: the drought came and the tide clock says so");
+      assert(du.market.n > 0 && du.market.log > 0 && du.crowd > 0, "Dunes: the night market: the square crowds under the lanterns");
+      assert(du.stars === 1 && du.day.pelicans > 0, "Dunes: the clearest stars; pelicans on the piers");
+    } else if (coast.id === "delta") {
+      assert(founded.tide === 1 && founded.boat === "sampan" && founded.hat === "conical" && founded.house === "reed" && founded.palms === "mangrove", "the Delta's tide, sampans, conical hats, reed stilt houses and mangroves");
+      const dl = await page.evaluate(async () => {
+        const api = (window as unknown as { __tidewater: Api }).__tidewater;
+        const s = api.sim, grid = api.grid;
+        const kinds = (k: string) => (Object.values(s.buildings) as Building[]).filter(b => b.kind === k);
+        const url3 = "/test/scenario.ts";
+        const sc3 = (await import(url3)) as typeof import("./scenario");
+        api.grant(3000);
+        sc3.placeByWalkway(s, grid, "house", 4);
+        for (const b of Object.values(s.buildings) as Building[]) if (["hut", "house"].includes(b.kind)) b.residents = grid.capacityOf(b);
+        // A paddy with water: the river's reach or a well's (wells on the street; the layer is painted at the settlement).
+        api.advance(1);
+        const wet = (b: Building) => b.cells.some(c => s.fields.coverage.water[(c.i + 32) * 64 + (c.j + 32)] > 0);
+        if (!kinds("ricePaddy").some(wet)) { sc3.placeByWalkway(s, grid, "well", 2); api.advance(1); }
+        if (!kinds("ricePaddy").some(wet)) sc3.placeByWalkway(s, grid, "ricePaddy", 6);
+        for (const b of Object.values(s.buildings) as Building[]) if (["hut", "house"].includes(b.kind)) b.residents = grid.capacityOf(b);
+        api.advance(1);
+        const day = api.view.fauna();
+        const harvest = api.forceBiome("harvest");
+        const harvestLog = s.log.filter(m => /rice harvest/.test(m));
+        const king = api.forceBiome("kingTide");
+        const kingLog = s.log.filter(m => /king tide/i.test(m));
+        const atKing = { level: s.tide.level, hutsDry: kinds("hut").every(h => !h.cut), piersDry: kinds("pier").every(p => !p.cut), label: document.querySelector("#hud .tide-event")?.textContent ?? "" };
+        const fever = api.forceBiome("fever");
+        const feverLog = s.log.filter(m => /Fever season/.test(m));
+        api.frameTown(26);
+        return { day, harvest: { n: harvest.biomeState.harvests ?? 0, log: harvestLog }, king: { cycle: king.cycle, log: kingLog, ...atKing }, fever: { sick: fever.biomeState.fever ?? 0, log: feverLog }, rice: s.resources.rice, crab: s.resources.crab, salt: s.resources.salt, indigo: s.resources.indigo, catchLine: document.querySelector("#hud .score-value")?.textContent ?? "" };
+      });
+      console.log("Biome delta:", JSON.stringify(dl));
+      assert(dl.day.flamingos + dl.day.herons > 0, "Delta: flamingos and herons about the flats by day");
+      assert(dl.harvest.n > 0 && dl.harvest.log.some(m => /rice harvest/.test(m)), "Delta: the paddies came in at once at a spring low: the rice harvest");
+      assert(dl.king.level > 1.1 && dl.king.hutsDry && dl.king.piersDry && dl.king.log.some(m => /king tide/i.test(m)), "Delta: a king tide stood over 1.1 and every home and pier cleared it");
+      assert(dl.fever.sick > 0 && dl.fever.log.some(m => /Fever season/.test(m)), "Delta: fever season laid residents up away from a clinic");
+      assert(dl.salt > 0 && dl.indigo > 0 && /crab landed/.test(dl.catchLine), "Delta: salt and indigo made; the ledger lands crab");
     } else {
       assert(founded.tide === 0.6 && founded.boat === "outrigger" && founded.hat === "straw" && founded.house === "round" && founded.palms === "palm", "the Atoll's tide, outriggers, straw hats, round huts and palms");
       const at = await page.evaluate(async () => {
@@ -1208,6 +1324,75 @@ try {
     // Back to Tidewater's sea, the coast's sector cleared so the World checks below count what they expect.
     await page.evaluate(async (face: number) => { const api = (window as unknown as { __tidewater: Api }).__tidewater; await api.returnToWorld({ instant: true }); api.clearSector(face); await api.enterSector(1, { instant: true }); }, coast.face);
   }
+  // ---- The sea lanes (BIOMES.md §4, docs/world): two neighbouring harbors trade within three World cycles, the
+  // World draws the lane and a cargo ship on it, the Trade panel and the card say so; a Cinder's eruption sends its
+  // wave to a neighbouring sea, which finds it waiting when it is entered. The seas are cleared afterwards.
+  const lanes = await page.evaluate(async () => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    const url6 = "/test/scenario.ts", url7 = "/src/globe/geometry.ts";
+    const sc6 = (await import(url6)) as typeof import("./scenario");
+    const geo = (await import(url7)) as typeof import("../src/globe/geometry");
+    await api.returnToWorld({ instant: true });
+    // Two neighbouring faces away from the Smoke sea (face 1), and a third beside the first for the volcano.
+    const X = 8, Y = geo.FACES[X].neighbours.find(f => f !== 1)!;
+    const Z = geo.FACES[X].neighbours.find(f => f !== 1 && f !== Y && !geo.FACES[Y].neighbours.includes(f))!;
+    for (const [face, seed] of [[X, 21], [Y, 22]]) {
+      api.newSector(face, seed, `Lane ${face}`, "tidewater");
+      await api.enterSector(face, { instant: true });
+      const s = api.sim, g = api.grid;
+      const t = sc6.starterTown(s, g);
+      api.grant(6000); s.resources.planks += 200;
+      const h = sc6.placeHarbor(s, g, t.pier.cells[0]);
+      if (!h) return { error: `no harbor site on face ${face}` };
+      if (face === X) api.grantGood("cocoa", 60);
+      api.advance(1);
+      await api.returnToWorld({ instant: true });
+    }
+    const wait = (ms: number) => new Promise(r => setTimeout(r, ms));
+    let tradedBy = -1, shipsSeen = 0, cardY = "";
+    for (let k = 1; k <= 3 && tradedBy < 0; k++) {
+      api.world.settle();
+      await wait(250);
+      shipsSeen = Math.max(shipsSeen, api.world.lanes().ships);
+      if ((api.world.ledger().last[Y]?.imports.cocoa ?? 0) > 0) { tradedBy = k; cardY = api.world.card(Y); }
+    }
+    const drawn = api.world.lanes();
+    const trade = api.world.openTrade();
+    api.world.lookAt(X);
+    // A cargo ship at sea for the shot: more cocoa to carry.
+    await api.enterSector(X, { instant: true });
+    api.grantGood("pearls", 60);
+    await api.returnToWorld({ instant: true });
+    api.world.settle();
+    await wait(300);
+    const atSea = api.world.lanes().ships;
+    // The volcano beside X: it erupts while it is being played; X, stored, holds the wave until it is entered.
+    api.newSector(Z, 23, "Volcano", "cinder");
+    await api.enterSector(Z, { instant: true });
+    const erupted = api.forceBiome("eruption");
+    const outbox = api.sim.outbox.length;
+    api.world.settle();
+    const pending = api.world.ledger().pending[X]?.length ?? 0;
+    await api.returnToWorld({ instant: true });
+    await api.enterSector(X, { instant: true });
+    const warned = { due: api.sim.tsunami.due, cycle: api.sim.tide.cycle, log: api.sim.log.filter(m => /erupted/.test(m)).length, label: document.querySelector("#hud .tide-event")?.textContent ?? "" };
+    await api.returnToWorld({ instant: true });
+    api.world.lookAt(X);
+    return { X, Y, Z, tradedBy, shipsSeen, drawn, atSea, trade, cardY, eruptions: erupted.biomeState.eruptions ?? 0, outbox, pending, warned };
+  });
+  console.log("Lanes:", JSON.stringify(lanes));
+  assert(!("error" in lanes), "the lane seas have harbor sites: " + JSON.stringify(lanes));
+  if (!("error" in lanes)) {
+    assert(lanes.tradedBy > 0 && lanes.tradedBy <= 3, "two neighbouring harbors trade within three World cycles");
+    assert(lanes.drawn.lanes >= 1 && lanes.shipsSeen + lanes.atSea >= 1, "the World draws the lane and a cargo ship on it");
+    assert(lanes.trade.some(l => /⇄/.test(l)) && lanes.trade.some(l => /Calls next at/.test(l)), "the Trade panel lists the lane and the company's route");
+    assert(/Lanes/.test(lanes.cardY) && /cocoa/i.test(lanes.cardY), "the card shows the sea's lane and its imports");
+    assert(lanes.eruptions >= 1 && lanes.pending >= 1, "a Cinder's eruption sends a wave to its built neighbour");
+    assert(lanes.warned.due === lanes.warned.cycle + 1 && lanes.warned.log > 0 && /uneasy/.test(lanes.warned.label), "the neighbour finds the wave waiting when it is entered: the sea is uneasy");
+  }
+  await page.waitForTimeout(600);
+  await page.screenshot({ path: "shots/globe/world-lanes.png" });
+  await page.evaluate(async (faces: number[]) => { const api = (window as unknown as { __tidewater: Api }).__tidewater; for (const f of faces) api.clearSector(f); await api.enterSector(1, { instant: true }); }, "error" in lanes ? [] : [lanes.X, lanes.Y, lanes.Z]);
   await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.newTown());
 
   // ---- The World (docs/globe) ----

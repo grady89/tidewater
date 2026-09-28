@@ -1,8 +1,8 @@
 // The UI: resource bar, build menu by category, tide clock, last-cycle ledger, notifications. Plain DOM over the
 // canvas, read-only over the sim.
 import { Fate, isBuildingTool, Tool } from "../build/placement";
-import { BOAT_COST, BUILDING_KINDS, BuildingKind, BUILDINGS, CATEGORIES, Category, CLEAR_TIMBER, LANDFILL_COST, LANTERN_COST, LIFT_STEP, LOAN_AMOUNT, LOAN_GRACE_CYCLES, LOAN_INTEREST, LOAN_REPAY_CYCLES, PLANK_ORDER_SIZE, PLANT_COST, TRADE_PLANK_PRICE } from "../sim/balance";
-import { biomeFor, BiomeId, catalogFor, makesOf } from "../sim/biomes";
+import { BOAT_COST, BUILDING_KINDS, LINE_KINDS, BuildingKind, BUILDINGS, CATEGORIES, Category, CLEAR_TIMBER, LANDFILL_COST, LANTERN_COST, LIFT_STEP, LOAN_AMOUNT, LOAN_GRACE_CYCLES, LOAN_INTEREST, LOAN_REPAY_CYCLES, PLANK_ORDER_SIZE, PLANT_COST, TRADE_PLANK_PRICE } from "../sim/balance";
+import { biomeFor, BiomeId, catalogFor, catchOf, costOf, makesOf } from "../sim/biomes";
 import { canAfford } from "../sim/economy";
 import { GOOD_IDS, GOOD_ROLES, GoodId, GOODS, shownGoods } from "../sim/goods";
 import { Grid } from "../sim/grid";
@@ -30,7 +30,7 @@ export interface HudState {
 
 interface ToolDef { tool: Tool; label: string; category: Category; cost: string }
 const TOOLS: ToolDef[] = [
-  ...BUILDING_KINDS.map(kind => ({ tool: kind as Tool, label: BUILDINGS[kind].name, category: BUILDINGS[kind].category, cost: costOf(kind) })),
+  ...BUILDING_KINDS.map(kind => ({ tool: kind as Tool, label: BUILDINGS[kind].name, category: BUILDINGS[kind].category, cost: costText(kind) })),
   { tool: "boat", label: "Boat", category: "Sea", cost: `${BOAT_COST}$` },
   { tool: "lanternPost", label: "Lantern post", category: "Streets", cost: `${LANTERN_COST}$` },
   { tool: "landfill", label: "Landfill", category: "Land", cost: `${LANDFILL_COST.money}$+${LANDFILL_COST.timber}t` },
@@ -39,8 +39,8 @@ const TOOLS: ToolDef[] = [
 ];
 const KEYS = "123456789";
 
-function costOf(kind: BuildingKind): string {
-  const c = BUILDINGS[kind].cost;
+function costText(kind: BuildingKind, biome: BiomeId = "tidewater"): string {
+  const c = costOf(kind, biome);
   const parts = [`${c.money}$`];
   if (c.planks) parts.push(`${c.planks}p`);
   if (c.timber) parts.push(`${c.timber}t`);
@@ -53,7 +53,7 @@ const FATE_TEXT: Record<Fate | "line", string> = {
   spring: "Low ground: floods at spring tides — a raised walkway or landfill stays dry",
   always: "Floods every high tide",
 };
-const LINE_TOOL_HINT: ReadonlySet<Tool> = new Set<Tool>(["walkway", "raisedWalkway", "path", "breakwater", "sharkNet", "seaWall"]);
+const LINE_TOOL_HINT: ReadonlySet<Tool> = new Set<Tool>(LINE_KINDS);
 
 /** The bar's fixed cells; the goods sit between money and population, grouped by role, per the island. */
 const RESOURCES_HEAD = ["money"];
@@ -167,6 +167,7 @@ export class Hud {
     this.tideSpring = root.querySelector<HTMLElement>(".tide-spring")!;
     this.tideShip = root.querySelector<HTMLElement>(".tide-ship")!;
     this.tideEvent = root.querySelector<HTMLElement>(".tide-event")!;
+    this.title = root.querySelector<HTMLElement>("h1")!;
     this.hint = root.querySelector<HTMLElement>(".hint")!;
     this.ledgerLabel = root.querySelector<HTMLElement>(".score label")!;
     this.ledgerValue = root.querySelector<HTMLElement>(".score-value")!;
@@ -243,20 +244,33 @@ export class Hud {
     if (tool === "plantTree") return state.resources.money >= PLANT_COST ? null : "no money";
     if (tool === "clearTree") return null;
     const def = BUILDINGS[tool];
+    const cost = costOf(tool, state.world.biome);
     if (def.requires && !this.grid.has(def.requires)) return `needs ${BUILDINGS[def.requires].name.toLowerCase()}`;
-    if (!canAfford(state, def.cost)) {
+    if (!canAfford(state, cost)) {
       const r = state.resources;
-      if (r.money < def.cost.money) return "no money";
-      if ((def.cost.planks ?? 0) > r.planks) return "no planks";
+      if (r.money < cost.money) return "no money";
+      if ((cost.planks ?? 0) > r.planks) return "no planks";
       return "no timber";
     }
     return null;
   }
 
+  private readonly title: HTMLElement;
+  /** The panel's heading: the sea being played (the World's name for it). */
+  setTitle(name: string): void {
+    const h = this.title;
+    if (h && h.textContent !== name) h.textContent = name;
+  }
+
   update(s: HudState): void {
     const { state } = s;
     const r = state.resources;
-    if (state.world.biome !== this.biome) { this.biome = state.world.biome; this.showCategory(this._category); }
+    if (state.world.biome !== this.biome) {
+      this.biome = state.world.biome;
+      // The coast's own prices on the cards (basalt sea walls on the Cinder).
+      for (const t of TOOLS) if (isBuildingTool(t.tool)) { const el = this.buttons.get(t.tool)?.querySelector<HTMLElement>(".cost"); if (el) el.textContent = costText(t.tool, this.biome); }
+      this.showCategory(this._category);
+    }
     // Follow the tool's category only when the tool changes; otherwise a clicked tab would snap straight back.
     if (s.tool !== this.lastTool) {
       this.lastTool = s.tool;
@@ -310,7 +324,8 @@ export class Hud {
     this.loanButton.hidden = loan.owed > 0;
     const ts = state.tsunami.stage;
     const uneasy = ts === null && state.tsunami.due >= 0;
-    const season = biomeFor(state).seasonLabel?.(state) ?? "";
+    const coming = state.stormComing && state.stormComing.at === state.tide.cycle + 1 && !state.storm.active ? `A storm from ${state.stormComing.from} reaches us next tide` : "";
+    const season = coming || (biomeFor(state).seasonLabel?.(state) ?? "");
     this.tideEvent.textContent = ts === "drawdown" ? "The sea is pulling back" : ts === "wave" ? "A wave is coming in" : ts === "settle" ? "The water returns" : uneasy ? "The sea is uneasy: a wave at the next peak" : state.storm.active ? "Storm: the boats stay in" : season;
     this.tideEvent.classList.toggle("now", ts !== null || state.storm.active || uneasy);
 
@@ -337,7 +352,7 @@ export class Hud {
         const net = l.income - l.expenses;
         this.ledgerLabel.textContent = `Cycle ${l.cycle}`;
         const extras = [l.tourism > 0 ? `${l.tourism.toFixed(0)}$ tourism` : "", l.trade !== 0 ? `${l.trade >= 0 ? "+" : ""}${l.trade.toFixed(0)}$ trade` : "", l.expenses > 0 ? `−${l.expenses.toFixed(0)}$ upkeep${state.loan.owed > 0 ? " & loan" : ""}` : ""].filter(Boolean);
-        this.ledgerValue.textContent = `${net >= 0 ? "+" : ""}${net.toFixed(0)}$ · ${l.fishCaught.toFixed(0)} fish landed · ${(l.fishSold + l.shellfishSold).toFixed(0)} sold${extras.length ? " · " + extras.join(" · ") : ""}`;
+        this.ledgerValue.textContent = `${net >= 0 ? "+" : ""}${net.toFixed(0)}$ · ${l.fishCaught.toFixed(0)} ${GOODS[catchOf(state.world.biome)].name} landed · ${(l.fishSold + l.shellfishSold).toFixed(0)} sold${extras.length ? " · " + extras.join(" · ") : ""}`;
         this.ledgerValue.classList.remove("flash");
         void this.ledgerValue.offsetWidth;
         this.ledgerValue.classList.add("flash");

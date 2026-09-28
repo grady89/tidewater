@@ -57,6 +57,8 @@ export interface SectorMeta {
   cycles: number;
   buildings: number;
   money: number;
+  /** A harbor stands (the sea can hold a lane: sim/lanes.ts). */
+  harbor?: boolean;
   /** ms since the epoch. */
   created: number;
   lastPlayed: number;
@@ -85,7 +87,7 @@ export function summarize(state: SimState, face: number, base: { name: string; b
   return {
     version: 1, face, name: base.name, seed: state.world.seed, biome: base.biome, band: bandOf(face),
     population: population(state), cycles: state.tide.cycle, buildings: Object.keys(state.buildings).length,
-    money: Math.round(state.resources.money), created: base.created, lastPlayed: now,
+    money: Math.round(state.resources.money), harbor: Object.values(state.buildings).some(b => b.kind === "harbor" && !b.cut), created: base.created, lastPlayed: now,
   };
 }
 

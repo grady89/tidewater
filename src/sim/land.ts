@@ -1,7 +1,7 @@
 // The land tools: landfill raises one flat cell to dry ground (the one way to make the tide's edge move, and
 // priced so it is a decision, not a habit), planting adds a tree site on dry ground, clearing removes one.
 // Landfill and planted trees live in the state; the grid re-applies landfill on attach.
-import { LANDFILL_COST, LANDFILL_HEIGHT, PLANT_COST, CLEAR_TIMBER } from "./balance";
+import { CLEAR_BY_MATERIAL, LANDFILL_COST, LANDFILL_HEIGHT, PLANT_COST, CLEAR_TIMBER } from "./balance";
 import { cellIndex, Grid, inBounds } from "./grid";
 import { moveMoney } from "./money";
 import { Cell, notify, SimState } from "./state";
@@ -64,7 +64,10 @@ export function clearBlocker(state: SimState, _grid: Grid, c: Cell): string | nu
 export function clearTree(state: SimState, grid: Grid, c: Cell): boolean {
   if (clearBlocker(state, grid, c)) return false;
   const k = treeAt(state, c);
-  if (state.trees[k] >= 1) state.resources.timber += CLEAR_TIMBER;
+  // A tree on a material with its own rule (a mangrove) gives that timber and lets that much pollution into the water.
+  const rule = CLEAR_BY_MATERIAL[grid.materialAt(c)];
+  if (state.trees[k] >= 1) state.resources.timber += rule ? rule.timber : CLEAR_TIMBER;
+  if (rule && rule.pollution > 0) { const p = state.fields.pollution, q = cellIndex(c.i, c.j); p[q] = Math.min(1, p[q] + rule.pollution); }
   state.trees[k] = -1;
   return true;
 }

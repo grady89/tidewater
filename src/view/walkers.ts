@@ -14,6 +14,7 @@ import { BiomeLook, HatKit } from "./biomes";
 export const MAX_WALKERS = 200;
 const SPEED = 1.6; // cells per second
 const LOITERERS_PER_MARKET = 3;
+const NIGHT_MARKET_CROWD = 6;
 const COLORS = ["#c9674f", "#4c5a66", "#2f6f8f", "#79ad5e", "#f4d9c6", "#b9543f", "#5d6d7a", "#e6d3a1"];
 
 interface Walker {
@@ -129,6 +130,30 @@ export class Walkers {
       const cone = MeshBuilder.CreateCylinder("wt", { diameterTop: 0, diameterBottom: 0.38, height: 0.14, tessellation: 8 }, scene);
       cone.position.y = 0.56;
       parts.push(tint(cone, "#e6d3a1"));
+    } else if (hat === "conical") {
+      // A tall conical hat of palm leaf, taller and narrower than the straw brim.
+      const cone = MeshBuilder.CreateCylinder("wt", { diameterTop: 0, diameterBottom: 0.34, height: 0.2, tessellation: 8 }, scene);
+      cone.position.y = 0.58;
+      parts.push(tint(cone, "#d9c9a5"));
+    } else if (hat === "bandana") {
+      const band = MeshBuilder.CreateSphere("wt", { diameter: 0.18, segments: 5 }, scene);
+      band.scaling.set(1, 0.55, 1);
+      band.position.y = 0.52;
+      parts.push(tint(band, "#b9543f"));
+      const knot = MeshBuilder.CreateBox("wtk", { width: 0.05, height: 0.04, depth: 0.08 }, scene);
+      knot.position.set(-0.09, 0.5, 0);
+      parts.push(tint(knot, "#b9543f"));
+    } else if (hat === "wrap") {
+      const wrap = MeshBuilder.CreateTorus("wt", { diameter: 0.15, thickness: 0.07, tessellation: 10 }, scene);
+      wrap.position.y = 0.53;
+      parts.push(tint(wrap, "#f6f1e6"));
+      const crown = MeshBuilder.CreateSphere("wtc", { diameter: 0.14, segments: 4 }, scene);
+      crown.scaling.set(1, 0.6, 1);
+      crown.position.y = 0.56;
+      parts.push(tint(crown, "#f6f1e6"));
+      const tail = MeshBuilder.CreateBox("wtt", { width: 0.03, height: 0.14, depth: 0.06 }, scene);
+      tail.position.set(-0.08, 0.46, 0.02);
+      parts.push(tint(tail, "#f6f1e6"));
     } else if (hat === "knit") {
       const cap = MeshBuilder.CreateSphere("wt", { diameter: 0.19, segments: 5 }, scene);
       cap.scaling.set(1, 0.7, 1);
@@ -305,8 +330,12 @@ export class Walkers {
     return spawned;
   }
 
+  /** Walkers in the night market's crowd (the Dunes), for checks. */
+  nightCrowd = 0;
+
   private refreshLoiterers(state: SimState): void {
     this.loiterers = [];
+    this.nightCrowd = 0;
     for (const b of Object.values(state.buildings)) {
       const is = b.cells.map(c => c.i), js = b.cells.map(c => c.j);
       const cx = (Math.min(...is) + Math.max(...is) + 1) / 2, cz = (Math.min(...js) + Math.max(...js) + 1) / 2;
@@ -314,6 +343,11 @@ export class Walkers {
         for (let k = 0; k < LOITERERS_PER_MARKET; k++) {
           this.loiterers.push({ centre: new Vector3(cx, b.floorY, cz), seed: b.id * 7 + k, color: Color4.FromHexString(this.palette[(b.id + k) % this.palette.length]), scale: 1 });
         }
+      }
+      // The night market (the Dunes): the square and the tavern crowd for the night.
+      if ((b.kind === "marketSquare" || b.kind === "tavern") && b.reached && (state.biomeState.nightMarket ?? -9) === state.tide.cycle) {
+        this.nightCrowd += NIGHT_MARKET_CROWD;
+        for (let k = 0; k < NIGHT_MARKET_CROWD; k++) this.loiterers.push({ centre: new Vector3(cx, b.floorY, cz), seed: b.id * 13 + k + 5, color: Color4.FromHexString(this.palette[(b.id + k + 1) % this.palette.length]), scale: 1 });
       }
       // Kids play around homes that have grown.
       if (BUILDINGS[b.kind].residents > 0 && b.level >= 2 && b.residents > 0 && b.reached) {

@@ -7,7 +7,7 @@ import { cellIndex, DIRS, HALF, inBounds } from "./cells";
 import { cellClass } from "./heightfield";
 import { Island, island } from "./island";
 import { isleCell } from "./isle";
-import { Material, materialOf, UNBUILDABLE } from "./materials";
+import { Material, materialCode, materialOf, UNBUILDABLE } from "./materials";
 import { BASE_TIDES, Tides, tidesFor } from "./tides";
 import { treeSites } from "./trees";
 import { Building, Cell, SimState } from "./state";
@@ -60,11 +60,19 @@ export class Grid {
   /** Point the index at a (loaded) state and rebuild occupancy from its buildings. */
   attach(state: SimState): void {
     this.state = state;
-    this.tides = tidesFor(biomeFor(state).tide);
+    this.tides = tidesFor(biomeFor(state).tide, biomeFor(state).surge?.king ?? 0);
     this.resetTerrain();
     this.terrainVersion++;
     for (const k of state.landfill) this.applyLandfill({ i: Math.floor(k / SIZE) - HALF, j: (k % SIZE) - HALF });
+    this.coolNewLand();
     this.rebuild();
+  }
+
+  /** New land from a lava flow reads as the lava field (unbuildable, glowing) until it has cooled; then the island's own material. */
+  coolNewLand(): void {
+    this.materials.set(this.island.materials);
+    const lava = materialCode("lava");
+    for (const n of this.state.newLand) if (n.until > this.state.tide.cycle) this.materials[n.k] = lava;
   }
 
   /** The ledger's island: its heightfield and tree sites, from `state.world.seed`. */
@@ -146,10 +154,11 @@ export class Grid {
   materialAt(c: Cell): Material {
     return inBounds(c.i, c.j) ? materialOf(this.materials[cellIndex(c.i, c.j)]) : "plain";
   }
-  /** The kind's material, if it wants one, on every cell; and nothing at all on a lava field. */
+  /** The kind's material, if it wants one, on every cell (or beside one, for `nearMaterial`); and nothing at all on a lava field. */
   materialOk(kind: BuildingKind, cells: Cell[]): boolean {
-    const want = BUILDINGS[kind].material;
-    return cells.every(c => { const m = this.materialAt(c); return !UNBUILDABLE.has(m) && (!want || m === want); });
+    const want = BUILDINGS[kind].material, near = BUILDINGS[kind].nearMaterial;
+    if (!cells.every(c => { const m = this.materialAt(c); return !UNBUILDABLE.has(m) && (!want || m === want); })) return false;
+    return !near || cells.some(c => this.neighbors(c).some(n => this.materialAt(n) === near));
   }
 
   /** The cells a building of `kind` anchored at `c` would occupy, or null if that shape can't be formed there. */
@@ -318,13 +327,13 @@ export class Grid {
   floorFor(kind: BuildingKind, cells: Cell[], lift = 0): number {
     const f = BUILDINGS[kind].floor;
     const h = this.groundUnder(cells);
-    if (typeof f === "number") return Math.max(f * this.tides.scale, h + 0.05); // a fixed floor (scaled with the tide) never sinks into a hill
+    if (typeof f === "number") return Math.max(f * this.tides.scale + (this.tides.floodHi - this.tides.springHi), h + 0.05); // a fixed floor (scaled with the tide, over a king tide where there is one) never sinks into a hill
     if (f === "terrain") return h + 0.05;
     if (f === "ground") return Math.max(this.tides.groundFloor, h + 0.05);
     // Auto-sized stilts: at least STILT_MIN over the cell and CLEARANCE over the tide the piece must clear — the
     // ordinary high tide for a street, the spring tide for a building. Then a lift (never below), then the snap:
     // rise to the highest neighbouring deck within WALKWAY_SNAP of the safe height so streets run level.
-    const safe = Math.max(h + STILT_MIN, (f === "street" ? this.tides.hi : this.tides.springHi) + CLEARANCE);
+    const safe = Math.max(h + STILT_MIN, (f === "street" ? this.tides.hi : this.tides.floodHi) + CLEARANCE);
     let floor = safe + Math.max(0, Math.min(LIFT_MAX, lift)) * LIFT_STEP;
     for (const c of cells) for (const n of this.neighbors(c)) {
       const b = this.buildingAt(n);

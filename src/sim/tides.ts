@@ -14,6 +14,8 @@ export interface Tides {
   hi: number;
   springLo: number;
   springHi: number;
+  /** The highest the water ever comes: the spring peak, or a king tide on a coast with a river surge. Buildings clear it. */
+  floodHi: number;
   /** Above this is high water, below `lowMark` low water; between is slack. */
   highMark: number;
   lowMark: number;
@@ -34,19 +36,21 @@ export interface Tides {
   groundFloor: number;
 }
 
-export function tidesFor(scale = 1): Tides {
+/** The tides for a biome: `scale` multiplies every level; `king` is a king tide's rise over the spring peak (0 without a river surge). */
+export function tidesFor(scale = 1, king = 0): Tides {
   const hi = TIDE_HI * scale, lo = TIDE_LO * scale, springHi = SPRING_HI * scale, springLo = SPRING_LO * scale;
+  const floodHi = springHi + king * scale;
   return {
-    scale, lo, hi, springLo, springHi,
+    scale, lo, hi, springLo, springHi, floodHi,
     highMark: HIGH_WATER_MARK * scale, lowMark: LOW_WATER_MARK * scale,
-    dryTerrain: springHi + CLEARANCE,
+    dryTerrain: floodHi + CLEARANCE,
     springFloodTerrain: springHi - STILT_MIN,
-    waveHeight: springHi + CLEARANCE + WAVE_MARGIN,
+    waveHeight: floodHi + CLEARANCE + WAVE_MARGIN,
     beachMax: BEACH_MAX_HEIGHT * scale,
     landfillHeight: LANDFILL_HEIGHT * scale,
-    pierFloor: PIER_FLOOR * scale,
-    raisedFloor: RAISED_FLOOR * scale,
-    groundFloor: PIER_FLOOR * scale,
+    pierFloor: (PIER_FLOOR + king) * scale,
+    raisedFloor: (RAISED_FLOOR + king) * scale,
+    groundFloor: (PIER_FLOOR + king) * scale,
   };
 }
 

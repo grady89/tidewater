@@ -3,7 +3,7 @@ import { TIDE_HI } from "../config";
 import { BuildingKind, FISH_CAP, ResourceKind, SERVICE_KINDS, ServiceKind, STARTING_FISH, STARTING_MONEY } from "./balance";
 import { filled, zeros } from "./fields";
 import { emptyStock, GoodId } from "./goods";
-import { BiomeId, tideScaleOf } from "./biomes";
+import { BiomeId, catchOf, Surge, surgeOf, tideScaleOf } from "./biomes";
 import { initialTrees, TreeSite } from "./trees";
 
 export function emptyCoverage(): Record<ServiceKind, number[]> {
@@ -98,6 +98,8 @@ export interface TideState {
   override: number | null;
   /** The biome's multiplier on every level (tides.ts); 1 for Tidewater. */
   scale: number;
+  /** The coast's river surge (the Delta): swells and king tides lift its peaks. Absent elsewhere. */
+  surge?: Surge;
 }
 
 export interface Assignment { home: number; work: number; n: number }
@@ -153,6 +155,26 @@ export interface TradeState {
   orders: Partial<Record<GoodId, number>>;
   /** Visits so far. */
   visits: number;
+  /** The World routes the company's ship here (sim/lanes.ts): it calls when the route says, not on its own clock. */
+  routed?: boolean;
+  /** The company's World-wide price slide, a multiplier per good (1 = the registry price). */
+  slide?: Partial<Record<GoodId, number>>;
+  /** What the ship bought at its last call (the World reads it for the slide). */
+  bought?: Partial<Record<GoodId, number>>;
+}
+
+/**
+ * A message between seas on the World's event bus (sim/lanes.ts): a sea's outbox holds what it sends (an
+ * eruption's wave for its neighbours); what is sent to a sea not being played waits in the World ledger until it is entered.
+ */
+export interface WorldEvent {
+  kind: "tsunami" | "storm";
+  /** What sent it ("eruption", a drifting storm), and the sender's face when the World knows it. */
+  from: string;
+  fromFace?: number;
+  /** The sender's cycle when it went out; the receiver's cycle it lands on, when known. */
+  cycle: number;
+  at?: number;
 }
 
 export interface SimState {
@@ -177,6 +199,16 @@ export interface SimState {
   extraTrees: TreeSite[];
   /** Cells raised to dry ground by landfill (cell indices). */
   landfill: number[];
+  /** Land a lava flow made (also in `landfill`): unbuildable until its cycle (the Cinder). */
+  newLand: { k: number; until: number }[];
+  /** The World's event bus: what this sea sends, and what has been sent to it (WorldEvent). */
+  outbox: WorldEvent[];
+  /** Cargo ships this sea's shipyard has built for the lanes (its harbor sails CARGO_SHIPS_PER_HARBOR more). */
+  cargoShips: number;
+  /** The lanes' cargo ship: the cycle one is due to land here, and the cycle one last did (the view sails it in). */
+  cargo: { due: number; cycle: number };
+  /** A storm crossing the World that reaches this sea next: the cycle, and where it comes from. */
+  stormComing: { at: number; from: string } | null;
   /** The outstanding loan: what is still owed, the instalment per settlement, how many loans ever taken. */
   loan: { owed: number; perCycle: number; taken: number; /** The cycle the instalments start (absent in older saves: at once). */ holdUntil?: number };
   fields: Fields;
@@ -220,15 +252,20 @@ export function createState(seed = 1, islandSeed = 0, biome: BiomeId = "tidewate
     rng: seed | 0,
     time: 0,
     tick: 0,
-    tide: { phase: Math.PI * 0.5, level: TIDE_HI * tideScaleOf(biome), wetLevel: 0, cycle: 0, peaked: false, override: null, scale: tideScaleOf(biome) },
+    tide: { phase: Math.PI * 0.5, level: TIDE_HI * tideScaleOf(biome), wetLevel: 0, cycle: 0, peaked: false, override: null, scale: tideScaleOf(biome), ...(surgeOf(biome) ? { surge: { ...surgeOf(biome)! } } : {}) },
     phase: "high",
-    resources: { money: STARTING_MONEY, ...emptyStock(), fish: STARTING_FISH },
+    resources: { money: STARTING_MONEY, ...emptyStock(), [catchOf(biome)]: STARTING_FISH },
     buildings: {},
     nextId: 1,
     assignments: [],
     trees: initialTrees(islandSeed, biome),
     extraTrees: [],
     landfill: [],
+    newLand: [],
+    outbox: [],
+    cargoShips: 0,
+    cargo: { due: -1, cycle: -1 },
+    stormComing: null,
     loan: { owed: 0, perCycle: 0, taken: 0 },
     fields: { pollution: zeros(), fish: filled(FISH_CAP), coverage: emptyCoverage(), shark: zeros(), fire: zeros(), bleach: zeros() },
     emitters: [],

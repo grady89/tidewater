@@ -5,6 +5,7 @@ import { BuildingKind, BUILDINGS, SWIM_RADIUS } from "../src/sim/balance";
 import { buyBoat, tryPlace } from "../src/sim/economy";
 import { sheltered } from "../src/sim/events";
 import { Grid } from "../src/sim/grid";
+import { updateNetwork } from "../src/sim/network";
 import { Building, buildingList, Cell, SimState } from "../src/sim/state";
 import { treeSites } from "../src/sim/trees";
 
@@ -34,6 +35,7 @@ export function pierSite(grid: Grid, near: Cell): Cell {
   for (let i = -32; i < 32; i++) for (let j = -32; j < 32; j++) {
     const c = { i, j };
     if (grid.classAt(c) !== "deep" || !grid.footprint("pier", c)) continue;
+    if (!grid.canPlace("pier", grid.footprint("pier", c)!)) continue; // the isle, before a harbor opens it
     const shore = grid.neighbors(c).find(n => grid.classAt(n) === "flat")!;
     const score = dist(c, near) + (grid.heightAt(shore) < 0.1 ? 6 : 0);
     if (score < bs) { bs = score; best = c; }
@@ -418,6 +420,22 @@ const isLink = (b: Building | null) => !!b && (b.kind === "walkway" || b.kind ==
  * free cell), then, if the target still touches no link (a house sat in the way), the shortest free route from the
  * target's footprint to any link, up to eight cells out. Returns how many pieces went down.
  */
+/** A kind on its material near `from`, joined by the shortest walk from the nearest street piece the town already reaches (or the next nearest). */
+export function placeJoined(state: SimState, grid: Grid, kind: BuildingKind, from: Cell): Building | null {
+  const b = placeNear(state, grid, kind, from);
+  if (!b) return null;
+  updateNetwork(state, grid, state.tide.level);
+  const links = buildingList(state).filter(x => x.id !== b.id && x.reached && BUILDINGS[x.kind].network !== "leaf");
+  const d = (x: Building) => Math.hypot(x.cells[0].i - b.cells[0].i, x.cells[0].j - b.cells[0].j);
+  links.sort((p, q) => d(p) - d(q));
+  for (const l of links.slice(0, 6)) { // a steep line can fail: the next nearest street
+    joinByLine(state, grid, l.cells[0], b.cells[0]);
+    updateNetwork(state, grid, state.tide.level);
+    if (b.reached) break;
+  }
+  return b;
+}
+
 export function joinByLine(state: SimState, grid: Grid, from: Cell, to: Cell): number {
   let laid = 0;
   // First the game's own route: the street kinds in the order the player's drag would lay them, stepping within
@@ -460,7 +478,7 @@ export function biomeTown(state: SimState, grid: Grid, grant = 3000, town: Retur
   state.resources.money += grant; state.resources.planks += 100;
   growStreet(state, grid, 8);
   const extras: Partial<Record<BuildingKind, Building>> = {};
-  const flats: BuildingKind[] = ["stockfishRacks", "iceHouse", "coconutGrove", "pearlHouse", "toolworks"];
+  const flats: BuildingKind[] = ["stockfishRacks", "iceHouse", "coconutGrove", "pearlHouse", "toolworks", "ricePaddy", "saltPan", "indigoVats", "wardenTower", "glassworks", "greatCistern"];
   for (const kind of flats) {
     if (!grid.inCatalog(kind)) continue;
     let b = placeByWalkway(state, grid, kind, 1)[0];
@@ -477,5 +495,15 @@ export function biomeTown(state: SimState, grid: Grid, grant = 3000, town: Retur
     if (station) { extras.whalingStation = station; bridgeTo(state, grid, station); }
   }
   for (const kind of ["divePlatform", "reefNursery"] as const) if (grid.inCatalog(kind)) { const b = placeNear(state, grid, kind, town.pier.cells[0]); if (b) extras[kind] = b; }
+  // Kinds bound to a material up the slope (the Cinder's terraces, a vent, the spring; the Dunes' oases), joined from the nearest street.
+  for (const kind of ["taroTerrace", "cocoaTerrace", "sulfurWorks", "hotSpring", "dateGrove", "coffeeTerrace"] as const) if (grid.inCatalog(kind)) {
+    const b = placeJoined(state, grid, kind, town.huts[0].cells[0]);
+    if (b) extras[kind] = b;
+  }
+  // Channel-edge kinds by the pier (the Delta's crab pots, the Dunes' sponge divers), joined to the street if the pier's own deck does not reach them.
+  for (const kind of ["crabPots", "spongeDivers"] as const) if (grid.inCatalog(kind)) {
+    const b = placeEdge(state, grid, kind, town.pier.cells[0], 2);
+    if (b) { extras[kind] = b; if (!b.cells.some(c => grid.neighbors(c).some(n => isLink(grid.buildingAt(n))))) joinByLine(state, grid, town.pier.cells[0], b.cells[0]); }
+  }
   return { town, extras };
 }

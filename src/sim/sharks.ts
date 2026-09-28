@@ -39,7 +39,7 @@ export function tickSharks(state: SimState, grid: Grid, dt: number, sources: { k
   for (const s of sources) f[s.k] += s.rate * (dt / SIM_TICK);
   stepDrift(f, flowFor(grid), dt, isRising(state.tide), SHARK_DECAY, SHARK_DIFFUSE, SHARK_ADVECT);
   for (let k = 0; k < CELLS; k++) if (!grid.water[k]) f[k] = 0;
-  for (const b of buildingList(state)) if (b.kind === "sharkNet") f[cellIndex(b.cells[0].i, b.cells[0].j)] = 0;
+  for (const b of buildingList(state)) if (BUILDINGS[b.kind].stopsPredators) f[cellIndex(b.cells[0].i, b.cells[0].j)] = 0;
 }
 
 /** Open water beside a beach cell: water with nothing built on it. Nets count as built, so a netted cell is safe. */
@@ -86,7 +86,7 @@ export function rollIncidents(state: SimState, grid: Grid): number {
       .sort((x, y) => (y.residents - y.injured) - (x.residents - x.injured) || x.id - y.id);
     if (homes[0]) homes[0].injured++;
     for (const h of buildingList(state)) if (BUILDINGS[h.kind].residents > 0 && within(c, h.cells, INJURY_RADIUS)) h.shock = INJURY_MEMORY;
-    notify(state, "A shark took a swimmer off the beach");
+    notify(state, `A ${biomeFor(state).predator ?? "shark"} took a swimmer off the beach`);
   }
   return incidents;
 }

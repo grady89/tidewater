@@ -26,6 +26,7 @@ export function fireSources(state: SimState): Emitter[] {
     else if (b.kind === "tavern" && b.workers > 0) rate = FIRE_TAVERN;
     else if (b.kind === "ironMine" && b.workers > 0) rate = FIRE_MINE;
     else if (b.lantern) rate = FIRE_LANTERN;
+    else if (BUILDINGS[b.kind].fireRisk && b.workers > 0) rate = BUILDINGS[b.kind].fireRisk!;
     if (rate > 0) for (const c of b.cells) out.push({ k: cellIndex(c.i, c.j), rate: rate / b.cells.length / TICKS_PER_CYCLE });
   }
   return out;
@@ -37,12 +38,13 @@ export function effectiveRisk(state: SimState, c: Cell): number {
 }
 
 /** Every tick: emit, decay, creep; burn and spread. */
-export function tickFire(state: SimState, grid: Grid, dt: number, rain = false): void {
+export function tickFire(state: SimState, grid: Grid, dt: number, rain = false, fan = 1): void {
   const f = state.fields.fire;
   if (rain) { f.fill(0); }
   else {
     // Fire risk is not a fraction: a cluster's risk climbs past FIRE_IGNITE_THRESHOLD (1.0) and that is the rule.
-    for (const e of state.fireEmitters) f[e.k] += e.rate * (dt / SIM_TICK);
+    // A dry storm (the Dunes' sandstorm) fans it: every emitter runs `fan` times as hot while it blows.
+    for (const e of state.fireEmitters) f[e.k] += e.rate * fan * (dt / SIM_TICK);
     stepDrift(f, flowFor(grid), dt, false, FIRE_DECAY, FIRE_DIFFUSE, FIRE_ADVECT_NONE);
   }
   const burning = buildingList(state).filter(b => b.fire > 0).sort((a, b) => a.id - b.id);

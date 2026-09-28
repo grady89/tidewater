@@ -7,33 +7,31 @@ const ESCAPE = 128, RESET = 129;
 const MAX = 32768;
 const OFFSET = 32;
 
-function freshDict(): Map<string, number> {
-  const d = new Map<string, number>();
-  for (let k = 0; k < 128; k++) d.set(String.fromCharCode(k), k);
-  return d;
-}
-
 export function compress(text: string): string {
-  let dict = freshDict();
+  // The dictionary maps (the code of a phrase, the next character) to the code of the longer phrase — the same
+  // phrases and codes as building the phrase strings, without building them. The ASCII characters are codes 0–127
+  // (no entry); a lone non-ASCII character is (-1, its code).
+  let dict = new Map<number, number>();
   let next = FIRST;
   const out: number[] = [];
-  const add = (phrase: string) => {
-    if (next >= MAX) { out.push(RESET); dict = freshDict(); next = FIRST; return; }
-    dict.set(phrase, next++);
+  const key = (p: number, c: number) => (p + 1) * 65536 + c;
+  const lookup = (p: number, c: number): number | undefined => (p < 0 && c < 128 ? c : dict.get(key(p, c)));
+  const add = (p: number, c: number) => {
+    if (next >= MAX) { out.push(RESET); dict = new Map(); next = FIRST; return; }
+    dict.set(key(p, c), next++);
   };
-  let w = "";
+  let w = -1; // the code of the phrase so far; -1 = none
   for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    const wc = w + c;
-    if (dict.has(wc)) { w = wc; continue; }
-    if (w !== "") { out.push(dict.get(w)!); add(wc); }
-    if (c.charCodeAt(0) < 128) { w = c; continue; }
-    const cu = c.charCodeAt(0);
-    out.push(ESCAPE, cu >> 8, cu & 255);
-    add(c);
-    w = "";
+    const c = text.charCodeAt(i);
+    const wc = lookup(w, c);
+    if (wc !== undefined) { w = wc; continue; }
+    if (w >= 0) { out.push(w); add(w, c); }
+    if (c < 128) { w = c; continue; }
+    out.push(ESCAPE, c >> 8, c & 255);
+    add(-1, c);
+    w = -1;
   }
-  if (w !== "") out.push(dict.get(w)!);
+  if (w >= 0) out.push(w);
   let s = "";
   for (let k = 0; k < out.length; k += 8192) s += String.fromCharCode(...out.slice(k, k + 8192).map(v => v + OFFSET));
   return s;

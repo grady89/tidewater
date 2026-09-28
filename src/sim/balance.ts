@@ -14,7 +14,11 @@ export type BuildingKind =
   | "breakwater" | "seaWall"
   | "toolworks"
   | "stockfishRacks" | "whalingStation" | "ironMine" | "iceHouse" | "iceBreakerPier"
-  | "divePlatform" | "pearlHouse" | "coconutGrove" | "reefNursery";
+  | "divePlatform" | "pearlHouse" | "coconutGrove" | "reefNursery"
+  | "ricePaddy" | "crabPots" | "saltPan" | "indigoVats" | "wardenTower" | "crocNet"
+  | "taroTerrace" | "cocoaTerrace" | "glassworks" | "sulfurWorks" | "hotSpring"
+  | "dateGrove" | "coffeeTerrace" | "spongeDivers" | "greatCistern" | "dredger"
+  | "fort";
 
 /** Service coverage layers; each building that provides one writes its staffed fraction within `radius`. */
 export type ServiceKind = "water" | "leisure" | "night" | "treatment" | "lifeguard" | "firewatch";
@@ -46,6 +50,14 @@ export interface BuildingDef {
   maxRise?: number;
   /** A cell material every footprint cell must have (the biomes' pieces: a dive platform on the lagoon). */
   material?: Material;
+  /** A cell of this material must lie beside the footprint (a coffee terrace by an oasis). */
+  nearMaterial?: Material;
+  /** Pollution a fully staffed one puts into the water each cycle, at its first cell (indigo vats). */
+  pollution?: number;
+  /** Fire risk a staffed one raises each cycle, spread over its cells (the glassworks). */
+  fireRisk?: number;
+  /** Predator risk cannot cross its cell (shark nets, croc nets). */
+  stopsPredators?: boolean;
   /** Must touch a flat cell that carries a walkway (lumber camps on the hill). */
   needsWalkway?: boolean;
   /** Must touch a pier, dock, harbor or walkway (docks: crew walk in over a pier or a raised walkway). */
@@ -104,6 +116,27 @@ export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
   pearlHouse: { name: "Pearl house", category: "Production", w: 2, d: 1, cls: "flat", cost: { money: 180 }, workers: 2, residents: 0, upkeep: 1.5, floor: "stilts", network: "leaf", desc: "Grades the divers' pearls for the trade ship" },
   coconutGrove: { name: "Coconut grove", category: "Production", w: 2, d: 1, cls: "flatOrHigh", cost: { money: 90 }, workers: 3, residents: 0, upkeep: 1, floor: "stilts", network: "leaf", desc: "Gathers coconuts from palms within 6" },
   reefNursery: { name: "Reef nursery", category: "Sea", w: 1, d: 1, cls: "deep", material: "lagoon", needsLink: true, cost: { money: 160 }, workers: 1, residents: 0, upkeep: 1, floor: 1.0, network: "leaf", desc: "Restores fish and coral within 5 while the water stays clean" },
+  // Delta (BIOMES.md §3.4)
+  ricePaddy: { name: "Rice paddy", category: "Production", w: 2, d: 2, cls: "flat", terrain: { min: 0.0, max: 0.45 }, cost: { money: 100 }, workers: 3, residents: 0, upkeep: 1, floor: 1.0, network: "leaf", desc: "Flooded at high water, planted at low: rice every two cycles on fresh water (the river's reach or a well's); the whole crop at a spring low" },
+  crabPots: { name: "Crab pots", category: "Sea", w: 1, d: 1, cls: "edge", cost: { money: 50 }, workers: 1, residents: 0, upkeep: 0.5, floor: 1.0, network: "leaf", desc: "Crab from the channel at low water; on a channel's edge" },
+  saltPan: { name: "Salt pan", category: "Production", w: 2, d: 2, cls: "flatOrHigh", terrain: { min: 0.45, max: 1.4 }, cost: { money: 110 }, workers: 2, residents: 0, upkeep: 1, floor: "ground", network: "leaf", desc: "Sun-dried salt on the upper flats and the levee; half as much in a storm" },
+  indigoVats: { name: "Indigo vats", category: "Production", w: 2, d: 1, cls: "flat", cost: { money: 150 }, workers: 3, residents: 0, upkeep: 1.5, floor: "stilts", network: "leaf", pollution: 3, desc: "Indigo from the wild plants on the open flats within 6; fouls the water — put it downstream" },
+  wardenTower: { name: "Warden tower", category: "Services", w: 1, d: 1, cls: "flat", cost: { money: 90 }, workers: 1, residents: 0, upkeep: 1, floor: "stilts", network: "leaf", service: { kind: "lifeguard", radius: 5 }, desc: "Crocodile attacks within 5 drop 80%" },
+  // Cinder (BIOMES.md §3.5)
+  taroTerrace: { name: "Taro terrace", category: "Production", w: 2, d: 2, cls: "high", material: "fertile", cost: { money: 110 }, workers: 3, residents: 0, upkeep: 1, floor: "ground", network: "leaf", desc: "Taro on the fertile band; half as much under ash" },
+  cocoaTerrace: { name: "Cocoa terrace", category: "Production", w: 2, d: 2, cls: "high", material: "fertile", cost: { money: 150 }, workers: 3, residents: 0, upkeep: 1.5, floor: "ground", network: "leaf", desc: "Cocoa on the fertile band; half as much under ash" },
+  glassworks: { name: "Glassworks", category: "Production", w: 2, d: 2, cls: "flat", cost: { money: 240 }, workers: 4, residents: 0, upkeep: 2.5, floor: "stilts", network: "leaf", fireRisk: 5, desc: "Glass from the black sand; burns sulfur, or timber when there is none; fire risk" },
+  sulfurWorks: { name: "Sulfur works", category: "Production", w: 1, d: 1, cls: "high", material: "vent", cost: { money: 120 }, workers: 2, residents: 0, upkeep: 1, floor: "ground", network: "leaf", desc: "Sulfur from a steam vent" },
+  hotSpring: { name: "Hot-spring bathhouse", category: "Leisure", w: 2, d: 1, cls: "flat", material: "spring", cost: { money: 260 }, workers: 2, residents: 0, upkeep: 2, floor: "stilts", network: "leaf", service: { kind: "leisure", radius: 14 }, desc: "The strongest leisure on the World (within 14), on a hot spring; the tourists come for it" },
+  // Pirates (BIOMES.md §4; only in the catalog with PIRATES_ENABLED)
+  fort: { name: "Fort", category: "Sea", w: 2, d: 2, cls: "flatOrHigh", cost: { money: 300 }, workers: 3, residents: 0, upkeep: 3, floor: "ground", network: "leaf", desc: "Guns over the lanes: pirates raid this sea's cargo half as often" },
+  // Dunes (BIOMES.md §3.6)
+  dateGrove: { name: "Date grove", category: "Production", w: 2, d: 2, cls: "high", material: "oasis", cost: { money: 90 }, workers: 2, residents: 0, upkeep: 1, floor: "ground", network: "leaf", desc: "Dates from the palms of an oasis" },
+  coffeeTerrace: { name: "Coffee terrace", category: "Production", w: 2, d: 1, cls: "high", nearMaterial: "oasis", cost: { money: 140 }, workers: 3, residents: 0, upkeep: 1.5, floor: "ground", network: "leaf", desc: "Coffee beside an oasis" },
+  spongeDivers: { name: "Sponge divers' hut", category: "Production", w: 1, d: 1, cls: "edge", material: "lagoon", cost: { money: 70 }, workers: 2, residents: 0, upkeep: 1, floor: 1.0, network: "leaf", desc: "Sponges from the lagoon at each low water" },
+  greatCistern: { name: "Great cistern", category: "Services", w: 3, d: 3, cls: "flat", cost: { money: 200 }, workers: 2, residents: 0, upkeep: 3, floor: "stilts", network: "leaf", service: { kind: "water", radius: 16 }, desc: "Water for homes within 16 (wells here reach 3); holds half through a drought" },
+  dredger: { name: "Dredger", category: "Sea", w: 1, d: 1, cls: "deep", touches: "harbor", cost: { money: 220 }, workers: 2, residents: 0, upkeep: 2, floor: 1.0, network: "leaf", desc: "Beside the harbor: clears the silt a sandstorm leaves" },
+  crocNet: { name: "Croc net", category: "Sea", w: 1, d: 1, cls: "flatOrDeep", cost: { money: 20 }, workers: 0, residents: 0, upkeep: 0.1, floor: 1.0, network: "leaf", stopsPredators: true, desc: "Per water cell; crocodiles can't cross" },
   outfall: { name: "Sewage outfall", category: "Services", w: 1, d: 1, cls: "edge", cost: { money: 40 }, workers: 0, residents: 0, upkeep: 0.5, floor: 1.0, network: "leaf", desc: "Dumps the town's waste into the sea; the tide carries it" },
   treatmentPlant: { name: "Treatment plant", category: "Services", w: 2, d: 2, cls: "flatOrHigh", cost: { money: 350 }, workers: 4, residents: 0, upkeep: 3, floor: "ground", network: "leaf", service: { kind: "treatment", radius: 12 }, desc: "Neutralises waste from homes within 12" },
   well: { name: "Well", category: "Services", w: 1, d: 1, cls: "flat", cost: { money: 50 }, workers: 0, residents: 0, upkeep: 0.5, floor: "stilts", network: "leaf", service: { kind: "water", radius: 8 }, desc: "Drinking water for homes within 8" },
@@ -113,7 +146,7 @@ export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
   marketSquare: { name: "Market square", category: "Leisure", w: 2, d: 2, cls: "flat", touches: "market", cost: { money: 100 }, workers: 0, residents: 0, upkeep: 0.5, floor: "stilts", network: "link", service: { kind: "leisure", radius: 6 }, desc: "Leisure within 6; must touch the fish market" },
   clinic: { name: "Clinic", category: "Services", w: 2, d: 1, cls: "flat", cost: { money: 200 }, workers: 3, residents: 0, upkeep: 2, floor: "stilts", network: "leaf", desc: "Heals the injured so they can work again" },
   lifeguard: { name: "Lifeguard tower", category: "Services", w: 1, d: 1, cls: "beach", cost: { money: 90 }, workers: 1, residents: 0, upkeep: 1, floor: "ground", network: "leaf", service: { kind: "lifeguard", radius: 5 }, desc: "On a beach; shark incidents within 5 drop 80%" },
-  sharkNet: { name: "Shark net", category: "Sea", w: 1, d: 1, cls: "flatOrDeep", cost: { money: 20 }, workers: 0, residents: 0, upkeep: 0.1, floor: 1.0, network: "leaf", desc: "Per water cell; shark risk can't cross" },
+  sharkNet: { name: "Shark net", category: "Sea", w: 1, d: 1, cls: "flatOrDeep", cost: { money: 20 }, workers: 0, residents: 0, upkeep: 0.1, floor: 1.0, network: "leaf", stopsPredators: true, desc: "Per water cell; shark risk can't cross" },
   harbor: { name: "Harbor", category: "Sea", w: 3, d: 3, cls: "deep", terrain: { min: -99, max: -1.5 }, cost: { money: 600, planks: 60 }, workers: 0, residents: 0, upkeep: 6, floor: 1.0, network: "root", slots: 6, desc: "Trade ship berth; 6 boats; needs water deeper than 1.5" },
   inn: { name: "Inn", category: "Leisure", w: 2, d: 2, cls: "flat", cost: { money: 250, planks: 20 }, workers: 2, residents: 0, upkeep: 2, floor: "stilts", network: "leaf", desc: "Tourists off the trade ship stay and spend" },
   lighthouse: { name: "Lighthouse", category: "Sea", w: 1, d: 1, cls: "highOrEdge", cost: { money: 400 }, workers: 0, residents: 0, upkeep: 2, floor: "ground", network: "leaf", desc: "Boats ride out storms; the trade ship calls every 2 tides" },
@@ -147,6 +180,11 @@ export const LANDFILL_COST = { money: 45, timber: 4 };
 export const PLANT_COST = 3;
 /** Timber from clearing a grown tree by hand. */
 export const CLEAR_TIMBER = 1;
+/** What clearing a tree on a cell of this material does instead: its timber, and pollution let into the water (mangroves). */
+export const CLEAR_BY_MATERIAL: Partial<Record<Material, { timber: number; pollution: number }>> = {
+  // A mangrove gives no timber that mills (BIOMES.md §2) and stirs the mud: a burst of pollution on its cell.
+  mangrove: { timber: 0, pollution: 0.4 },
+};
 
 /** Share of a building's money cost returned when the player removes it (planks and timber are not returned). */
 export const REMOVE_REFUND = 0.5;
@@ -419,17 +457,107 @@ export const HATCHING_LANTERN_RADIUS = 4;
 export const HATCHING_BONUS = 0.1;
 export const HATCHING_BONUS_MAX = 0.5;
 
+// Delta (BIOMES.md §3.4)
+/** A paddy grows a crop over RICE_CYCLES staffed settlements on fresh water, then yields RICE_PER_HARVEST × staffing. */
+export const RICE_CYCLES = 2;
+export const RICE_PER_HARVEST = 14;
+/** At a spring low every standing crop comes in at once, this much the richer. */
+export const HARVEST_BONUS = 1.25;
+/** The river's stem waters the flats this far either side (the water coverage layer). */
+export const FRESH_RIVER_RADIUS = 3;
+export const CRAB_POT_PER_SHIFT = 3;
+export const SALT_PER_CYCLE = 4;
+export const SALT_STORM_FACTOR = 0.5;
+/** Indigo per open flat cell (the wild indigo) within INDIGO_RADIUS of the vats, per cycle at full staff. */
+export const INDIGO_PER_CELL = 0.02;
+export const INDIGO_RADIUS = 6;
+/** Fever season: every FEVER_EVERY cycles from FEVER_FIRST, FEVER_SHARE of every home out of a clinic's reach falls sick. */
+export const FEVER_EVERY = 8;
+export const FEVER_FIRST = 8;
+export const FEVER_SHARE = 0.25;
+export const FEVER_CLINIC_RADIUS = 10;
+
+// Cinder (BIOMES.md §3.5)
+export const TARO_PER_CYCLE = 6;
+export const COCOA_PER_CYCLE = 2.5;
+export const SULFUR_PER_CYCLE = 3;
+/** Glass a fully staffed works makes a cycle, and what each unit burns: sulfur, or timber when there is none. */
+export const GLASS_PER_CYCLE = 3;
+export const GLASS_SULFUR = 0.5;
+export const GLASS_TIMBER = 1;
+/** Tourists spend this much more while a staffed hot-spring bathhouse stands. */
+export const HOT_SPRING_TOURISM = 1.5;
+/** The eruption: rolled at a settlement from ERUPTION_FIRST, ERUPTION_CHANCE a cycle, ERUPTION_COOLDOWN apart; TREMOR_CYCLES of warning. */
+export const ERUPTION_FIRST = 12;
+export const ERUPTION_CHANCE = 0.08;
+export const ERUPTION_COOLDOWN = 16;
+export const TREMOR_CYCLES = 2;
+/** Under the ash (the cycle after an eruption): every home loses this much happiness, the terraces make half. */
+export const ASH_HAPPY = 0.15;
+export const ASH_TERRACE_FACTOR = 0.5;
+/** New land from a lava flow cools this many cycles before anything may stand on it. */
+export const LAVA_COOL_CYCLES = 3;
+
+// Dunes (BIOMES.md §3.6)
+export const DATES_PER_CYCLE = 5;
+export const COFFEE_PER_CYCLE = 2.5;
+/** Sponges a fully crewed divers' hut brings up each low water. */
+export const SPONGES_PER_SHIFT = 1.5;
+/** A well's reach on the Dunes (the great cistern is the water building); an oasis waters this far around it. */
+export const WELL_RADIUS_DUNES = 3;
+export const OASIS_RADIUS = 3;
+/** Drought every DROUGHT_EVERY cycles from DROUGHT_FIRST: wells dry, the great cistern holds this share; homes without water lose DROUGHT_HAPPY. */
+export const DROUGHT_EVERY = 10;
+export const DROUGHT_FIRST = 10;
+export const DROUGHT_CISTERN = 0.5;
+export const DROUGHT_HAPPY = 0.3;
+/** A sandstorm silts the harbours: their boats bring in SILT_FACTOR of the catch until dredged, or SILT_CYCLES of tides scour it. */
+export const SILT_CYCLES = 4;
+export const SILT_FACTOR = 0.5;
+/** Tourists spend this much more the cycle of a night market. */
+export const NIGHT_MARKET_TOURISM = 2;
+
 // Sea lanes (BIOMES.md §4; sim/lanes.ts, behind LANES_ENABLED)
 export const CARGO_SHIPS_PER_HARBOR = 1;
 export const CARGO_HOLD = 20;
+/** The harbor on a coast with no timber (the Atoll, the Delta, the Cinder, the Dunes): its planks paid for in money at the company's plank price. */
+export const TIMBERLESS_HARBOR: Cost = { money: 780 };
+/** A shipyard builds a cargo ship for the lanes (once every fishing berth is full) from planks, money and iron; a sea keeps at most CARGO_SHIPS_MAX of its own. */
+export const CARGO_SHIP_COST: Cost = { money: 60, planks: 30 };
+export const CARGO_SHIP_IRON = 10;
+export const CARGO_SHIPS_MAX = 4;
+/** What a hub passes of one good in a cycle without a warehouse; each warehouse adds its cap (WAREHOUSE_CAP). */
+export const HUB_BASE_PASS = 5;
+/** Residents who leave an unhappy or full sea a cycle, for the nearest connected sea with homes free. */
+export const MIGRANTS_PER_CYCLE = 2;
+/** World storms: from the World's sixth cycle a storm is born on a built face at this chance a cycle; each blows this many cycles, a face a cycle. */
+export const WORLD_STORM_FIRST = 6;
+export const WORLD_STORM_CHANCE = 0.06;
+export const WORLD_STORM_LIFE = 4;
+/** The company's World-wide price slide: a good's price is 1 / (1 + recently bought / COMPANY_SLIDE_UNITS); what it bought fades by this each World cycle. */
+export const COMPANY_SLIDE_UNITS = 60;
+export const COMPANY_SLIDE_RECOVERY = 0.85;
+/**
+ * Pirates (v0, behind PIRATES_ENABLED): an unbuilt face beside a lane gains presence from the cargo that sails it
+ * (per unit), fading a share a cycle, capped at 1; a hop's raid chance is the strongest presence beside the lane ×
+ * PIRATE_RAID_CHANCE, × FORT_RAID_FACTOR for a staffed fort at either end.
+ */
+export const PIRATE_GROWTH_PER_UNIT = 0.004;
+export const PIRATE_DECAY = 0.9;
+export const PIRATE_RAID_CHANCE = 0.35;
+export const FORT_RAID_FACTOR = 0.5;
+/** The company pays this much more for a luxury sold by the coast whose favourite it is. */
+export const FAVOURITE_PREMIUM = 1.5;
 /** Non-food goods keep this fraction of their cap before any sails; an island wants a good it cannot make up to this fraction of its cap. */
 export const LANE_RESERVE_FRACTION = 0.3;
 export const LANE_WANT_FRACTION = 0.5;
+/** The share of each food a sea grows itself that it sends its neighbours a cycle (they want the variety). */
+export const LANE_FOOD_SHARE = 0.25;
 
 /** Classes whose pieces turn to face the street (R in the ghost); streets and everything in the water don't. */
 export const ROTATABLE_CLASSES: ReadonlySet<PlacementClass> = new Set<PlacementClass>(["flat", "high", "flatOrHigh", "shore", "beach"]);
 /** One-cell runs laid by a drag: never turned — a turned walkway wears its rails across the walk. */
-export const LINE_KINDS: ReadonlySet<BuildingKind> = new Set<BuildingKind>(["walkway", "raisedWalkway", "path", "breakwater", "sharkNet", "seaWall"]);
+export const LINE_KINDS: ReadonlySet<BuildingKind> = new Set<BuildingKind>(["walkway", "raisedWalkway", "path", "breakwater", "sharkNet", "seaWall", "crocNet"]);
 export function mayTurn(kind: BuildingKind): boolean {
   return ROTATABLE_CLASSES.has(BUILDINGS[kind].cls) && !LINE_KINDS.has(kind);
 }
