@@ -950,3 +950,23 @@ session should know that those only imply:
   tested; nothing is drawn, nothing is announced beyond a notification, the company does not sail the lanes, and
   the hold/reserve/want numbers are untuned placeholders. docs/biomes/PROGRESS.md Stage 9 lists exactly what is
   missing. Turning the flag on is safe (the smoke and fuzz never saw it on, so run both first).
+
+## Session E (2026-09-27, after the first blind playtest): the first fifteen minutes
+
+A blind tester's report (charming, the tide is a hook, but step 3 never checked off and the money loop never
+closed) replayed in the sim alone (`scratch/replay.ts`, not committed) and turned out to be two logic problems:
+
+- **The dragged run skipped what it could not build on.** A street dragged from the pier to the hut is an L; on a
+  generated island the L crosses a high cell, the cell is skipped, and two fragments go down with a gap between
+  them — planks "where it asked", the hut never on the street, and since immigration fills only homes on the
+  street, nobody came either. Now `build/line.ts` `routePath` lays the L when it is clear and otherwise the
+  shortest route through cells that fit (the ends may be unbuildable — the pier, the hut — the route starts and
+  ends beside them); only when no route exists does the plain L show, red. Step 3 says why it is still open once
+  walkways exist. Tested on four islands (`test/line.test.ts`).
+- **The market took three of the first four residents.** Nearest-first assignment, the market nearest, three
+  jobs: one crew of two on a boat, a fish a cycle sold, +2$ a cycle against upkeep. The market now needs one
+  worker at full selling rate; four residents give three crew and a seller, about 26$ a cycle from cycle 3 on
+  seeds 0 and 7. Job counts elsewhere shift by two (the World's ferry test).
+- The first peak said "no workers" before anyone lived there; it now says no one lives here yet and what fills
+  the homes. The "Make room" step names the three conditions for arrivals.
+- A pier click within a cell of a working spot takes that spot (`Placement.snapTo`).

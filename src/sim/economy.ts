@@ -25,7 +25,7 @@ import { chooseGround } from "./sea";
 import { announceLevel, rebuildCoverage } from "./services";
 import { healInjuries, sharkSources } from "./sharks";
 import { settleTrade } from "./trade";
-import { Building, buildingList, Cell, notify, Phase, SimState } from "./state";
+import { Building, buildingList, Cell, notify, Phase, population, SimState } from "./state";
 import { fellTrees, grownTreesNear, regrowTrees } from "./trees";
 import { assignWorkers, employed, staffing } from "./workers";
 
@@ -345,7 +345,9 @@ export function settleCycle(state: SimState, grid: Grid, opts: { quiet?: boolean
   // itself can't be under water — its stilts clear every tide — but the street to it can, at a spring peak.)
   const markets = buildings.filter(b => b.kind === "market");
   if (markets.length && !markets.some(b => active(b) && b.workers > 0) && r.fish > reserve) {
-    notify(state, markets.some(b => !b.reached) ? "The market has no walkway to a pier: nothing sold" : "The market has no workers: nothing sold");
+    notify(state, markets.some(b => !b.reached) ? "The market has no walkway to a pier: nothing sold"
+      : population(state) === 0 ? "No one lives here yet to work the market: homes on the street fill at the next peak"
+      : "The market has no workers: nothing sold");
   }
 
   produce(state, grid, buildings);

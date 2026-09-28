@@ -6,7 +6,9 @@ import { BuildingKind, BUILDINGS, PlacementClass } from "../sim/balance";
 import { autoStilts, boatPurchaseBlocker, buyBoat, canAfford, placeCost, removeBuilding, tryPlace } from "../sim/economy";
 import { BOAT_COST, LANDFILL_COST, LANTERN_COST, LIFT_MAX, PLANT_COST } from "../sim/balance";
 import { CLEARANCE } from "../config";
-import { Grid, HALF, worldToCell } from "../sim/grid";
+import { Grid, HALF, inBounds, worldToCell } from "../sim/grid";
+import { linePath, MAX_LINE, routePath } from "./line";
+export { linePath, routePath } from "./line";
 import { ground as groundHeight } from "../view/ground";
 import { addLandfill, clearBlocker, clearTree, landfillBlocker, plantBlocker, plantTree } from "../sim/land";
 import { MATERIAL_LABEL, UNBUILDABLE } from "../sim/materials";
@@ -26,20 +28,6 @@ const LINE_TOOLS: ReadonlySet<Tool> = new Set<Tool>(["walkway", "raisedWalkway",
 const ROTATABLE: ReadonlySet<PlacementClass> = new Set<PlacementClass>(["flat", "high", "flatOrHigh", "shore", "beach"]);
 /** Where the door is for each quarter turn: −z, −x, +z, +x. */
 const DOOR_SIDE: readonly Cell[] = [{ i: 0, j: -1 }, { i: -1, j: 0 }, { i: 0, j: 1 }, { i: 1, j: 0 }];
-const MAX_LINE = 40;
-
-/** The cells from `a` to `b` as an L: first along the longer axis, then the other. Both ends included. */
-export function linePath(a: Cell, b: Cell): Cell[] {
-  const out: Cell[] = [];
-  const di = b.i - a.i, dj = b.j - a.j;
-  const iFirst = Math.abs(di) >= Math.abs(dj);
-  let i = a.i, j = a.j;
-  out.push({ i, j });
-  const stepI = () => { while (i !== b.i) { i += Math.sign(di); out.push({ i, j }); } };
-  const stepJ = () => { while (j !== b.j) { j += Math.sign(dj); out.push({ i, j }); } };
-  if (iFirst) { stepI(); stepJ(); } else { stepJ(); stepI(); }
-  return out.slice(0, MAX_LINE);
-}
 
 export class Placement {
   tool: Tool = "walkway";
@@ -282,16 +270,36 @@ export class Placement {
     this.ghostDoor.setEnabled(true);
   }
 
+  /** Whether one cell of the current line tool can be laid at `c` (class, occupancy, the isle's ferry). */
+  private lineFits(c: Cell): boolean {
+    const kind = this.tool as BuildingKind;
+    const cells = this.grid.footprint(kind, c);
+    return !!cells && this.grid.classOk(BUILDINGS[kind].cls, cells) && !this.grid.buildingAt(c) && (!this.grid.onIsle(cells) || this.grid.isleOpen());
+  }
+
+  /** The nearest cell within `r` of `c` where `kind` can stand, `c` itself first (a pier click lands beside the spot). */
+  private snapTo(kind: BuildingKind, c: Cell, r: number): Cell | null {
+    let best: Cell | null = null, bd = Infinity;
+    for (let di = -r; di <= r; di++) for (let dj = -r; dj <= r; dj++) {
+      const n = { i: c.i + di, j: c.j + dj };
+      if (!inBounds(n.i, n.j)) continue;
+      const fp = this.grid.footprint(kind, n);
+      if (!fp || !this.grid.canPlace(kind, fp)) continue;
+      const d = di * di + dj * dj;
+      if (d < bd) { bd = d; best = n; }
+    }
+    return best;
+  }
+
   /** The cells of the run being dragged, with what each would cost; blocked cells are skipped, not fatal. */
   private evaluateLine(): { cells: Cell[]; ok: boolean[]; cost: number } {
     const kind = this.tool as BuildingKind;
     let cost = 0;
     const ok = this.linePath.map(c => {
-      const cells = this.grid.footprint(kind, c);
-      const fits = !!cells && this.grid.classOk(BUILDINGS[kind].cls, cells) && !this.grid.buildingAt(c) && (!this.grid.onIsle(cells) || this.grid.isleOpen());
+      const fits = this.lineFits(c);
       // Each cell prices its own stilts (the run is laid in order, so later cells may snap to earlier ones; the
       // preview prices each against the ground alone, which is the floor of what it will cost).
-      if (fits) cost += placeCost(kind, this.grid.stiltLength(kind, cells!, this.grid.floorFor(kind, cells!, this.toolLift))).money;
+      if (fits) { const cells = this.grid.footprint(kind, c)!; cost += placeCost(kind, this.grid.stiltLength(kind, cells, this.grid.floorFor(kind, cells, this.toolLift))).money; }
       return fits;
     });
     return { cells: this.linePath, ok, cost };
@@ -349,12 +357,15 @@ export class Placement {
       this.ghostStilts.setEnabled(false);
       this.ghostDoor.setEnabled(false);
       // Paint: the run follows the pointer's own track, cell by cell, so a street can bend where the player
-      // bends it. Each pointer step adds the L from the last painted cell; revisited cells are skipped.
+      // bends it. Each pointer step adds the route from the last painted cell (the L when it is clear, else the
+      // shortest way round whatever blocks it; the plain L, shown red, when there is no way); revisited cells are
+      // skipped.
       if (this.linePath.length === 0) this.linePath = [this.lineStart];
       const last = this.linePath[this.linePath.length - 1];
       if (last.i !== this.hover.i || last.j !== this.hover.j) {
         const seen = new Set(this.linePath.map(c => `${c.i},${c.j}`));
-        for (const c of linePath(last, this.hover).slice(1)) {
+        const step = routePath(last, this.hover, c => this.lineFits(c) && !seen.has(`${c.i},${c.j}`)) ?? linePath(last, this.hover).slice(1);
+        for (const c of step) {
           const key = `${c.i},${c.j}`;
           if (seen.has(key) || this.linePath.length >= MAX_LINE) continue;
           seen.add(key);
@@ -368,6 +379,8 @@ export class Placement {
     this.lineGhosts.ok.setEnabled(false); this.lineGhosts.bad.setEnabled(false);
     this.line = null;
     if (!this.hover) { this.ghost.setEnabled(false); this.ghostStilts.setEnabled(false); this.ghostDoor.setEnabled(false); this.blocker = null; this.warn = null; return; }
+    // A pier's spot is one exact edge cell: a click that lands a cell off takes the nearest spot that works.
+    if (this.tool === "pier") { const fp = this.grid.footprint("pier", this.hover); if (!fp || !this.grid.canPlace("pier", fp)) { const snapped = this.snapTo("pier", this.hover, 1); if (snapped) this.hover = snapped; } }
     const { cells, blocker, warn, fate, y, stilt, cost, rot } = this.evaluate(this.hover);
     this.stilt = stilt;
     this.cost = cost;
