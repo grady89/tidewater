@@ -376,8 +376,12 @@ function home(scene: Scene, b: Building, bodyW: number, baseH: number): Building
 
 // ---------- streets ----------
 
-/** What a walkway meets on each side: nothing, a deck at its own height, or a deck `dh` higher (a step up). */
-export type Join = { side: Cell; kind: "open" | "flush" | "step"; dh: number };
+/**
+ * What a walkway meets on each side: nothing, a deck at its own height, a deck `dh` higher (a step up), or a
+ * pier, dock or harbor `-dh` lower ("down": those draw nothing toward the street, so the street steps down onto
+ * them). `root`: the neighbour is a pier, dock or harbor, whose deck stops a little short of its cell's edge.
+ */
+export type Join = { side: Cell; kind: "open" | "flush" | "step" | "down"; dh: number; root?: boolean };
 /** How far a path's surface sits above the ground it drapes over (the same lift as its strips). */
 const PATH_LIFT = 0.05;
 export function deckJoins(b: Building, grid: Grid): Join[] {
@@ -392,12 +396,14 @@ export function deckJoins(b: Building, grid: Grid): Join[] {
     const { x, z } = cellCenter(c);
     const nh = n.kind === "path" ? ground(x + d.i * 0.5, z + d.j * 0.5) + PATH_LIFT : n.floorY;
     const dh = nh - b.floorY;
-    if (dh > 0.1 && dh <= STREET_STEP_MAX + 1e-6) return { side: d, kind: "step" as const, dh };
-    return { side: d, kind: "flush" as const, dh: 0 };
+    const root = BUILDINGS[n.kind].network === "root";
+    if (dh > 0.1 && dh <= STREET_STEP_MAX + 1e-6) return { side: d, kind: "step" as const, dh, root };
+    if (root && dh < -0.1 && -dh <= STREET_STEP_MAX + 1e-6) return { side: d, kind: "down" as const, dh, root };
+    return { side: d, kind: "flush" as const, dh: 0, root };
   });
 }
 function joinKey(b: Building, grid: Grid): string {
-  return deckJoins(b, grid).map(j => j.kind === "open" ? "-" : j.kind === "flush" ? "=" : `s${Math.round(j.dh * 10)}`).join("");
+  return deckJoins(b, grid).map(j => (j.kind === "open" ? "-" : j.kind === "flush" ? "=" : j.kind === "step" ? `s${Math.round(j.dh * 10)}` : `d${Math.round(-j.dh * 10)}`) + (j.root ? "r" : "")).join("");
 }
 
 /**
@@ -417,8 +423,23 @@ function streetDeck(scene: Scene, parts: Mesh[], b: Building, grid: Grid, x: num
       } else parts.push(box(scene, ax ? 0.1 : 0.9, 0.07, az ? 0.1 : 0.9, x + ax * 0.45, F - 0.035, z + az * 0.45, surface));
       continue;
     }
-    // Fill out to the edge (0.45 → 0.5); the neighbour fills its own half, so the seam vanishes.
-    parts.push(box(scene, ax ? 0.12 : 0.9, 0.07, az ? 0.12 : 0.9, x + ax * 0.45, F - 0.035, z + az * 0.45, surface));
+    // Fill out to the edge (0.45 → 0.5); the neighbour fills its own half, so the seam vanishes. A pier, dock or
+    // harbor at the same height stops short of the edge: the fill runs on over the gap to meet it.
+    if (j.root && j.kind === "flush") parts.push(box(scene, ax ? 0.2 : 0.9, 0.07, az ? 0.2 : 0.9, x + ax * 0.49, F - 0.036, z + az * 0.49, surface));
+    else parts.push(box(scene, ax ? 0.12 : 0.9, 0.07, az ? 0.12 : 0.9, x + ax * 0.45, F - 0.035, z + az * 0.45, surface));
+    if (j.kind === "down") {
+      // A stair down onto the lower pier, dock or harbor, standing on its deck: the top tread level with this deck
+      // at the shared edge, each lower tread reaching further out, so the flight reads as one wedge.
+      const drop = -j.dh;
+      const n = Math.max(2, Math.ceil(drop / 0.13));
+      const depth = Math.min(0.45, 0.15 * n);
+      const base = F - drop;
+      for (let k = 1; k <= n; k++) {
+        const len = 0.02 + depth * (n - k + 1) / n, mid = 0.5 + len / 2 - 0.02;
+        const h = (drop * k) / n;
+        parts.push(box(scene, ax ? len : 0.7, h, az ? len : 0.7, x + ax * mid, base + h / 2, z + az * mid, k % 2 ? PALETTE.planks : PALETTE.wood));
+      }
+    }
     if (j.kind === "step") {
       // A solid stair against the higher deck: each tread is a block from this deck up to its own height and
       // out to the shared edge, so the flight reads as one wedge whose top tread meets the neighbour's floor.
