@@ -2,7 +2,9 @@
 // blind tester's case — a street dragged from the pier to the hut on a generated island arrives connected.
 import { describe, expect, it } from "vitest";
 import { linePath, MAX_LINE, routePath } from "../src/build/line";
-import { BUILDINGS, mayTurn } from "../src/sim/balance";
+import { BUILDINGS, mayTurn, PATH_MAX_RISE } from "../src/sim/balance";
+import { clearTree } from "../src/sim/land";
+import { treeSites } from "../src/sim/trees";
 import { tryPlace } from "../src/sim/economy";
 import { Grid } from "../src/sim/grid";
 import { updateNetwork } from "../src/sim/network";
@@ -62,6 +64,41 @@ describe("the dragged run", () => {
     const route = routePath({ i: 0, j: 0 }, { i: 6, j: 0 }, c => !blocked(c) && c.j >= 0 && c.j <= 2, MAX_LINE, { cost: c => (c.j === 0 ? 10 : 1) })!;
     expect(route[route.length - 1]).toEqual({ i: 6, j: 0 });
     expect(route.filter(c => c.j === 0).length).toBe(1); // only the goal sits on the dear row
+  });
+  it("a path goes round a tree and refuses a steep bank", () => {
+    const { state, grid } = newGame(1, 7);
+    state.resources.money += 500;
+    const sites = treeSites(state);
+    const k = sites.findIndex((s, i) => state.trees[i] >= 0 && grid.classAt(s.cell) === "high" && grid.slopeOk("path", [s.cell]));
+    expect(k).toBeGreaterThanOrEqual(0);
+    const cell = sites[k].cell;
+    expect(grid.treeOn([cell])).toBe(true);
+    expect(tryPlace(state, grid, "path", cell)).toBeNull();
+    expect(clearTree(state, grid, cell)).toBe(true);
+    expect(tryPlace(state, grid, "path", cell)).not.toBeNull();
+  });
+  it("a path climbs at most PATH_MAX_RISE a cell: the next cell up a bank is refused, the one along the contour is not", () => {
+    const { state, grid } = newGame(1, 2, "fjord"); // the Fjord's banks are cliffs
+    state.resources.money += 500;
+    const ok = (c: Cell) => { const fp = grid.footprint("path", c); return !!fp && grid.canPlace("path", fp); };
+    let found: { a: Cell; up: Cell; along: Cell } | null = null;
+    for (let i = -28; i < 28 && !found; i++) for (let j = -28; j < 28 && !found; j++) {
+      const a = { i, j };
+      if (!ok(a)) continue;
+      const h = grid.heightAt(a);
+      const ns = grid.neighbors(a).filter(n => ok(n));
+      const up = ns.find(n => Math.abs(grid.heightAt(n) - h) > PATH_MAX_RISE + 0.05);
+      const along = ns.find(n => Math.abs(grid.heightAt(n) - h) <= PATH_MAX_RISE - 0.05);
+      if (up && along && !grid.neighbors(up).some(n => grid.buildingAt(n)) && !grid.neighbors(along).some(n => grid.buildingAt(n))) found = { a, up, along };
+    }
+    expect(found).not.toBeNull();
+    expect(tryPlace(state, grid, "path", found!.a)).not.toBeNull();
+    expect(grid.joinStepOk("path", [found!.up])).toBe(false);
+    expect(tryPlace(state, grid, "path", found!.up)).toBeNull();
+    expect(tryPlace(state, grid, "path", found!.along)).not.toBeNull();
+    // The route between them goes round, stepping within the rise.
+    const route = routePath(found!.a, found!.up, c => ok(c) || (c.i === found!.a.i && c.j === found!.a.j), MAX_LINE, { step: (p, q) => grid.stepOk("path", p, "path", q) });
+    if (route) for (let k = 0; k < route.length; k++) expect(grid.stepOk("path", k ? route[k - 1] : found!.a, "path", route[k])).toBe(true);
   });
   it("never turns a street piece, whatever it stands beside (a turned walkway wears its rails across the walk)", () => {
     const { state, grid } = newGame(1, 7);

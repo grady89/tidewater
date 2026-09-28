@@ -27,6 +27,8 @@ export interface RouteOptions {
   turnCost?: number;
   /** Which way the L goes first (default: the longer axis). */
   axis?: Axis;
+  /** Whether the run may step from one cell to the next (a path's rise per cell; default: always). */
+  step?: (from: Cell, to: Cell) => boolean;
   /** The footprint the run leaves from when `a` itself cannot take it: a pier — any side of any of its cells. */
   startCells?: readonly Cell[];
   /** The footprint the run arrives at when `b` itself cannot take it: a hut, a market. */
@@ -79,8 +81,9 @@ class Heap {
  * Excludes `a`. Null when no route of at most `max` cells exists.
  */
 export function routePath(a: Cell, b: Cell, fits: (c: Cell) => boolean, max = MAX_LINE, opts: RouteOptions = {}): Cell[] | null {
+  const step = opts.step ?? (() => true);
   const straight = linePath(a, b, opts.axis).slice(1);
-  if (straight.length && straight.every(fits)) return straight;
+  if (straight.length && straight.every(fits) && straight.every((c, k) => (k === 0 ? !fits(a) || step(a, c) : step(straight[k - 1], c)))) return straight;
   const key = (c: Cell) => (c.i + 64) * 256 + (c.j + 64);
   const cost = opts.cost ?? (() => 1);
   const turnCost = opts.turnCost ?? 2;
@@ -131,7 +134,7 @@ export function routePath(a: Cell, b: Cell, fits: (c: Cell) => boolean, max = MA
     for (let di = 0; di < DIRS.length; di++) {
       const dir = DIRS[di];
       const m = { i: c.i + dir.i, j: c.j + dir.j };
-      if (!inBounds(m.i, m.j) || !fits(m)) continue;
+      if (!inBounds(m.i, m.j) || !fits(m) || !step(c, m)) continue;
       const w = cost(m);
       if (!Number.isFinite(w)) continue;
       const turn = heading !== NONE && heading !== di ? turnCost : 0;

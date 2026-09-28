@@ -1,7 +1,7 @@
 // Happiness and services, the tutorial and the big town, districts, achievements, and placement rules.
 import { describe, expect, it } from "vitest";
 import { CLEARANCE, DRY_TERRAIN, SPRING_FLOOD_TERRAIN, SPRING_HI, STILT_MIN, TIDE_HI, TIDE_LO, WALKWAY_SNAP } from "../src/config";
-import { BUILDINGS, HAPPY, LEVEL_UP_CYCLES, LEVEL_UP_HAPPINESS, MAX_LEVEL, LIFT_MAX, LIFT_STEP, REMOVE_REFUND, STILT_COST_PER_UNIT, WAVE_HEIGHT } from "../src/sim/balance";
+import { BUILDINGS, HAPPY, LEVEL_UP_CYCLES, LEVEL_UP_HAPPINESS, MAX_LEVEL, LIFT_MAX, LIFT_STEP, REMOVE_REFUND, STILT_COST_PER_UNIT, WAVE_HEIGHT, STREET_STEP_MAX } from "../src/sim/balance";
 import { ACHIEVEMENTS, checkAchievements } from "../src/sim/achievements";
 import { deserialize, serialize } from "../src/sim/save";
 import { DISTRICT_MIN, districtName, districtOf, districts } from "../src/sim/districts";
@@ -322,7 +322,7 @@ describe("placement (streets, docks, refunds)", () => {
       if (grid.classAt(c) !== "high" || grid.buildingAt(c)) continue;
       const h = grid.heightAt(c);
       if (!beach && h < DRY_TERRAIN - 0.05) beach = c;
-      if (!dry && h > DRY_TERRAIN + 0.05) dry = c;
+      if (!dry && h > DRY_TERRAIN + 0.05 && !grid.treeOn([c]) && grid.slopeOk("path", [c])) dry = c;
     }
     expect(beach && dry).toBeTruthy();
     expect(grid.classOk("street", [beach!])).toBe(true);
@@ -338,8 +338,9 @@ describe("placement (streets, docks, refunds)", () => {
     let start: Cell | null = null, high: Cell | null = null;
     for (let i = -30; i < 30 && !high; i++) for (let j = -30; j < 30; j++) {
       const c = { i, j };
-      if (grid.classAt(c) !== "high" || grid.heightAt(c) < DRY_TERRAIN || grid.buildingAt(c)) continue;
-      const below = grid.neighbors(c).find(n => grid.classOk("street", [n]) && !grid.buildingAt(n));
+      if (grid.classAt(c) !== "high" || grid.heightAt(c) < DRY_TERRAIN || grid.buildingAt(c) || grid.treeOn([c]) || !grid.slopeOk("path", [c])) continue;
+      // The walkway below must be within a stair of the path above it.
+      const below = grid.neighbors(c).find(n => grid.classOk("street", [n]) && !grid.buildingAt(n) && Math.abs(grid.heightAt(c) - grid.floorFor("walkway", [n], 0)) <= STREET_STEP_MAX);
       if (below && tryPlace(state, grid, "walkway", below)) { start = below; high = c; break; }
     }
     expect(high).not.toBeNull();
