@@ -8,3 +8,4 @@ import "./tidewater";
 import "./fjord";
 import "./atoll";
 import "./delta";
+import "./cinder";

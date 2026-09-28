@@ -157,6 +157,20 @@ export interface TradeState {
   visits: number;
 }
 
+/**
+ * A message between seas on the World's event bus (sim/worldLedger.ts): a sea's outbox holds what it sends (an
+ * eruption's wave for its neighbours), its inbox what has been sent to it, applied at its next settlement or on entry.
+ */
+export interface WorldEvent {
+  kind: "tsunami" | "storm";
+  /** What sent it ("eruption", a drifting storm), and the sender's face when the World knows it. */
+  from: string;
+  fromFace?: number;
+  /** The sender's cycle when it went out; the receiver's cycle it lands on (inbox only). */
+  cycle: number;
+  at?: number;
+}
+
 export interface SimState {
   version: 3;
   seed: number;
@@ -179,6 +193,11 @@ export interface SimState {
   extraTrees: TreeSite[];
   /** Cells raised to dry ground by landfill (cell indices). */
   landfill: number[];
+  /** Land a lava flow made (also in `landfill`): unbuildable until its cycle (the Cinder). */
+  newLand: { k: number; until: number }[];
+  /** The World's event bus: what this sea sends, and what has been sent to it (WorldEvent). */
+  outbox: WorldEvent[];
+  inbox: WorldEvent[];
   /** The outstanding loan: what is still owed, the instalment per settlement, how many loans ever taken. */
   loan: { owed: number; perCycle: number; taken: number; /** The cycle the instalments start (absent in older saves: at once). */ holdUntil?: number };
   fields: Fields;
@@ -231,6 +250,9 @@ export function createState(seed = 1, islandSeed = 0, biome: BiomeId = "tidewate
     trees: initialTrees(islandSeed, biome),
     extraTrees: [],
     landfill: [],
+    newLand: [],
+    outbox: [],
+    inbox: [],
     loan: { owed: 0, perCycle: 0, taken: 0 },
     fields: { pollution: zeros(), fish: filled(FISH_CAP), coverage: emptyCoverage(), shark: zeros(), fire: zeros(), bleach: zeros() },
     emitters: [],

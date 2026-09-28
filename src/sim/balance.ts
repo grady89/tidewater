@@ -15,7 +15,8 @@ export type BuildingKind =
   | "toolworks"
   | "stockfishRacks" | "whalingStation" | "ironMine" | "iceHouse" | "iceBreakerPier"
   | "divePlatform" | "pearlHouse" | "coconutGrove" | "reefNursery"
-  | "ricePaddy" | "crabPots" | "saltPan" | "indigoVats" | "wardenTower" | "crocNet";
+  | "ricePaddy" | "crabPots" | "saltPan" | "indigoVats" | "wardenTower" | "crocNet"
+  | "taroTerrace" | "cocoaTerrace" | "glassworks" | "sulfurWorks" | "hotSpring";
 
 /** Service coverage layers; each building that provides one writes its staffed fraction within `radius`. */
 export type ServiceKind = "water" | "leisure" | "night" | "treatment" | "lifeguard" | "firewatch";
@@ -119,6 +120,12 @@ export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
   saltPan: { name: "Salt pan", category: "Production", w: 2, d: 2, cls: "flatOrHigh", terrain: { min: 0.45, max: 1.4 }, cost: { money: 110 }, workers: 2, residents: 0, upkeep: 1, floor: "ground", network: "leaf", desc: "Sun-dried salt on the upper flats and the levee; half as much in a storm" },
   indigoVats: { name: "Indigo vats", category: "Production", w: 2, d: 1, cls: "flat", cost: { money: 150 }, workers: 3, residents: 0, upkeep: 1.5, floor: "stilts", network: "leaf", pollution: 3, desc: "Indigo from the wild plants on the open flats within 6; fouls the water — put it downstream" },
   wardenTower: { name: "Warden tower", category: "Services", w: 1, d: 1, cls: "flat", cost: { money: 90 }, workers: 1, residents: 0, upkeep: 1, floor: "stilts", network: "leaf", service: { kind: "lifeguard", radius: 5 }, desc: "Crocodile attacks within 5 drop 80%" },
+  // Cinder (BIOMES.md §3.5)
+  taroTerrace: { name: "Taro terrace", category: "Production", w: 2, d: 2, cls: "high", material: "fertile", cost: { money: 110 }, workers: 3, residents: 0, upkeep: 1, floor: "ground", network: "leaf", desc: "Taro on the fertile band; half as much under ash" },
+  cocoaTerrace: { name: "Cocoa terrace", category: "Production", w: 2, d: 2, cls: "high", material: "fertile", cost: { money: 150 }, workers: 3, residents: 0, upkeep: 1.5, floor: "ground", network: "leaf", desc: "Cocoa on the fertile band; half as much under ash" },
+  glassworks: { name: "Glassworks", category: "Production", w: 2, d: 2, cls: "flat", cost: { money: 240 }, workers: 4, residents: 0, upkeep: 2.5, floor: "stilts", network: "leaf", fireRisk: 5, desc: "Glass from the black sand; burns sulfur, or timber when there is none; fire risk" },
+  sulfurWorks: { name: "Sulfur works", category: "Production", w: 1, d: 1, cls: "high", material: "vent", cost: { money: 120 }, workers: 2, residents: 0, upkeep: 1, floor: "ground", network: "leaf", desc: "Sulfur from a steam vent" },
+  hotSpring: { name: "Hot-spring bathhouse", category: "Leisure", w: 2, d: 1, cls: "flat", material: "spring", cost: { money: 260 }, workers: 2, residents: 0, upkeep: 2, floor: "stilts", network: "leaf", service: { kind: "leisure", radius: 14 }, desc: "The strongest leisure on the World (within 14), on a hot spring; the tourists come for it" },
   crocNet: { name: "Croc net", category: "Sea", w: 1, d: 1, cls: "flatOrDeep", cost: { money: 20 }, workers: 0, residents: 0, upkeep: 0.1, floor: 1.0, network: "leaf", stopsPredators: true, desc: "Per water cell; crocodiles can't cross" },
   outfall: { name: "Sewage outfall", category: "Services", w: 1, d: 1, cls: "edge", cost: { money: 40 }, workers: 0, residents: 0, upkeep: 0.5, floor: 1.0, network: "leaf", desc: "Dumps the town's waste into the sea; the tide carries it" },
   treatmentPlant: { name: "Treatment plant", category: "Services", w: 2, d: 2, cls: "flatOrHigh", cost: { money: 350 }, workers: 4, residents: 0, upkeep: 3, floor: "ground", network: "leaf", service: { kind: "treatment", radius: 12 }, desc: "Neutralises waste from homes within 12" },
@@ -459,6 +466,27 @@ export const FEVER_EVERY = 8;
 export const FEVER_FIRST = 8;
 export const FEVER_SHARE = 0.25;
 export const FEVER_CLINIC_RADIUS = 10;
+
+// Cinder (BIOMES.md §3.5)
+export const TARO_PER_CYCLE = 6;
+export const COCOA_PER_CYCLE = 2.5;
+export const SULFUR_PER_CYCLE = 3;
+/** Glass a fully staffed works makes a cycle, and what each unit burns: sulfur, or timber when there is none. */
+export const GLASS_PER_CYCLE = 3;
+export const GLASS_SULFUR = 0.5;
+export const GLASS_TIMBER = 1;
+/** Tourists spend this much more while a staffed hot-spring bathhouse stands. */
+export const HOT_SPRING_TOURISM = 1.5;
+/** The eruption: rolled at a settlement from ERUPTION_FIRST, ERUPTION_CHANCE a cycle, ERUPTION_COOLDOWN apart; TREMOR_CYCLES of warning. */
+export const ERUPTION_FIRST = 12;
+export const ERUPTION_CHANCE = 0.08;
+export const ERUPTION_COOLDOWN = 16;
+export const TREMOR_CYCLES = 2;
+/** Under the ash (the cycle after an eruption): every home loses this much happiness, the terraces make half. */
+export const ASH_HAPPY = 0.15;
+export const ASH_TERRACE_FACTOR = 0.5;
+/** New land from a lava flow cools this many cycles before anything may stand on it. */
+export const LAVA_COOL_CYCLES = 3;
 
 // Sea lanes (BIOMES.md §4; sim/lanes.ts, behind LANES_ENABLED)
 export const CARGO_SHIPS_PER_HARBOR = 1;

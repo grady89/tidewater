@@ -7,7 +7,7 @@ import { cellIndex, DIRS, HALF, inBounds } from "./cells";
 import { cellClass } from "./heightfield";
 import { Island, island } from "./island";
 import { isleCell } from "./isle";
-import { Material, materialOf, UNBUILDABLE } from "./materials";
+import { Material, materialCode, materialOf, UNBUILDABLE } from "./materials";
 import { BASE_TIDES, Tides, tidesFor } from "./tides";
 import { treeSites } from "./trees";
 import { Building, Cell, SimState } from "./state";
@@ -64,7 +64,15 @@ export class Grid {
     this.resetTerrain();
     this.terrainVersion++;
     for (const k of state.landfill) this.applyLandfill({ i: Math.floor(k / SIZE) - HALF, j: (k % SIZE) - HALF });
+    this.coolNewLand();
     this.rebuild();
+  }
+
+  /** New land from a lava flow reads as the lava field (unbuildable, glowing) until it has cooled; then the island's own material. */
+  coolNewLand(): void {
+    this.materials.set(this.island.materials);
+    const lava = materialCode("lava");
+    for (const n of this.state.newLand) if (n.until > this.state.tide.cycle) this.materials[n.k] = lava;
   }
 
   /** The ledger's island: its heightfield and tree sites, from `state.world.seed`. */

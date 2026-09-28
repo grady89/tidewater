@@ -34,6 +34,7 @@ export function pierSite(grid: Grid, near: Cell): Cell {
   for (let i = -32; i < 32; i++) for (let j = -32; j < 32; j++) {
     const c = { i, j };
     if (grid.classAt(c) !== "deep" || !grid.footprint("pier", c)) continue;
+    if (!grid.canPlace("pier", grid.footprint("pier", c)!)) continue; // the isle, before a harbor opens it
     const shore = grid.neighbors(c).find(n => grid.classAt(n) === "flat")!;
     const score = dist(c, near) + (grid.heightAt(shore) < 0.1 ? 6 : 0);
     if (score < bs) { bs = score; best = c; }

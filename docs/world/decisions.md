@@ -57,3 +57,25 @@ wins and is noted). Numbered as they came up; the code cites them.
 13. **One new hex:** indigo `#2e3f7f` for the vats' liquor and the dyed cloth; nothing in the palette is that blue.
 14. **Mangroves** are tree sites on every mangrove cell: nothing is built on a standing tree, so they must be
     cleared (the Land tab), which gives no timber and stirs 0.4 pollution into the cell (`CLEAR_BY_MATERIAL`).
+15. **The Cinder's shape:** a cone of radius 17 peaking at 8.6 with seven radial ridges and a crater 2.6 across,
+    an apron of black flats 3.2 wide round its foot that widens by 6.5 into a bay on the far side from the lava
+    flank, then a shelf that drops to −4.2 within 3.5 cells ("deep water fast"). Materials: the lava field is a
+    band 0.2 rad either side of the lava direction from the crater to just past the shore (a flow levee a little
+    proud of the slope, its toe a black tongue into the sea); the fertile band is every cone cell between 1.7 and
+    4.2; three 2×2 vent sites at 0.62 of the cone's radius (low enough for a path to climb to: at 0.42 no walkable
+    route reached them); a 3×3 hot spring on the bay's shore flats. Validation: ≥ 30 cells above 4, lava ≥ 25,
+    fertile ≥ 40, vents ≥ 8 cells, spring ≥ 4; thresholds flats 180, region 70, treed 12 (48 trees on the lower
+    slopes and above the band, none on it: the terraces go there).
+16. **The Cinder's kinds:** taro and cocoa terraces (2×2 on the fertile band, 6 taro / 2.5 cocoa a cycle at full
+    staff, half under ash); sulfur works (1×1 on a vent, 3 sulfur); the glassworks (2×2 flats, 3 glass a cycle,
+    each burning 0.5 sulfur or, with none left, 1 timber; fire risk 5); the hot-spring bathhouse (2×1 on the
+    spring, leisure radius 14 — the widest on the World — and ×1.5 on what tourists spend while it is staffed).
+    BIOMES.md puts the hot spring on the "shore" class; the spring sits on the bay's flats, so its class is flat
+    with the spring material. Basalt is not a good: it is `costs.seaWall` with half the timber (1.5).
+17. **The eruption:** rolled at a settlement from cycle 12, 8 % a cycle, 16 apart; the roll books it two cycles
+    out (the tremors: the tide clock says so, the view shakes and the vents steam), then at that settlement the
+    lava flow runs from the crater down the lava direction (three cells wide, wandering with the ledger's RNG)
+    until it is four half-steps into the sea; every building on its cells is damaged; every unbuilt, non-high
+    cell it crosses becomes landfill that stays lava (unbuildable, glowing) for three cycles (`state.newLand`,
+    `Grid.coolNewLand`), then opens. Ash falls the next cycle: every home −0.15, the terraces make half. The wave
+    for the neighbours goes into the sea's outbox (`state.outbox`) for the World's event bus (Stage 4).
