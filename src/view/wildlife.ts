@@ -9,6 +9,7 @@ import { Building, SimState } from "../sim/state";
 import { flatMaterial, mergeFlat, tint } from "../world/flatMesh";
 import { isDaytime } from "../sim/daylight";
 import { materialCode } from "../sim/materials";
+import { turtleAsset, whaleAsset } from "./assets";
 import { BiomeLook, FaunaKind } from "./biomes";
 
 const GULLS_PER_HARBOUR = 2;
@@ -37,7 +38,7 @@ export class Wildlife {
   private readonly frigates: Mesh;
   private readonly frigateWingL: Mesh;
   private readonly frigateWingR: Mesh;
-  private readonly turtles: Mesh;
+  private turtles: Mesh;
   private readonly shoals: Mesh;
   private turtleMatrices = new Float32Array(SEAL_SITES * 16);
   private shoalMatrices = new Float32Array(SHOAL_SITES * 16);
@@ -47,8 +48,8 @@ export class Wildlife {
   turtleCount = 0;
   shoalCount = 0;
   private readonly puffins: Mesh;
-  private readonly whales: Mesh;
-  private readonly spouts: Mesh;
+  private whales: Mesh;
+  private spouts: Mesh;
   private sealMatrices = new Float32Array(SEAL_SITES * 16);
   private puffinMatrices = new Float32Array(PUFFIN_SITES * 16);
   private whaleMatrices = new Float32Array(WHALES * 16);
@@ -73,7 +74,14 @@ export class Wildlife {
   setLook(look: BiomeLook): void { this.fauna = new Set(look.fauna); }
   crabCount = 0;
 
-  constructor(scene: Scene, private readonly grid: Grid) {
+  /** Swap the whale, its spout and the turtle for the Blender assets once they have loaded (USE_BLENDER_ASSETS). */
+  reloadAssets(): void {
+    const w = whaleAsset(this.scene), t = turtleAsset(this.scene);
+    if (w) { this.whales.dispose(); this.spouts.dispose(); this.whales = w.whales; this.spouts = w.spouts; w.whales.setEnabled(false); w.spouts.setEnabled(false); }
+    if (t) { this.turtles.dispose(); this.turtles = t; t.setEnabled(false); }
+  }
+
+  constructor(private readonly scene: Scene, private readonly grid: Grid) {
     // A gull after reference/birds: a tapered white body with a small head, an orange beak, a wedge tail and red
     // legs; the wings are their own meshes, hinged at the shoulder, so the flock can flap.
     const body = MeshBuilder.CreateSphere("gb", { diameter: 0.3, segments: 4 }, scene);
@@ -164,16 +172,7 @@ export class Wildlife {
       puffinParts.push(tint(foot, "#e0705a"));
     }
     this.puffins = mergeFlat("puffins", puffinParts, scene);
-    // A whale's back: a long dark hump with a small fin; the spout a pale cone.
-    const back = MeshBuilder.CreateSphere("wb", { diameter: 1.0, segments: 5 }, scene);
-    back.scaling.set(2.4, 0.5, 0.9);
-    const fin = MeshBuilder.CreateCylinder("wfn", { diameterTop: 0, diameterBottom: 0.3, height: 0.3, tessellation: 3 }, scene);
-    fin.scaling.set(1, 1, 0.3);
-    fin.position.set(-0.4, 0.3, 0);
-    this.whales = mergeFlat("whales", [tint(back, "#2b3a45"), tint(fin, "#2b3a45")], scene);
-    const spout = MeshBuilder.CreateCylinder("ws", { diameterTop: 0.5, diameterBottom: 0.06, height: 1.0, tessellation: 5 }, scene);
-    spout.position.y = 0.5;
-    this.spouts = mergeFlat("spouts", [tint(spout, "#e6eef2")], scene);
+    ({ whales: this.whales, spouts: this.spouts } = primitiveWhale(scene));
     for (const m of [this.seals, this.puffins, this.whales, this.spouts]) { m.isPickable = false; m.alwaysSelectAsActiveMesh = true; m.setEnabled(false); }
     // A frigatebird: a long dark body, a forked tail, the wings hinged like the gull's but longer and darker.
     const fBody = MeshBuilder.CreateSphere("fb", { diameter: 0.28, segments: 4 }, scene);
@@ -202,20 +201,7 @@ export class Wildlife {
       return m;
     };
     this.frigateWingL = frigateWing(-1); this.frigateWingR = frigateWing(1);
-    // A turtle: a domed shell, a small head, four flippers; it walks the beach at night and floats by day.
-    const tShell = MeshBuilder.CreateSphere("ts", { diameter: 0.34, segments: 4 }, scene);
-    tShell.scaling.set(1.2, 0.45, 1);
-    tShell.position.y = 0.09;
-    const tHead = MeshBuilder.CreateSphere("th", { diameter: 0.1, segments: 3 }, scene);
-    tHead.position.set(0.24, 0.07, 0);
-    const turtleParts = [tint(tShell, "#3f7346"), tint(tHead, "#5faa5a")];
-    for (const [dx, dz] of [[0.12, 0.17], [0.12, -0.17], [-0.12, 0.15], [-0.12, -0.15]]) {
-      const flipper = MeshBuilder.CreateBox("tf", { width: 0.14, height: 0.025, depth: 0.08 }, scene);
-      flipper.position.set(dx, 0.03, dz);
-      flipper.rotation.y = dz > 0 ? -0.6 : 0.6;
-      turtleParts.push(tint(flipper, "#3f7346"));
-    }
-    this.turtles = mergeFlat("turtles", turtleParts, scene);
+    this.turtles = primitiveTurtle(scene);
     // A reef-fish shoal: a flat rosette of coloured chips just under the surface, tinted per instance.
     const chips: Mesh[] = [];
     for (let k = 0; k < 7; k++) {
@@ -492,4 +478,34 @@ export class Wildlife {
     this.syncShoals(state, viewTime);
     this.syncTurtles(state, viewTime);
   }
+}
+
+/** A whale's back: a long dark hump with a small fin; the spout a pale cone. */
+export function primitiveWhale(scene: Scene): { whales: Mesh; spouts: Mesh } {
+  const back = MeshBuilder.CreateSphere("wb", { diameter: 1.0, segments: 5 }, scene);
+  back.scaling.set(2.4, 0.5, 0.9);
+  const fin = MeshBuilder.CreateCylinder("wfn", { diameterTop: 0, diameterBottom: 0.3, height: 0.3, tessellation: 3 }, scene);
+  fin.scaling.set(1, 1, 0.3);
+  fin.position.set(-0.4, 0.3, 0);
+  const whales = mergeFlat("whales", [tint(back, "#2b3a45"), tint(fin, "#2b3a45")], scene);
+  const spout = MeshBuilder.CreateCylinder("ws", { diameterTop: 0.5, diameterBottom: 0.06, height: 1.0, tessellation: 5 }, scene);
+  spout.position.y = 0.5;
+  return { whales, spouts: mergeFlat("spouts", [tint(spout, "#e6eef2")], scene) };
+}
+
+/** A turtle: a domed shell, a small head, four flippers; it walks the beach at night and floats by day. */
+export function primitiveTurtle(scene: Scene): Mesh {
+  const tShell = MeshBuilder.CreateSphere("ts", { diameter: 0.34, segments: 4 }, scene);
+  tShell.scaling.set(1.2, 0.45, 1);
+  tShell.position.y = 0.09;
+  const tHead = MeshBuilder.CreateSphere("th", { diameter: 0.1, segments: 3 }, scene);
+  tHead.position.set(0.24, 0.07, 0);
+  const turtleParts = [tint(tShell, "#3f7346"), tint(tHead, "#5faa5a")];
+  for (const [dx, dz] of [[0.12, 0.17], [0.12, -0.17], [-0.12, 0.15], [-0.12, -0.15]]) {
+    const flipper = MeshBuilder.CreateBox("tf", { width: 0.14, height: 0.025, depth: 0.08 }, scene);
+    flipper.position.set(dx, 0.03, dz);
+    flipper.rotation.y = dz > 0 ? -0.6 : 0.6;
+    turtleParts.push(tint(flipper, "#3f7346"));
+  }
+  return mergeFlat("turtles", turtleParts, scene);
 }

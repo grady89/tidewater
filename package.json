@@ -17,7 +17,8 @@
     "assets": "node tools/assets/run.ts"
   },
   "dependencies": {
-    "@babylonjs/core": "^7.54.3"
+    "@babylonjs/core": "^7.54.3",
+    "@babylonjs/loaders": "^7.54.3"
   },
   "devDependencies": {
     "@types/node": "^24.19.0",

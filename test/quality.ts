@@ -4,9 +4,12 @@
 import { chromium } from "playwright";
 import type { Page } from "playwright";
 import { createServer } from "vite";
+import { readdirSync, statSync } from "node:fs";
 
 const PORT = 5184;
 const GPU = process.argv.includes("--gpu");
+/** `--assets`: build the three towns but measure only the assets pilot's on/off run (docs/assets). */
+const ASSETS_ONLY = process.argv.includes("--assets");
 import type { TidewaterApi as Api } from "../src/main";
 import type { Quality } from "../src/ui/settings";
 
@@ -37,6 +40,7 @@ try {
   console.log(`[quality] ${GPU ? "GPU" : "SwiftShader (--disable-gpu)"} · ${built.renderer} · ${built.buildings} buildings, ${built.boats} boats · first-launch probe: ${built.chosen.note}`);
   const measure = async (): Promise<Record<string, number>> => {
     const results: Record<string, number> = {};
+    if (ASSETS_ONLY) return results;
     for (const q of ["high", "medium", "low"] as const) {
       const fps = await page.evaluate(async (quality: Quality) => {
         const api = (window as unknown as { __tidewater: Api }).__tidewater;
@@ -81,7 +85,7 @@ try {
     await api.returnToWorld({ instant: true });
   });
   const worldResults: Record<string, number> = {};
-  for (const q of ["high", "medium", "low"] as const) {
+  for (const q of ASSETS_ONLY ? [] : (["high", "medium", "low"] as const)) {
     const r = await page.evaluate(async (quality: Quality) => {
       const api = (window as unknown as { __tidewater: Api }).__tidewater;
       api.setQuality(quality);
@@ -97,6 +101,46 @@ try {
     console.log(`[quality] World ${q}: ${r.fps.toFixed(1)} fps · ${r.draws} draw calls`);
   }
   console.log(`[quality] World ${JSON.stringify(worldResults)}`);
+
+  // The assets pilot (docs/assets): the same three 300-building towns (30 boats each), USE_BLENDER_ASSETS off and on
+  // (`?assets=blender`, a second page on the same storage), High preset, the whale season forced on the Fjord so the
+  // whales and spouts are out. fps, triangles drawn, and for the Blender run the files' sizes and load times.
+  const assetRun = async (p: Page, label: string): Promise<{ coast: string; fps: number; tris: number; boats: number; buildings: number }[]> => {
+    const rows = [];
+    for (const [face, coast] of [[1, "tidewater"], [0, "fjord"], [6, "atoll"]] as const) {
+      const r = await p.evaluate(async (face: number) => {
+        const api = (window as unknown as { __tidewater: Api }).__tidewater;
+        if (api.mode === "island") await api.returnToWorld({ instant: true });
+        await api.enterSector(face, { instant: true });
+        for (let k = 0; k < 100 && api.view.assets().on && !api.view.assets().ready; k++) await new Promise(res => setTimeout(res, 100));
+        if (api.sim.world.biome === "fjord") api.forceBiome("whaleSeason");
+        api.setQuality("high");
+        api.setSpeed(1);
+        api.frameTown(30);
+        await new Promise(res => setTimeout(res, 1500));
+        let frames = 0, tris = 0, samples = 0;
+        const obs = api.scene.onAfterRenderObservable.add(() => { frames++; if (frames % 10 === 0) { tris += api.view.triangles(); samples++; } });
+        const t0 = performance.now();
+        await new Promise(res => setTimeout(res, 5000));
+        api.scene.onAfterRenderObservable.remove(obs);
+        const bs = Object.values(api.sim.buildings) as { boats: number }[];
+        return { fps: frames / ((performance.now() - t0) / 1000), tris: samples ? tris / samples : api.view.triangles(), boats: bs.reduce((n, b) => n + b.boats, 0), buildings: bs.length };
+      }, face);
+      rows.push({ coast, ...r });
+      console.log(`[quality] assets ${label} ${coast}: ${r.fps.toFixed(1)} fps · ${Math.round(r.tris)} triangles · ${r.buildings} buildings, ${r.boats} boats`);
+    }
+    return rows;
+  };
+  const off = await assetRun(page, "off");
+  // The same page reloaded with the switch: same storage, so the same three towns.
+  await page.goto(`http://localhost:${PORT}/?assets=blender`);
+  await waitReady(page);
+  const onRows = await assetRun(page, "on ");
+  const loaded = await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.view.assets().stats);
+  const files = readdirSync("public/assets").filter(f => f.endsWith(".glb")).map(f => ({ file: f, bytes: statSync(`public/assets/${f}`).size }));
+  console.log(`[quality] assets files ${JSON.stringify(files)}`);
+  console.log(`[quality] assets loaded ${JSON.stringify(loaded.map(a => ({ file: a.file, tris: a.triangles, ms: Math.round(a.loadMs), flat: a.flat })))}`);
+  console.log(`[quality] assets ${JSON.stringify({ off, on: onRows })}`);
 } finally {
   await browser.close();
   await server.close();

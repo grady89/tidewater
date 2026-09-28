@@ -1166,6 +1166,72 @@ try {
   }
   await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.newTown());
 
+  // ---- The assets pilot (docs/assets) ----
+  // Each Blender asset beside its primitive kit on this island, at the island's default camera distance, at noon and
+  // at dusk, and a close look at noon: the three crops (each fitted to the pair) side by side in
+  // shots/assets/compare-<name>.png.
+  // The flag stays off.
+  const assetsOff = await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.view.assets());
+  assert(!assetsOff.on && assetsOff.stats.length === 0, "USE_BLENDER_ASSETS is off: the kits draw their primitives and nothing was loaded");
+  const BUDGET: Record<string, number> = { dory: 900, outrigger: 900, longboat: 900, whale: 600, turtle: 600, palm: 600 };
+  const PARTS: Record<string, string[]> = { dory: ["hull", "sail", "mast"], outrigger: ["hull", "sail", "mast", "float"], longboat: ["hull", "sail", "mast"], whale: ["back", "spout"], turtle: ["shell", "flipper_fl", "flipper_br"], palm: ["trunk", "frond_0", "frond_7", "coconuts"] };
+  const compared: Record<string, unknown> = {};
+  // The page's own UI (the HUD, the walkthrough, the pier suggestion's label) would sit on the crops: hidden for the shots.
+  await page.evaluate(() => { for (const el of Array.from(document.body.children) as HTMLElement[]) if (el.tagName !== "CANVAS" && el.tagName !== "SCRIPT") { el.dataset.shotVis = el.style.visibility; el.style.visibility = "hidden"; } });
+  for (const name of ["dory", "outrigger", "longboat", "whale", "turtle", "palm"] as const) {
+    const crops: string[] = [];
+    let info: { primitive: { tris: number }; blender: { tris: number; parts: string[] } } | null = null;
+    for (const [when, fraction, radius] of [["noon", 0.25, 30], ["dusk", 0.46, 30], ["close", 0.25, 9]] as const) {
+      const r = await page.evaluate(async ({ name, fraction, radius }) => {
+        const api = (window as unknown as { __tidewater: Api }).__tidewater;
+        api.setSpeed(0);
+        api.sim.time = Math.floor(api.sim.time / 240) * 240 + fraction * 240; // DAY_CYCLES × TIDE_PERIOD = 240 s
+        api.frameTown(30);
+        const c = await api.view.assetCompare(name);
+        if (!c) throw new Error("no comparison");
+        api.frameAt(c.at.x, c.at.z, radius);
+        await new Promise(res => setTimeout(res, 300));
+        // The crop: both models, base to top (a palm is 3 tall, a spout 1.5), padded, widened to 16:9.
+        const top = ({ palm: 3.2, whale: 1.6, turtle: 0.35 } as Record<string, number>)[name] ?? 1.4;
+        const pts = [c.primitive.x - 0.9, c.blender.x + 0.9].flatMap(x => [api.screenOf(x, c.at.z, c.at.y), api.screenOf(x, c.at.z, c.at.y + top)]);
+        return { c, box: { x0: Math.min(...pts.map(q => q.x)), x1: Math.max(...pts.map(q => q.x)), y0: Math.min(...pts.map(q => q.y)), y1: Math.max(...pts.map(q => q.y)) } };
+      }, { name, fraction, radius });
+      info = r.c;
+      await page.waitForTimeout(300);
+      const pad = 24, cx = (r.box.x0 + r.box.x1) / 2, cy = (r.box.y0 + r.box.y1) / 2;
+      let w = r.box.x1 - r.box.x0 + 2 * pad, h = r.box.y1 - r.box.y0 + 2 * pad;
+      if (w / h < 16 / 9) w = h * 16 / 9; else h = w * 9 / 16;
+      w = Math.min(1280, Math.max(240, w)); h = Math.min(720, w * 9 / 16);
+      const clip = { x: Math.round(Math.max(0, Math.min(1280 - w, cx - w / 2))), y: Math.round(Math.max(0, Math.min(720 - h, cy - h / 2))), width: Math.round(w), height: Math.round(h) };
+      crops.push((await page.screenshot({ clip })).toString("base64"));
+      void when;
+    }
+    const png = await page.evaluate(async ({ a, b, c, name }) => {
+      const load = (src: string) => new Promise<HTMLImageElement>(res => { const i = new Image(); i.onload = () => res(i); i.src = "data:image/png;base64," + src; });
+      const [ia, ib, ic] = await Promise.all([load(a), load(b), load(c)]);
+      const cv = document.createElement("canvas");
+      cv.width = 1920; cv.height = 360 + 28;
+      const g = cv.getContext("2d")!;
+      g.imageSmoothingEnabled = false;
+      g.fillStyle = "#1b2a33"; g.fillRect(0, 0, cv.width, cv.height);
+      g.drawImage(ia, 0, 28, 640, 360);
+      g.drawImage(ib, 640, 28, 640, 360);
+      g.drawImage(ic, 1280, 28, 640, 360);
+      g.fillStyle = "#e6dccb"; g.font = "16px sans-serif";
+      g.fillText(`${name} — noon · left: primitive, right: Blender`, 10, 19);
+      g.fillText("dusk", 650, 19);
+      g.fillText("close, noon", 1290, 19);
+      return cv.toDataURL("image/png").split(",")[1];
+    }, { a: crops[0], b: crops[1], c: crops[2], name });
+    await writeFile(`shots/assets/compare-${name}.png`, Buffer.from(png, "base64"));
+    compared[name] = { primitive: info!.primitive.tris, blender: info!.blender.tris, parts: info!.blender.parts.length };
+    assert(info!.blender.tris > 0 && info!.blender.tris <= BUDGET[name] && info!.primitive.tris > 0, `${name}: the Blender build is within its budget of ${BUDGET[name]} triangles (${info!.blender.tris})`);
+    assert(PARTS[name].every(part => info!.blender.parts.includes(part)), `${name}: its named parts survive the load (${info!.blender.parts.join(", ")})`);
+  }
+  const assetStats = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; void api.view.assetCompare(null); api.setSpeed(1); for (const el of Array.from(document.body.children) as HTMLElement[]) if (el.dataset.shotVis !== undefined) { el.style.visibility = el.dataset.shotVis; delete el.dataset.shotVis; } return api.view.assets().stats; });
+  console.log("Assets compared:", JSON.stringify(compared), "loaded:", JSON.stringify(assetStats.map(a => [a.file, a.triangles, a.bytes, Math.round(a.loadMs), a.flat])));
+  assert(assetStats.every(a => a.flat), "every Blender asset arrives flat-shaded");
+
   // ---- The World (docs/globe) ----
   // Back up to the globe: the town's roofs on its face, the card with its counts, the shots wide and narrow.
   const back = await page.evaluate(async () => {

@@ -11,6 +11,8 @@ import { phaseProgress } from "../sim/tide";
 import { flatMaterial, mergeFlat, tint } from "../world/flatMesh";
 import { waveHeight } from "../world/water";
 import { PALETTE } from "./buildings";
+import type { BiomeId } from "../sim/biomes";
+import { boatAsset, useBlenderAssets } from "./assets";
 import { BiomeLook, BoatKit } from "./biomes";
 
 const DRAFT = 0.12;
@@ -51,6 +53,7 @@ export class Boats {
   private readonly floats: Mesh;
   private readonly scene: Scene;
   private kit: BoatKit = "dory";
+  private lookId: BiomeId = "tidewater";
   private readonly paths = new Map<string, Vector3[]>();
   private matrices = new Float32Array(0);
   private colors = new Float32Array(0);
@@ -69,121 +72,25 @@ export class Boats {
 
   /** The biome look's boat kit (view/biomes): rebuilds the hull and sail meshes when the kit changes. */
   setLook(look: BiomeLook): void {
-    if (look.boat === this.kit) return;
+    // With the Blender assets a kit's colours come with the look, so a new look rebuilds it even on the same kit.
+    const same = look.boat === this.kit && (!useBlenderAssets() || look.id === this.lookId);
+    this.lookId = look.id;
+    if (same) return;
     this.kit = look.boat;
     this.hull.dispose(); this.sail.dispose();
     ({ hull: this.hull, sail: this.sail } = this.buildKit(this.kit));
   }
 
-  /**
-   * One boat kit as two meshes. The hull mesh is white so the instance colour paints it; the sail mesh carries
-   * everything with its own colour. Dory: after reference/boat, a double-ended planked hull (a hexagonal prism
-   * stretched along x gives the pointed bow and stern in six flat facets), a dark band at the waterline, a pale
-   * gunwale, an open cockpit with two thwarts and a coil of net, a mast with a boom and a tall triangular sail.
-   * Longboat: longer and narrower, a dark tarred hull, high stem and stern posts, oars along the gunwale and a
-   * square sail on a yard. Outrigger: a slim dugout with a float on two booms to one side and a crab-claw sail.
-   */
+  /** The kit's two meshes: the Blender asset's when USE_BLENDER_ASSETS is on and it has loaded, else the primitives. */
   private buildKit(kit: BoatKit): { hull: Mesh; sail: Mesh } {
-    const scene = this.scene;
-    const hullParts: Mesh[] = [];
-    const sailParts: Mesh[] = [];
-    const stretch = kit === "longboat" ? 3.1 : kit === "outrigger" ? 2.6 : 2.4;
-    const beam = kit === "longboat" ? 0.8 : kit === "outrigger" ? 0.62 : 1;
-    const upper = MeshBuilder.CreateCylinder("hb", { diameter: 0.5, height: 0.16, tessellation: 6 }, scene);
-    upper.scaling.set(stretch, 1, beam);
-    upper.position.set(0, 0.2, 0);
-    hullParts.push(tint(upper, "#ffffff"));
-    const hull = mergeFlat("boatHulls", hullParts, scene);
-    hull.material = flatMaterial(scene).clone("boatHullMat") as StandardMaterial;
+    const blender = useBlenderAssets() ? boatAsset(this.scene, kit, this.lookId) : null;
+    return blender ?? primitiveBoatKit(this.scene, kit);
+  }
 
-    const lower = MeshBuilder.CreateCylinder("hl", { diameterTop: 0.5, diameterBottom: 0.3, height: 0.14, tessellation: 6 }, scene);
-    lower.scaling.set(stretch, 1, beam);
-    lower.position.set(0, 0.05, 0);
-    sailParts.push(tint(lower, kit === "longboat" ? "#2b2b2b" : "#4c5a66"));
-    const gunwale = MeshBuilder.CreateCylinder("gw", { diameter: 0.54, height: 0.035, tessellation: 6 }, scene);
-    gunwale.scaling.set(stretch, 1, beam);
-    gunwale.position.set(0, 0.29, 0);
-    sailParts.push(tint(gunwale, kit === "longboat" ? "#5a4636" : "#f2ece0"));
-    const cockpit = MeshBuilder.CreateCylinder("ck", { diameter: 0.36, height: 0.03, tessellation: 6 }, scene);
-    cockpit.scaling.set(stretch - 0.2, 1, beam);
-    cockpit.position.set(0, 0.29, 0);
-    sailParts.push(tint(cockpit, "#5a4636"));
-    for (const tx of [-0.3, 0.32]) {
-      const thwart = MeshBuilder.CreateBox("tw", { width: 0.08, height: 0.03, depth: 0.34 * beam }, scene);
-      thwart.position.set(tx, 0.32, 0);
-      sailParts.push(tint(thwart, PALETTE.planks));
-    }
-    if (kit === "dory") {
-      const net = MeshBuilder.CreateSphere("net", { diameter: 0.2, segments: 4 }, scene);
-      net.scaling.set(1.3, 0.55, 1);
-      net.position.set(-0.46, 0.33, 0.05);
-      sailParts.push(tint(net, "#b9a377"));
-      const mast = MeshBuilder.CreateCylinder("mast", { diameter: 0.04, height: 1.05, tessellation: 4 }, scene);
-      mast.position.set(0.08, 0.8, 0);
-      sailParts.push(tint(mast, PALETTE.wood));
-      const boom = MeshBuilder.CreateCylinder("boom", { diameter: 0.03, height: 0.62, tessellation: 4 }, scene);
-      boom.rotation.z = Math.PI / 2;
-      boom.position.set(-0.22, 0.45, 0.02);
-      sailParts.push(tint(boom, PALETTE.wood));
-      // The sail: a three-sided prism squashed flat, then stretched tall; its foot lies along the boom.
-      const sail = MeshBuilder.CreateCylinder("sail", { diameter: 0.6, height: 0.02, tessellation: 3 }, scene);
-      sail.rotation.x = Math.PI / 2;
-      sail.rotation.y = Math.PI;
-      sail.scaling.set(1, 1, 1);
-      sail.position.set(-0.2, 0.74, 0.03);
-      sail.scaling.set(1.0, 1, 2.0);
-      sailParts.push(tint(sail, PALETTE.sail));
-    } else if (kit === "longboat") {
-      for (const end of [-1, 1]) {
-        const post = MeshBuilder.CreateCylinder("post", { diameterTop: 0.03, diameterBottom: 0.07, height: 0.34, tessellation: 4 }, scene);
-        post.position.set(end * 0.72, 0.4, 0);
-        post.rotation.z = -end * 0.35;
-        sailParts.push(tint(post, "#2b2b2b"));
-      }
-      for (const side of [-1, 1]) for (const tx of [-0.35, -0.05, 0.25]) {
-        const oar = MeshBuilder.CreateBox("oar", { width: 0.03, height: 0.02, depth: 0.5 }, scene);
-        oar.position.set(tx, 0.31, side * 0.34);
-        oar.rotation.x = side * 0.5;
-        sailParts.push(tint(oar, PALETTE.planks));
-      }
-      const mast = MeshBuilder.CreateCylinder("mast", { diameter: 0.04, height: 1.0, tessellation: 4 }, scene);
-      mast.position.set(0.05, 0.78, 0);
-      sailParts.push(tint(mast, PALETTE.wood));
-      const yard = MeshBuilder.CreateCylinder("yard", { diameter: 0.03, height: 0.7, tessellation: 4 }, scene);
-      yard.rotation.x = Math.PI / 2;
-      yard.position.set(0.05, 1.18, 0);
-      sailParts.push(tint(yard, PALETTE.wood));
-      const sail = MeshBuilder.CreateBox("sail", { width: 0.02, height: 0.6, depth: 0.66 }, scene);
-      sail.position.set(0.02, 0.86, 0);
-      sailParts.push(tint(sail, "#c9a86a"));
-      const stripe = MeshBuilder.CreateBox("sailStripe", { width: 0.025, height: 0.6, depth: 0.1 }, scene);
-      stripe.position.set(0.02, 0.86, 0.18);
-      sailParts.push(tint(stripe, "#8a3f33"));
-    } else {
-      // The float (ama) on two booms to port, and a crab-claw sail leaning with its mast.
-      const ama = MeshBuilder.CreateCylinder("ama", { diameter: 0.14, height: 1.1, tessellation: 5 }, scene);
-      ama.rotation.z = Math.PI / 2;
-      ama.position.set(0, 0.1, 0.62);
-      sailParts.push(tint(ama, "#5a4636"));
-      for (const tx of [-0.28, 0.28]) {
-        const boom = MeshBuilder.CreateBox("ob", { width: 0.05, height: 0.03, depth: 0.7 }, scene);
-        boom.position.set(tx, 0.28, 0.3);
-        sailParts.push(tint(boom, PALETTE.planks));
-      }
-      const mast = MeshBuilder.CreateCylinder("mast", { diameter: 0.035, height: 0.9, tessellation: 4 }, scene);
-      mast.position.set(0.1, 0.72, -0.05);
-      mast.rotation.z = -0.25;
-      sailParts.push(tint(mast, PALETTE.wood));
-      const sail = MeshBuilder.CreateCylinder("sail", { diameter: 0.55, height: 0.02, tessellation: 3 }, scene);
-      sail.rotation.x = Math.PI / 2;
-      sail.rotation.z = -0.25;
-      sail.position.set(0.0, 0.78, -0.02);
-      sail.scaling.set(1.0, 1, 1.9);
-      sailParts.push(tint(sail, "#f7f1e3"));
-    }
-    const sail = mergeFlat("boatSails", sailParts, scene);
-    for (const m of [hull, sail]) { m.isPickable = false; m.alwaysSelectAsActiveMesh = true; }
-    return { hull, sail };
+  /** Rebuild the kit's meshes (the Blender assets arrived). */
+  reloadKit(): void {
+    this.hull.dispose(); this.sail.dispose();
+    ({ hull: this.hull, sail: this.sail } = this.buildKit(this.kit));
   }
 
   /** The sea route as cell centres, with the harbour's own cells dropped (a trip starts from the mooring). */
@@ -326,4 +233,114 @@ export class Boats {
     this.hull.thinInstanceSetBuffer("color", this.colors, 4, false);
     this.sail.thinInstanceSetBuffer("matrix", this.sailMatrices, 16, false);
   }
+}
+
+/**
+ * One boat kit as two meshes. The hull mesh is white so the instance colour paints it; the sail mesh carries
+ * everything with its own colour. Dory: after reference/boat, a double-ended planked hull (a hexagonal prism
+ * stretched along x gives the pointed bow and stern in six flat facets), a dark band at the waterline, a pale
+ * gunwale, an open cockpit with two thwarts and a coil of net, a mast with a boom and a tall triangular sail.
+ * Longboat: longer and narrower, a dark tarred hull, high stem and stern posts, oars along the gunwale and a
+ * square sail on a yard. Outrigger: a slim dugout with a float on two booms to one side and a crab-claw sail.
+ */
+export function primitiveBoatKit(scene: Scene, kit: BoatKit): { hull: Mesh; sail: Mesh } {
+  const hullParts: Mesh[] = [];
+  const sailParts: Mesh[] = [];
+  const stretch = kit === "longboat" ? 3.1 : kit === "outrigger" ? 2.6 : 2.4;
+  const beam = kit === "longboat" ? 0.8 : kit === "outrigger" ? 0.62 : 1;
+  const upper = MeshBuilder.CreateCylinder("hb", { diameter: 0.5, height: 0.16, tessellation: 6 }, scene);
+  upper.scaling.set(stretch, 1, beam);
+  upper.position.set(0, 0.2, 0);
+  hullParts.push(tint(upper, "#ffffff"));
+  const hull = mergeFlat("boatHulls", hullParts, scene);
+  hull.material = flatMaterial(scene).clone("boatHullMat") as StandardMaterial;
+
+  const lower = MeshBuilder.CreateCylinder("hl", { diameterTop: 0.5, diameterBottom: 0.3, height: 0.14, tessellation: 6 }, scene);
+  lower.scaling.set(stretch, 1, beam);
+  lower.position.set(0, 0.05, 0);
+  sailParts.push(tint(lower, kit === "longboat" ? "#2b2b2b" : "#4c5a66"));
+  const gunwale = MeshBuilder.CreateCylinder("gw", { diameter: 0.54, height: 0.035, tessellation: 6 }, scene);
+  gunwale.scaling.set(stretch, 1, beam);
+  gunwale.position.set(0, 0.29, 0);
+  sailParts.push(tint(gunwale, kit === "longboat" ? "#5a4636" : "#f2ece0"));
+  const cockpit = MeshBuilder.CreateCylinder("ck", { diameter: 0.36, height: 0.03, tessellation: 6 }, scene);
+  cockpit.scaling.set(stretch - 0.2, 1, beam);
+  cockpit.position.set(0, 0.29, 0);
+  sailParts.push(tint(cockpit, "#5a4636"));
+  for (const tx of [-0.3, 0.32]) {
+    const thwart = MeshBuilder.CreateBox("tw", { width: 0.08, height: 0.03, depth: 0.34 * beam }, scene);
+    thwart.position.set(tx, 0.32, 0);
+    sailParts.push(tint(thwart, PALETTE.planks));
+  }
+  if (kit === "dory") {
+    const net = MeshBuilder.CreateSphere("net", { diameter: 0.2, segments: 4 }, scene);
+    net.scaling.set(1.3, 0.55, 1);
+    net.position.set(-0.46, 0.33, 0.05);
+    sailParts.push(tint(net, "#b9a377"));
+    const mast = MeshBuilder.CreateCylinder("mast", { diameter: 0.04, height: 1.05, tessellation: 4 }, scene);
+    mast.position.set(0.08, 0.8, 0);
+    sailParts.push(tint(mast, PALETTE.wood));
+    const boom = MeshBuilder.CreateCylinder("boom", { diameter: 0.03, height: 0.62, tessellation: 4 }, scene);
+    boom.rotation.z = Math.PI / 2;
+    boom.position.set(-0.22, 0.45, 0.02);
+    sailParts.push(tint(boom, PALETTE.wood));
+    // The sail: a three-sided prism squashed flat, then stretched tall; its foot lies along the boom.
+    const sail = MeshBuilder.CreateCylinder("sail", { diameter: 0.6, height: 0.02, tessellation: 3 }, scene);
+    sail.rotation.x = Math.PI / 2;
+    sail.rotation.y = Math.PI;
+    sail.scaling.set(1, 1, 1);
+    sail.position.set(-0.2, 0.74, 0.03);
+    sail.scaling.set(1.0, 1, 2.0);
+    sailParts.push(tint(sail, PALETTE.sail));
+  } else if (kit === "longboat") {
+    for (const end of [-1, 1]) {
+      const post = MeshBuilder.CreateCylinder("post", { diameterTop: 0.03, diameterBottom: 0.07, height: 0.34, tessellation: 4 }, scene);
+      post.position.set(end * 0.72, 0.4, 0);
+      post.rotation.z = -end * 0.35;
+      sailParts.push(tint(post, "#2b2b2b"));
+    }
+    for (const side of [-1, 1]) for (const tx of [-0.35, -0.05, 0.25]) {
+      const oar = MeshBuilder.CreateBox("oar", { width: 0.03, height: 0.02, depth: 0.5 }, scene);
+      oar.position.set(tx, 0.31, side * 0.34);
+      oar.rotation.x = side * 0.5;
+      sailParts.push(tint(oar, PALETTE.planks));
+    }
+    const mast = MeshBuilder.CreateCylinder("mast", { diameter: 0.04, height: 1.0, tessellation: 4 }, scene);
+    mast.position.set(0.05, 0.78, 0);
+    sailParts.push(tint(mast, PALETTE.wood));
+    const yard = MeshBuilder.CreateCylinder("yard", { diameter: 0.03, height: 0.7, tessellation: 4 }, scene);
+    yard.rotation.x = Math.PI / 2;
+    yard.position.set(0.05, 1.18, 0);
+    sailParts.push(tint(yard, PALETTE.wood));
+    const sail = MeshBuilder.CreateBox("sail", { width: 0.02, height: 0.6, depth: 0.66 }, scene);
+    sail.position.set(0.02, 0.86, 0);
+    sailParts.push(tint(sail, "#c9a86a"));
+    const stripe = MeshBuilder.CreateBox("sailStripe", { width: 0.025, height: 0.6, depth: 0.1 }, scene);
+    stripe.position.set(0.02, 0.86, 0.18);
+    sailParts.push(tint(stripe, "#8a3f33"));
+  } else {
+    // The float (ama) on two booms to port, and a crab-claw sail leaning with its mast.
+    const ama = MeshBuilder.CreateCylinder("ama", { diameter: 0.14, height: 1.1, tessellation: 5 }, scene);
+    ama.rotation.z = Math.PI / 2;
+    ama.position.set(0, 0.1, 0.62);
+    sailParts.push(tint(ama, "#5a4636"));
+    for (const tx of [-0.28, 0.28]) {
+      const boom = MeshBuilder.CreateBox("ob", { width: 0.05, height: 0.03, depth: 0.7 }, scene);
+      boom.position.set(tx, 0.28, 0.3);
+      sailParts.push(tint(boom, PALETTE.planks));
+    }
+    const mast = MeshBuilder.CreateCylinder("mast", { diameter: 0.035, height: 0.9, tessellation: 4 }, scene);
+    mast.position.set(0.1, 0.72, -0.05);
+    mast.rotation.z = -0.25;
+    sailParts.push(tint(mast, PALETTE.wood));
+    const sail = MeshBuilder.CreateCylinder("sail", { diameter: 0.55, height: 0.02, tessellation: 3 }, scene);
+    sail.rotation.x = Math.PI / 2;
+    sail.rotation.z = -0.25;
+    sail.position.set(0.0, 0.78, -0.02);
+    sail.scaling.set(1.0, 1, 1.9);
+    sailParts.push(tint(sail, "#f7f1e3"));
+  }
+  const sail = mergeFlat("boatSails", sailParts, scene);
+  for (const m of [hull, sail]) { m.isPickable = false; m.alwaysSelectAsActiveMesh = true; }
+  return { hull, sail };
 }

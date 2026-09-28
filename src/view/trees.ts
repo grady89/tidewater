@@ -7,6 +7,7 @@ import { SimState } from "../sim/state";
 import { treeSites } from "../sim/trees";
 import { ground } from "./ground";
 import { flatMaterial, mergeFlat, tint } from "../world/flatMesh";
+import { palmAsset, useBlenderAssets } from "./assets";
 import { BiomeLook, TreeKit } from "./biomes";
 
 const TRUNK = "#5b4634";
@@ -17,6 +18,7 @@ export class Trees {
   private canopies: Mesh;
   private readonly scene: Scene;
   private kitKey = "";
+  private look: BiomeLook | null = null;
   private leaves: readonly string[] = LEAVES;
   private lastKey = "";
   /** Bump when the ground changes (landfill) so trees re-seat. */
@@ -29,6 +31,7 @@ export class Trees {
 
   /** The biome look's tree kit and colours (view/biomes): rebuilds the two meshes when they change. */
   setLook(look: BiomeLook): void {
+    this.look = look;
     const key = `${look.trees.kit}|${look.trees.trunk}|${look.trees.leaves.join(",")}`;
     if (key === this.kitKey) return;
     this.kitKey = key;
@@ -38,52 +41,17 @@ export class Trees {
     this.lastKey = "";
   }
 
-  /**
-   * One tree kit as two thin-instanced meshes. Conifer: after reference/trees, three stacked tiers, each a little
-   * darker toward the ground, on a plain straight trunk. Pine: taller and thinner, two narrow tiers high up over a
-   * bare trunk, for a dark slope of them. Palm: a tall trunk leaning a touch, a crown of six flat fronds.
-   */
+  /** The kit's two meshes: the Blender palm when USE_BLENDER_ASSETS is on and it has loaded, else the primitives. */
   private buildKit(kit: TreeKit, trunkHex: string, leaves: readonly string[]): { trunks: Mesh; canopies: Mesh } {
-    const scene = this.scene;
-    void leaves;
-    const tall = kit === "pine" ? 2.2 : kit === "palm" ? 2.6 : 1.3;
-    const trunk = MeshBuilder.CreateCylinder("t", { diameterTop: kit === "palm" ? 0.16 : 0.14, diameterBottom: 0.22, height: tall, tessellation: 5 }, scene);
-    trunk.position.y = tall / 2;
-    if (kit === "palm") trunk.rotation.z = 0.08;
-    const trunks = mergeFlat("treeTrunks", [tint(trunk, trunkHex)], scene);
-    const tiers: Mesh[] = [];
-    if (kit === "conifer") {
-      // Three tiers of foliage; the vertex tint darkens the lower tiers under the per-instance green.
-      for (const [y, dia, h, shade] of [[1.45, 1.4, 1.1, "#c8c8c8"], [2.15, 1.05, 1.0, "#e4e4e4"], [2.8, 0.66, 0.95, "#ffffff"]] as [number, number, number, string][]) {
-        const cone = MeshBuilder.CreateCylinder("c", { diameterTop: 0, diameterBottom: dia, height: h, tessellation: 7 }, scene);
-        cone.position.y = y;
-        cone.rotation.y = y * 0.7;
-        tiers.push(tint(cone, shade));
-      }
-    } else if (kit === "pine") {
-      for (const [y, dia, h, shade] of [[2.1, 0.95, 1.3, "#c0c0c0"], [2.95, 0.6, 1.1, "#ffffff"]] as [number, number, number, string][]) {
-        const cone = MeshBuilder.CreateCylinder("c", { diameterTop: 0, diameterBottom: dia, height: h, tessellation: 6 }, scene);
-        cone.position.y = y;
-        cone.rotation.y = y * 0.7;
-        tiers.push(tint(cone, shade));
-      }
-    } else {
-      const top = tall + 0.05;
-      for (let k = 0; k < 6; k++) {
-        const frond = MeshBuilder.CreateBox("f", { width: 1.3, height: 0.05, depth: 0.32 }, scene);
-        frond.position.set(Math.cos(k * 1.047) * 0.55, top - 0.12, Math.sin(k * 1.047) * 0.55);
-        frond.rotation.y = -k * 1.047;
-        frond.rotation.z = -0.35;
-        tiers.push(tint(frond, k % 2 ? "#ffffff" : "#d8d8d8"));
-      }
-      const crown = MeshBuilder.CreateSphere("cr", { diameter: 0.3, segments: 4 }, scene);
-      crown.position.y = top;
-      tiers.push(tint(crown, "#b9a377"));
-    }
-    const canopies = mergeFlat("treeCanopies", tiers, scene);
-    canopies.material = flatMaterial(scene).clone("canopyMat") as StandardMaterial;
-    for (const m of [trunks, canopies]) { m.isPickable = false; m.alwaysSelectAsActiveMesh = true; }
-    return { trunks, canopies };
+    const blender = kit === "palm" && useBlenderAssets() ? palmAsset(this.scene) : null;
+    return blender ?? primitiveTreeKit(this.scene, kit, trunkHex, leaves);
+  }
+
+  /** Rebuild the kit's meshes (the Blender assets arrived). */
+  reloadKit(): void {
+    if (!this.look) return;
+    this.kitKey = "";
+    this.setLook(this.look);
   }
 
   sync(state: SimState, storm = 0): void {
@@ -111,4 +79,51 @@ export class Trees {
     this.canopies.thinInstanceSetBuffer("matrix", canopyM, 16, true);
     this.canopies.thinInstanceSetBuffer("color", colors, 4, true);
   }
+}
+
+/**
+ * One tree kit as two thin-instanced meshes. Conifer: after reference/trees, three stacked tiers, each a little
+ * darker toward the ground, on a plain straight trunk. Pine: taller and thinner, two narrow tiers high up over a
+ * bare trunk, for a dark slope of them. Palm: a tall trunk leaning a touch, a crown of six flat fronds.
+ */
+export function primitiveTreeKit(scene: Scene, kit: TreeKit, trunkHex: string, leaves: readonly string[]): { trunks: Mesh; canopies: Mesh } {
+  void leaves;
+  const tall = kit === "pine" ? 2.2 : kit === "palm" ? 2.6 : 1.3;
+  const trunk = MeshBuilder.CreateCylinder("t", { diameterTop: kit === "palm" ? 0.16 : 0.14, diameterBottom: 0.22, height: tall, tessellation: 5 }, scene);
+  trunk.position.y = tall / 2;
+  if (kit === "palm") trunk.rotation.z = 0.08;
+  const trunks = mergeFlat("treeTrunks", [tint(trunk, trunkHex)], scene);
+  const tiers: Mesh[] = [];
+  if (kit === "conifer") {
+    // Three tiers of foliage; the vertex tint darkens the lower tiers under the per-instance green.
+    for (const [y, dia, h, shade] of [[1.45, 1.4, 1.1, "#c8c8c8"], [2.15, 1.05, 1.0, "#e4e4e4"], [2.8, 0.66, 0.95, "#ffffff"]] as [number, number, number, string][]) {
+      const cone = MeshBuilder.CreateCylinder("c", { diameterTop: 0, diameterBottom: dia, height: h, tessellation: 7 }, scene);
+      cone.position.y = y;
+      cone.rotation.y = y * 0.7;
+      tiers.push(tint(cone, shade));
+    }
+  } else if (kit === "pine") {
+    for (const [y, dia, h, shade] of [[2.1, 0.95, 1.3, "#c0c0c0"], [2.95, 0.6, 1.1, "#ffffff"]] as [number, number, number, string][]) {
+      const cone = MeshBuilder.CreateCylinder("c", { diameterTop: 0, diameterBottom: dia, height: h, tessellation: 6 }, scene);
+      cone.position.y = y;
+      cone.rotation.y = y * 0.7;
+      tiers.push(tint(cone, shade));
+    }
+  } else {
+    const top = tall + 0.05;
+    for (let k = 0; k < 6; k++) {
+      const frond = MeshBuilder.CreateBox("f", { width: 1.3, height: 0.05, depth: 0.32 }, scene);
+      frond.position.set(Math.cos(k * 1.047) * 0.55, top - 0.12, Math.sin(k * 1.047) * 0.55);
+      frond.rotation.y = -k * 1.047;
+      frond.rotation.z = -0.35;
+      tiers.push(tint(frond, k % 2 ? "#ffffff" : "#d8d8d8"));
+    }
+    const crown = MeshBuilder.CreateSphere("cr", { diameter: 0.3, segments: 4 }, scene);
+    crown.position.y = top;
+    tiers.push(tint(crown, "#b9a377"));
+  }
+  const canopies = mergeFlat("treeCanopies", tiers, scene);
+  canopies.material = flatMaterial(scene).clone("canopyMat") as StandardMaterial;
+  for (const m of [trunks, canopies]) { m.isPickable = false; m.alwaysSelectAsActiveMesh = true; }
+  return { trunks, canopies };
 }

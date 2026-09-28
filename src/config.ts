@@ -35,6 +35,8 @@ export const DAY_CYCLES = 2;
 export const BAND_GATING = false;
 /** Sea lanes (BIOMES.md §4, sim/lanes.ts): the World ledger and cargo between adjacent harbors. Off until it is finished. */
 export const LANES_ENABLED = false;
+/** The assets pilot (docs/assets): Boats, Trees and Wildlife draw the Blender-built meshes (public/assets) instead of their primitive kits. Off; `?assets=blender` turns it on for one page load. */
+export const USE_BLENDER_ASSETS = false;
 
 export const STILT_MIN = 0.5;
 export const CLEARANCE = 0.1;

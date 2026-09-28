@@ -1,5 +1,5 @@
 // Bootstrap: engine, scene, the ledger, the fixed-timestep loop, and the dev/test console API.
-import { ArcRotateCamera, Color4, DefaultRenderingPipeline, Engine, Matrix, Scene, Vector3 } from "@babylonjs/core";
+import { ArcRotateCamera, Color4, DefaultRenderingPipeline, Engine, Matrix, Mesh, Scene, Vector3 } from "@babylonjs/core";
 import { CameraControl } from "./build/cameraControl";
 import { Placement, Tool } from "./build/placement";
 import { LANES_ENABLED, SIM_TICK, SIZE, TIDE_PERIOD } from "./config";
@@ -49,6 +49,9 @@ import { Trees } from "./view/trees";
 import { PERSON_SCALE, Walkers } from "./view/walkers";
 import { setGroundSampler } from "./view/ground";
 import { Wildlife } from "./view/wildlife";
+import { AssetCompare } from "./view/assetCompare";
+import { AssetName, assetStats, preloadAssets, useBlenderAssets } from "./view/assets";
+import type { BiomeId } from "./sim/biomes";
 import { computeLighting, createLights, dayFraction, duskAt, Lighting, MORNING } from "./world/lighting";
 import { createSky } from "./world/sky";
 import { createTerrain } from "./world/terrain";
@@ -117,6 +120,11 @@ const overlays = new Overlays(scene, grid);
 const effects = new Effects(scene);
 const ship = new Ship(scene, grid);
 const wildlife = new Wildlife(scene, grid);
+// The assets pilot (docs/assets): with USE_BLENDER_ASSETS (or ?assets=blender) the kits start on their primitives
+// and swap to the Blender builds when they have loaded; with it off none of this runs.
+let blenderAssetsReady = false;
+if (useBlenderAssets()) void preloadAssets(scene).then(() => { boats.reloadKit(); trees.reloadKit(); wildlife.reloadAssets(); blenderAssetsReady = true; });
+const assetCompare = new AssetCompare(scene, grid);
 const audio = new Audio();
 const ferry = new Ferry(scene, grid);
 const pierMarker = new PierMarker(scene, grid);
@@ -674,6 +682,19 @@ const api = {
     reflections: () => water.reflections,
     quality: () => ({ quality, bloom: pipe.bloomEnabled, reflections: water.reflections, caustics: water.caustics, walkersCap: walkers.cap, gulls: wildlife.showGulls, note: qualityNote, probing: probe !== null }),
     chunks: () => views.chunkCount,
+    /**
+     * The assets pilot: an asset beside its primitive kit on the island, near the camera's target (null clears).
+     * Resolves with where they stand and their triangle counts.
+     */
+    assetCompare: async (name: AssetName | null, look?: BiomeId) => {
+      if (!name) { assetCompare.clear(); return null; }
+      const p = cameraControl.pose;
+      return assetCompare.show(state, name, look, { x: p.x, z: p.z });
+    },
+    /** Whether the kits are drawing the Blender assets (the flag, and they have loaded), and what loaded. */
+    assets: () => ({ on: useBlenderAssets(), ready: blenderAssetsReady, stats: assetStats() }),
+    /** Triangles drawn this frame: every active mesh's index count over three, times its thin instances. */
+    triangles: () => scene.getActiveMeshes().data.reduce((n, m) => n + (m.getTotalIndices() / 3) * Math.max(1, (m as Mesh).thinInstanceCount ?? 0), 0),
     caustics: () => water.caustics,
     gulls: () => wildlife.gullCount,
     crabs: () => wildlife.crabCount,
