@@ -180,6 +180,8 @@ wins and is noted). Numbered as they came up; the code cites them.
     the steep sides; its rock is the palette's sandy `#b9a98a`, so it stays pale). The globe's cargo ships are a
     little larger. A reload with twelve seas stalls one frame for ~2.2 s on this branch and on the original main
     alike (measured both); the monkey's slow runs near its forced reloads come from it — noted, not fixed here.
+    (Profiled after the merge: it is the page load, not a stall in play — main.ts's startup builds all twelve
+    globe miniatures synchronously, ~1.2 s of ~2.6 s. A follow-up in HANDOFF.md's backlog: build them one a frame.)
 38. **Pirates v0 (Stage 8), behind `PIRATES_ENABLED = false`:** the World ledger keeps a presence (0..1) on every
     unbuilt face beside a lane (a neighbour of either end that nobody has built); each cycle it fades ×0.9 and grows
     by 0.004 per unit of cargo that sailed the lane. A hop's raid chance is the strongest presence beside it × 0.35,

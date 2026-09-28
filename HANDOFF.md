@@ -247,10 +247,14 @@ Known-rough:
 - **The World ledger is one localStorage key** beside the sectors; an export of a sea does not carry cargo bound
   for it. Clearing a sea drops what was at sea to or from it.
 - The globe's cargo ships and lanes are small at the default zoom; the storm knot is a cluster of puffs, not weather.
-- **A reload with twelve seas stalls one frame for ~2.2 s** (measured the same on the original main, so not the
-  lanes): the UI monkey's slow runs sit on its forced reloads (1.84 s and 2.08 s against its 2 s limit). The World
-  settlement itself now runs a slice a frame (`worldJob`, 4 ms) and the sector packer is ten times faster
-  (~100 ms for eleven stored seas, all told); the boot stall is the next thing to profile.
+- **A slow page load with many seas** (follow-up, not started — see "Ideas backlog"): with twelve seas built, the
+  startup code in `main.ts` runs ~2.6 s in one block before the first frame (profiled across a reload). About 1.2 s
+  of it is building the globe's twelve miniatures (`refreshFace` → `World.setSector` → `buildMiniature`: each
+  regenerates its island's heightfield, samples it and builds a terrain mesh); the rest is the World scene, the
+  island terrain and the active sea's `syncGround`, ~0.3 s each. It is load time, not a freeze in play, and it
+  scales with the seas built; the original main does the same. The UI monkey's slow runs (1.84 s and 2.08 s
+  against its 2 s limit) are its forced reloads counting this load. The World settlement itself runs a slice a
+  frame (`worldJob`, 4 ms) and the sector packer is ten times faster.
 - The balance probe's player is simple (`test/balance.test.ts`); it never builds a tavern or a bathhouse, so its
   happiness ceiling is lower than a person's.
 
@@ -293,6 +297,12 @@ Still worth doing: **play the isle with the ferry** (bridge the harbor, settle t
 10-cell crossing sends the right people across; the two-leg walk and the deck riders were only checked headless).
 
 ## Ideas backlog
+
+- **Follow-up: load the World progressively** (Grady, 2026-09-28: "add it as a follow-up item"). Draw the globe
+  with its empty faces first, then build one miniature per frame during the entrance, where the islands already
+  surface one by one (`World.surfacingOrder`), so a page with twelve seas shows at once instead of blocking ~2.6 s.
+  Defer the active sea's `syncGround` to its first dive the same way. Check: `test/_bootprof.mjs`-style CPU
+  profile across a reload (the first frame under ~200 ms with twelve seas) and the monkey's reloads under its limit.
 
 - The World: the other biomes (Delta, Dunes, Atoll, Cinder, Fjord — each a heightfield style and a palette;
   `BAND_GATING` then decides what goes where); sea lanes between neighbouring faces (the rails' gates are the
