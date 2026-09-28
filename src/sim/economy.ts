@@ -26,6 +26,7 @@ import { healInjuries, sharkSources } from "./sharks";
 import { settleTrade } from "./trade";
 import { Building, buildingList, Cell, notify, Phase, population, SimState } from "./state";
 import { fellTrees, grownTreesNear, regrowTrees } from "./trees";
+import { isSpringCycle } from "./tide";
 import { assignWorkers, employed, staffing } from "./workers";
 
 export function canAfford(state: SimState, cost: Cost): boolean {
@@ -167,14 +168,16 @@ export function shiftStart(state: SimState, grid: Grid, phase: Phase): void {
 
 /** Shift end: boats land a catch scaled by the ground's fish density and thin it; shellfish comes in from the flats. */
 export function shiftEnd(state: SimState, grid: Grid, phase: Phase): void {
-  const springLow = phase === "low" && state.tide.level <= grid.tides.springLo + 0.05;
+  // The low before a spring peak is a spring low. (This read the water level, which at the end of a low has risen
+  // back to the low-water mark, so the spring-low bonus never paid: docs/world/decisions.md #3.)
+  const springLow = phase === "low" && isSpringCycle(state.tide.cycle + 1);
   for (const b of buildingList(state)) {
     if (isHarbour(b) && b.atSea) {
       b.atSea = false;
       const density = b.ground ? fishAt(state, b.ground) : 0;
       const fish = b.boats * BOAT_BASE_FISH * staffing(b) * netLoftBonus(state, b) * toolBonus(state, b) * density * (biomeFor(state).harbourFactor?.(state, b) ?? 1);
       depleteGround(state, b);
-      b.output += addCapped(state, "fish", fish);
+      b.output += addCapped(state, biomeFor(state).catch ?? "fish", fish);
       state.last.fishCaught += fish;
       continue;
     }

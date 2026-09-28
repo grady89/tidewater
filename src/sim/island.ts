@@ -156,7 +156,7 @@ export function islandStats(height: HeightFn, trees: readonly TreeSite[], tides:
 }
 
 /** Why a candidate fails, one reason per rule, or [] when it is playable. A biome may move the thresholds and add rules. */
-export function islandFailures(s: IslandStats, biome: BiomeId = "tidewater"): string[] {
+export function islandFailures(s: IslandStats, biome: BiomeId = "tidewater", height?: HeightFn): string[] {
   const b = biomeOf(biome);
   const th = { flats: ISLAND_MIN_FLATS, region: ISLAND_MIN_REGION, piers: ISLAND_MIN_PIER_SITES, harbors: ISLAND_MIN_HARBOR_SITES, treed: ISLAND_MIN_TREED, ...b.thresholds };
   const out: string[] = [];
@@ -165,7 +165,7 @@ export function islandFailures(s: IslandStats, biome: BiomeId = "tidewater"): st
   if (s.piers < th.piers) out.push(`pier sites ${s.piers} < ${th.piers}`);
   if (s.harbors < th.harbors) out.push(`harbor sites ${s.harbors} < ${th.harbors}`);
   if (s.treed < th.treed) out.push(`treed high cells ${s.treed} < ${th.treed}`);
-  out.push(...b.validate(s));
+  out.push(...b.validate(s, height));
   return out;
 }
 
@@ -206,7 +206,7 @@ export function island(seed: number, biome: BiomeId = "tidewater"): Island {
   let made: Island | null = null;
   for (let k = 0; k <= ISLAND_MAX_REROLLS && !made; k++) {
     const c = candidate(seed, k, biome);
-    if (islandFailures(c.stats, biome).length === 0 || (seed === 0 && biome === "tidewater")) made = { seed, rerolls: k, ...c };
+    if (islandFailures(c.stats, biome, c.height).length === 0 || (seed === 0 && biome === "tidewater")) made = { seed, rerolls: k, ...c };
   }
   if (!made) {
     // Nothing passed: the biome's seed-0 island stands in (for Tidewater that is the original island; for another

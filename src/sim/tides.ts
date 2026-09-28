@@ -48,9 +48,9 @@ export function tidesFor(scale = 1, king = 0): Tides {
     waveHeight: floodHi + CLEARANCE + WAVE_MARGIN,
     beachMax: BEACH_MAX_HEIGHT * scale,
     landfillHeight: LANDFILL_HEIGHT * scale,
-    pierFloor: PIER_FLOOR * scale,
-    raisedFloor: RAISED_FLOOR * scale,
-    groundFloor: PIER_FLOOR * scale,
+    pierFloor: (PIER_FLOOR + king) * scale,
+    raisedFloor: (RAISED_FLOOR + king) * scale,
+    groundFloor: (PIER_FLOOR + king) * scale,
   };
 }
 

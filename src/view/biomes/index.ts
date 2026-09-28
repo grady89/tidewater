@@ -7,11 +7,12 @@ import type { RoofShape } from "../roofs";
 import { ATOLL_LOOK } from "./atoll";
 import { FJORD_LOOK } from "./fjord";
 
-export type BoatKit = "dory" | "longboat" | "outrigger";
-export type HatKit = "straw" | "knit" | "hood";
-export type TreeKit = "conifer" | "pine" | "palm";
-export type HouseKit = "cottage" | "stave" | "round";
-export type FaunaKind = "gulls" | "crabs" | "seals" | "whales" | "puffins" | "turtles" | "reefFish" | "frigatebirds";
+export type BoatKit = "dory" | "longboat" | "outrigger" | "sampan" | "dugout" | "dhow";
+export type HatKit = "straw" | "knit" | "hood" | "conical" | "bandana" | "wrap";
+export type TreeKit = "conifer" | "pine" | "palm" | "mangrove";
+export type HouseKit = "cottage" | "stave" | "round" | "reed" | "basalt" | "cube";
+export type FaunaKind = "gulls" | "crabs" | "seals" | "whales" | "puffins" | "turtles" | "reefFish" | "frigatebirds"
+  | "flamingos" | "herons" | "crocodiles" | "fireflies" | "iguanas" | "boobies" | "plankton" | "pelicans" | "dolphins" | "ghostCrabs";
 
 export interface BiomeLook {
   id: BiomeId;
@@ -37,7 +38,9 @@ export interface BiomeLook {
   trees: { kit: TreeKit; trunk: string; leaves: readonly string[] };
   fauna: readonly FaunaKind[];
   /** Ambience parameters for view/audio.ts (0..1 levels; `padRoot` in Hz). */
-  ambience: { surf: number; gulls: boolean; wind: number; ice: number; palms: number; birds: number; padRoot: number };
+  ambience: { surf: number; gulls: boolean; wind: number; ice: number; palms: number; birds: number; padRoot: number;
+    /** The later coasts' layers (0..1, absent = off): frogs and insects at night, rain, a low rumble, steam hiss, blown sand. */
+    frogs?: number; insects?: number; rain?: number; rumble?: number; hiss?: number; sand?: number };
 }
 
 const LOOKS = new Map<BiomeId, BiomeLook>();

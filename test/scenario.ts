@@ -460,7 +460,7 @@ export function biomeTown(state: SimState, grid: Grid, grant = 3000, town: Retur
   state.resources.money += grant; state.resources.planks += 100;
   growStreet(state, grid, 8);
   const extras: Partial<Record<BuildingKind, Building>> = {};
-  const flats: BuildingKind[] = ["stockfishRacks", "iceHouse", "coconutGrove", "pearlHouse", "toolworks"];
+  const flats: BuildingKind[] = ["stockfishRacks", "iceHouse", "coconutGrove", "pearlHouse", "toolworks", "ricePaddy", "saltPan", "indigoVats", "wardenTower"];
   for (const kind of flats) {
     if (!grid.inCatalog(kind)) continue;
     let b = placeByWalkway(state, grid, kind, 1)[0];
@@ -477,5 +477,10 @@ export function biomeTown(state: SimState, grid: Grid, grant = 3000, town: Retur
     if (station) { extras.whalingStation = station; bridgeTo(state, grid, station); }
   }
   for (const kind of ["divePlatform", "reefNursery"] as const) if (grid.inCatalog(kind)) { const b = placeNear(state, grid, kind, town.pier.cells[0]); if (b) extras[kind] = b; }
+  // Channel-edge kinds by the pier (the Delta's crab pots), joined to the street if the pier's own deck does not reach them.
+  for (const kind of ["crabPots"] as const) if (grid.inCatalog(kind)) {
+    const b = placeEdge(state, grid, kind, town.pier.cells[0], 2);
+    if (b) { extras[kind] = b; if (!b.cells.some(c => grid.neighbors(c).some(n => isLink(grid.buildingAt(n))))) joinByLine(state, grid, town.pier.cells[0], b.cells[0]); }
+  }
   return { town, extras };
 }

@@ -319,7 +319,7 @@ export class Grid {
   floorFor(kind: BuildingKind, cells: Cell[], lift = 0): number {
     const f = BUILDINGS[kind].floor;
     const h = this.groundUnder(cells);
-    if (typeof f === "number") return Math.max(f * this.tides.scale, h + 0.05); // a fixed floor (scaled with the tide) never sinks into a hill
+    if (typeof f === "number") return Math.max(f * this.tides.scale + (this.tides.floodHi - this.tides.springHi), h + 0.05); // a fixed floor (scaled with the tide, over a king tide where there is one) never sinks into a hill
     if (f === "terrain") return h + 0.05;
     if (f === "ground") return Math.max(this.tides.groundFloor, h + 0.05);
     // Auto-sized stilts: at least STILT_MIN over the cell and CLEARANCE over the tide the piece must clear — the

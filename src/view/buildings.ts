@@ -10,6 +10,7 @@ import { cellCenter, DIRS, Grid } from "../sim/grid";
 import { ground } from "./ground";
 import { roofFor, roofShape, setRoofPalette } from "./roofs";
 import { BiomeLook, HouseKit } from "./biomes";
+import { COAST_HOMES, COAST_PIECES } from "./pieces";
 import { Building, Cell } from "../sim/state";
 import { mergeFlat, tint } from "../world/flatMesh";
 
@@ -331,6 +332,8 @@ function roundHome(scene: Scene, b: Building, bodyW: number, baseH: number): Bui
  */
 function home(scene: Scene, b: Building, bodyW: number, baseH: number): BuildingMeshes {
   if (HOUSE_KIT === "round") return roundHome(scene, b, bodyW, baseH);
+  const coast = COAST_HOMES[HOUSE_KIT];
+  if (coast) return coast(scene, b, bodyW, baseH);
   const { cx, cz, w, d } = bounds(b.cells, b.rot);
   const F = b.floorY;
   const bodyH = baseH + 0.14 * (b.level - 1);
@@ -1383,8 +1386,24 @@ function buildMeshes(scene: Scene, b: Building, grid: Grid): BuildingMeshes {
     case "pearlHouse": return pearlHouse(scene, b);
     case "coconutGrove": return coconutGrove(scene, b);
     case "reefNursery": return reefNursery(scene, b);
+    default: {
+      // The later coasts' kinds live in view/pieces/ (one file per coast), built from the kit below.
+      const f = COAST_PIECES[b.kind];
+      if (!f) throw new Error(`no mesh for ${b.kind}`);
+      return f(scene, b, grid);
+    }
   }
 }
+
+/**
+ * The primitives and pieces every factory is built from, for the coasts' files in view/pieces/: the palette's
+ * mutable accents are read through `accents()` at build time, as the factories here read them.
+ */
+export const KIT = {
+  box, cyl, pyramid, rock, gable, hip, window_, door, railing, chimney, crate, barrel, bollard, bracketLantern, postLantern,
+  deck, shed, net, logPile, stilt, bounds, pier, sharkNet, lifeguard, bathhouse, homeRoof,
+  accents: () => ({ blue: BLUE, trim: TRIM, stone: STONE, stoneLight: STONE_LIGHT, glass: GLASS, rope: ROPE }),
+};
 
 /** Everything about a building that changes its mesh; the view rebuilds when this changes. Street pieces also
  *  depend on what stands beside them. */

@@ -7,3 +7,4 @@ export * from "./registry";
 import "./tidewater";
 import "./fjord";
 import "./atoll";
+import "./delta";

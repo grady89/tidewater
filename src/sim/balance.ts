@@ -14,7 +14,8 @@ export type BuildingKind =
   | "breakwater" | "seaWall"
   | "toolworks"
   | "stockfishRacks" | "whalingStation" | "ironMine" | "iceHouse" | "iceBreakerPier"
-  | "divePlatform" | "pearlHouse" | "coconutGrove" | "reefNursery";
+  | "divePlatform" | "pearlHouse" | "coconutGrove" | "reefNursery"
+  | "ricePaddy" | "crabPots" | "saltPan" | "indigoVats" | "wardenTower" | "crocNet";
 
 /** Service coverage layers; each building that provides one writes its staffed fraction within `radius`. */
 export type ServiceKind = "water" | "leisure" | "night" | "treatment" | "lifeguard" | "firewatch";
@@ -112,6 +113,13 @@ export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
   pearlHouse: { name: "Pearl house", category: "Production", w: 2, d: 1, cls: "flat", cost: { money: 180 }, workers: 2, residents: 0, upkeep: 1.5, floor: "stilts", network: "leaf", desc: "Grades the divers' pearls for the trade ship" },
   coconutGrove: { name: "Coconut grove", category: "Production", w: 2, d: 1, cls: "flatOrHigh", cost: { money: 90 }, workers: 3, residents: 0, upkeep: 1, floor: "stilts", network: "leaf", desc: "Gathers coconuts from palms within 6" },
   reefNursery: { name: "Reef nursery", category: "Sea", w: 1, d: 1, cls: "deep", material: "lagoon", needsLink: true, cost: { money: 160 }, workers: 1, residents: 0, upkeep: 1, floor: 1.0, network: "leaf", desc: "Restores fish and coral within 5 while the water stays clean" },
+  // Delta (BIOMES.md §3.4)
+  ricePaddy: { name: "Rice paddy", category: "Production", w: 2, d: 2, cls: "flat", terrain: { min: 0.0, max: 0.45 }, cost: { money: 100 }, workers: 3, residents: 0, upkeep: 1, floor: 1.0, network: "leaf", desc: "Flooded at high water, planted at low: rice every two cycles on fresh water (the river's reach or a well's); the whole crop at a spring low" },
+  crabPots: { name: "Crab pots", category: "Sea", w: 1, d: 1, cls: "edge", cost: { money: 50 }, workers: 1, residents: 0, upkeep: 0.5, floor: 1.0, network: "leaf", desc: "Crab from the channel at low water; on a channel's edge" },
+  saltPan: { name: "Salt pan", category: "Production", w: 2, d: 2, cls: "flatOrHigh", terrain: { min: 0.45, max: 1.4 }, cost: { money: 110 }, workers: 2, residents: 0, upkeep: 1, floor: "ground", network: "leaf", desc: "Sun-dried salt on the upper flats and the levee; half as much in a storm" },
+  indigoVats: { name: "Indigo vats", category: "Production", w: 2, d: 1, cls: "flat", cost: { money: 150 }, workers: 3, residents: 0, upkeep: 1.5, floor: "stilts", network: "leaf", pollution: 3, desc: "Indigo from the wild plants on the open flats within 6; fouls the water — put it downstream" },
+  wardenTower: { name: "Warden tower", category: "Services", w: 1, d: 1, cls: "flat", cost: { money: 90 }, workers: 1, residents: 0, upkeep: 1, floor: "stilts", network: "leaf", service: { kind: "lifeguard", radius: 5 }, desc: "Crocodile attacks within 5 drop 80%" },
+  crocNet: { name: "Croc net", category: "Sea", w: 1, d: 1, cls: "flatOrDeep", cost: { money: 20 }, workers: 0, residents: 0, upkeep: 0.1, floor: 1.0, network: "leaf", stopsPredators: true, desc: "Per water cell; crocodiles can't cross" },
   outfall: { name: "Sewage outfall", category: "Services", w: 1, d: 1, cls: "edge", cost: { money: 40 }, workers: 0, residents: 0, upkeep: 0.5, floor: 1.0, network: "leaf", desc: "Dumps the town's waste into the sea; the tide carries it" },
   treatmentPlant: { name: "Treatment plant", category: "Services", w: 2, d: 2, cls: "flatOrHigh", cost: { money: 350 }, workers: 4, residents: 0, upkeep: 3, floor: "ground", network: "leaf", service: { kind: "treatment", radius: 12 }, desc: "Neutralises waste from homes within 12" },
   well: { name: "Well", category: "Services", w: 1, d: 1, cls: "flat", cost: { money: 50 }, workers: 0, residents: 0, upkeep: 0.5, floor: "stilts", network: "leaf", service: { kind: "water", radius: 8 }, desc: "Drinking water for homes within 8" },
@@ -156,7 +164,10 @@ export const PLANT_COST = 3;
 /** Timber from clearing a grown tree by hand. */
 export const CLEAR_TIMBER = 1;
 /** What clearing a tree on a cell of this material does instead: its timber, and pollution let into the water (mangroves). */
-export const CLEAR_BY_MATERIAL: Partial<Record<Material, { timber: number; pollution: number }>> = {};
+export const CLEAR_BY_MATERIAL: Partial<Record<Material, { timber: number; pollution: number }>> = {
+  // A mangrove gives no timber that mills (BIOMES.md §2) and stirs the mud: a burst of pollution on its cell.
+  mangrove: { timber: 0, pollution: 0.4 },
+};
 
 /** Share of a building's money cost returned when the player removes it (planks and timber are not returned). */
 export const REMOVE_REFUND = 0.5;
@@ -428,6 +439,26 @@ export const NURSERY_POLLUTION_MAX = 0.3;
 export const HATCHING_LANTERN_RADIUS = 4;
 export const HATCHING_BONUS = 0.1;
 export const HATCHING_BONUS_MAX = 0.5;
+
+// Delta (BIOMES.md §3.4)
+/** A paddy grows a crop over RICE_CYCLES staffed settlements on fresh water, then yields RICE_PER_HARVEST × staffing. */
+export const RICE_CYCLES = 2;
+export const RICE_PER_HARVEST = 14;
+/** At a spring low every standing crop comes in at once, this much the richer. */
+export const HARVEST_BONUS = 1.25;
+/** The river's stem waters the flats this far either side (the water coverage layer). */
+export const FRESH_RIVER_RADIUS = 3;
+export const CRAB_POT_PER_SHIFT = 3;
+export const SALT_PER_CYCLE = 4;
+export const SALT_STORM_FACTOR = 0.5;
+/** Indigo per open flat cell (the wild indigo) within INDIGO_RADIUS of the vats, per cycle at full staff. */
+export const INDIGO_PER_CELL = 0.02;
+export const INDIGO_RADIUS = 6;
+/** Fever season: every FEVER_EVERY cycles from FEVER_FIRST, FEVER_SHARE of every home out of a clinic's reach falls sick. */
+export const FEVER_EVERY = 8;
+export const FEVER_FIRST = 8;
+export const FEVER_SHARE = 0.25;
+export const FEVER_CLINIC_RADIUS = 10;
 
 // Sea lanes (BIOMES.md §4; sim/lanes.ts, behind LANES_ENABLED)
 export const CARGO_SHIPS_PER_HARBOR = 1;

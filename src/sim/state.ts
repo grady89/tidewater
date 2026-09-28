@@ -3,7 +3,7 @@ import { TIDE_HI } from "../config";
 import { BuildingKind, FISH_CAP, ResourceKind, SERVICE_KINDS, ServiceKind, STARTING_FISH, STARTING_MONEY } from "./balance";
 import { filled, zeros } from "./fields";
 import { emptyStock, GoodId } from "./goods";
-import { BiomeId, Surge, surgeOf, tideScaleOf } from "./biomes";
+import { BiomeId, catchOf, Surge, surgeOf, tideScaleOf } from "./biomes";
 import { initialTrees, TreeSite } from "./trees";
 
 export function emptyCoverage(): Record<ServiceKind, number[]> {
@@ -224,7 +224,7 @@ export function createState(seed = 1, islandSeed = 0, biome: BiomeId = "tidewate
     tick: 0,
     tide: { phase: Math.PI * 0.5, level: TIDE_HI * tideScaleOf(biome), wetLevel: 0, cycle: 0, peaked: false, override: null, scale: tideScaleOf(biome), ...(surgeOf(biome) ? { surge: { ...surgeOf(biome)! } } : {}) },
     phase: "high",
-    resources: { money: STARTING_MONEY, ...emptyStock(), fish: STARTING_FISH },
+    resources: { money: STARTING_MONEY, ...emptyStock(), [catchOf(biome)]: STARTING_FISH },
     buildings: {},
     nextId: 1,
     assignments: [],

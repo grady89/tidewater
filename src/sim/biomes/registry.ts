@@ -30,6 +30,8 @@ export interface Biome {
   bands: readonly Band[];
   /** Multiplier on every tide level (tides.ts). */
   tide: number;
+  /** What the boats bring in (fish everywhere but the Delta, whose sampans work crab). */
+  catch?: GoodId;
   /** Native foods (two), the luxury it makes, the industrials it makes, and any minor trade good. */
   foods: readonly GoodId[];
   luxury: GoodId;
@@ -44,8 +46,8 @@ export interface Biome {
   excluded: readonly BuildingKind[];
   /** Terrain for a noise seed. */
   shape(noiseSeed: number): Shape;
-  /** Extra validation on top of the base rules: reasons a candidate fails, [] when it is fine. */
-  validate(stats: IslandStats): string[];
+  /** Extra validation on top of the base rules: reasons a candidate fails, [] when it is fine. The heightfield comes too when the caller has it. */
+  validate(stats: IslandStats, height?: HeightFn): string[];
   /** Base thresholds this biome relaxes or tightens (undefined = the base value). */
   thresholds?: Partial<{ flats: number; region: number; piers: number; harbors: number; treed: number }>;
   /** Called at every settlement after the base settlement (hazards, events, seasons). */
@@ -142,6 +144,10 @@ export function tideScaleOf(biome: BiomeId): number {
 /** What a kind costs to build on this coast: the catalog's price unless the coast sets its own (basalt sea walls). */
 export function costOf(kind: BuildingKind, biome: BiomeId = "tidewater"): Cost {
   return biomeOf(biome).costs?.[kind] ?? BUILDINGS[kind].cost;
+}
+/** What the boats land here. */
+export function catchOf(biome: BiomeId): GoodId {
+  return biomeOf(biome).catch ?? "fish";
 }
 /** The coast's river surge, if it has one (the tide clock carries a copy in TideState). */
 export function surgeOf(biome: BiomeId): Surge | undefined {
