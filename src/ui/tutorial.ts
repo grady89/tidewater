@@ -104,6 +104,8 @@ export class Tutorial {
     else text = this.hint(state);
     if (this.stepEl.textContent !== step) this.stepEl.textContent = step;
     if (this.titleEl.textContent !== title) this.titleEl.textContent = title;
+    // Phones tap; the walkthrough's words follow.
+    if (document.body.classList.contains("mobile")) text = text.replace("right-click a building to remove it", "tap a building and press Remove").replace("(the button under the ledger)", "(under More)").replace(/ tab\b/g, "").replace(/\bclicked\b/g, "tapped").replace(/\bclick(s?)\b/g, "tap$1");
     if (this.textEl.textContent !== text) this.textEl.textContent = text;
     this.el.classList.toggle("bare", title === "");
     this.el.hidden = text === "";

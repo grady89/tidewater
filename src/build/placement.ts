@@ -55,6 +55,15 @@ export class Placement {
   private lineAxis: Axis | null = null;
   private linePath: Cell[] = [];
 
+  /**
+   * Phones (ui/mobile.ts): the canvas's own pointer handlers leave touches alone, and placing takes two steps. A tap
+   * pins the ghost to a cell (`pinned`); a street tool's drag lays out a run that waits there; `confirm` builds
+   * what is pinned, `cancel` drops it. While a finger drags a run, `pinPoint` is the screen point it is over.
+   */
+  touchMode = false;
+  pinned: Cell | null = null;
+  private pinPoint: { x: number; y: number } | null = null;
+
   /** Line tools draw with the left button, so the camera must not grab the ground with it. */
   get dragsLine(): boolean { return LINE_TOOLS.has(this.tool); }
   /** Off while the World is shown (the canvas is shared); the ghost hides and clicks are ignored. */
@@ -134,15 +143,17 @@ export class Placement {
     this.tag.hidden = true;
     document.body.appendChild(this.tag);
 
-    canvas.addEventListener("pointermove", () => { if (this.enabled) this.refresh(); });
-    canvas.addEventListener("pointerleave", () => { this.hover = null; this.ghost.setEnabled(false); this.ghostStilts.setEnabled(false); this.ghostDoor.setEnabled(false); });
+    const touch = (e: PointerEvent) => this.touchMode && e.pointerType === "touch";
+    canvas.addEventListener("pointermove", e => { if (this.enabled && !touch(e)) this.refresh(); });
+    canvas.addEventListener("pointerleave", e => { if (touch(e)) return; this.hover = null; this.ghost.setEnabled(false); this.ghostStilts.setEnabled(false); this.ghostDoor.setEnabled(false); });
     canvas.addEventListener("pointerdown", e => {
-      if (!this.enabled) return;
+      if (!this.enabled || touch(e)) return;
       this.refresh(); // pick where the press lands, not where the pointer last moved
       this.down = { x: e.clientX, y: e.clientY, button: e.button };
       if (e.button === 0 && this.dragsLine && this.hover) { this.lineStart = this.hover; this.lineAxis = null; }
     });
     canvas.addEventListener("pointerup", e => {
+      if (touch(e)) return;
       const d = this.down;
       this.down = null;
       const start = this.lineStart;
@@ -169,7 +180,7 @@ export class Placement {
   }
 
   setTool(tool: Tool): void {
-    if (tool !== this.tool) this.turns = null;
+    if (tool !== this.tool) { this.turns = null; this.pinned = null; this.lineStart = null; this.linePath = []; }
     this.tool = tool;
     this.refresh();
   }
@@ -199,8 +210,8 @@ export class Placement {
    * Cell under the pointer. Flats tools intersect the picking ray with the plane at the tool's deck height, so the
    * ghost sits under the cursor (buildable terrain is always below that plane); hill tools march the heightfield.
    */
-  private pickCell(): Cell | null {
-    const ray = this.scene.createPickingRay(this.scene.pointerX, this.scene.pointerY, Matrix.Identity(), this.camera);
+  private pickCell(px = this.scene.pointerX, py = this.scene.pointerY): Cell | null {
+    const ray = this.scene.createPickingRay(px, py, Matrix.Identity(), this.camera);
     const o = ray.origin, d = ray.direction;
     let x: number, z: number;
     if (this.picksTerrain()) {
@@ -448,7 +459,9 @@ export class Placement {
   }
 
   refresh(): void {
-    this.hover = this.pickCell();
+    this.hover = this.touchMode
+      ? (this.pinPoint ? this.pickCell(this.pinPoint.x, this.pinPoint.y) : this.pinned)
+      : this.pickCell();
     if (this.lineStart && this.hover) {
       this.ghostStilts.setEnabled(false);
       this.ghostDoor.setEnabled(false);
@@ -513,6 +526,68 @@ export class Placement {
     const placed = this.place();
     if (placed) { this.onSelect(null); return; }
     this.onSelect(existing);
+  }
+
+  /** The cell under a screen point (canvas pixels), picked as the current tool picks. */
+  cellAt(x: number, y: number): Cell | null {
+    return this.pickCell(x, y);
+  }
+
+  /** A finger went down (touch mode): a street tool starts a run there. */
+  touchStart(x: number, y: number): void {
+    if (!this.enabled || !this.dragsLine) return;
+    this.pinned = null;
+    this.pinPoint = { x, y };
+    const c = this.pickCell(x, y);
+    this.lineStart = c; this.lineAxis = null; this.linePath = [];
+    this.refresh();
+  }
+  /** The finger moved: the run follows it. */
+  touchMove(x: number, y: number): void {
+    if (!this.lineStart) return;
+    this.pinPoint = { x, y };
+    this.refresh();
+  }
+  /**
+   * The finger lifted. A run that left its cell waits for confirm, its end pinned; anything else was a tap, which
+   * pins the ghost where it landed (tapping a run's cell with a street tool pins that one cell).
+   */
+  touchEnd(x: number, y: number): void {
+    if (!this.enabled) return;
+    const end = this.pickCell(x, y);
+    this.pinPoint = null;
+    if (this.lineStart && this.linePath.length > 1) { this.pinned = end ?? this.hover; this.refresh(); return; }
+    this.lineStart = null; this.linePath = [];
+    this.pinned = end;
+    this.refresh();
+  }
+  /** A second finger came down: whatever the first was drawing is dropped (the camera takes the gesture). */
+  touchAbort(): void {
+    this.pinPoint = null;
+    if (this.lineStart) { this.lineStart = null; this.linePath = []; this.pinned = null; this.refresh(); }
+  }
+  /** Something is pinned and waiting for confirm (a ghost, or a run). */
+  get pending(): "run" | "piece" | null {
+    if (this.lineStart && this.linePath.length > 1 && this.pinned) return "run";
+    return this.pinned ? "piece" : null;
+  }
+  /** Build what is pinned. Returns whether anything was built. */
+  confirm(): boolean {
+    if (this.lineStart && this.linePath.length > 1) {
+      const before = this.grid.state.resources.money;
+      this.placeLine();
+      this.lineStart = null; this.pinned = null; this.refresh();
+      return this.grid.state.resources.money !== before;
+    }
+    if (!this.pinned) return false;
+    const b = this.place(this.pinned);
+    if (b || this.landChanged) { this.pinned = null; this.refresh(); }
+    return !!b;
+  }
+  /** Drop what is pinned. */
+  cancel(): void {
+    this.pinned = null; this.pinPoint = null; this.lineStart = null; this.linePath = [];
+    this.refresh();
   }
 
   /**

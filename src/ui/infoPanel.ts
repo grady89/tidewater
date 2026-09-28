@@ -18,9 +18,16 @@ export class InfoPanel {
   private bodyHtml = "";
   private ordersHtml = "";
 
+  /** Remove the selected building (phones: there is no right-click); shown only in the phone layout. */
+  onRemove: (b: Building) => void = () => {};
+
   /** `onOrder` queues ORDER_SIZE of a good with the company (the harbor's purchase queue). */
   constructor(private readonly root: HTMLElement, private readonly grid: Grid, onOrder: (good: GoodId) => void = () => {}) {
-    root.innerHTML = `<div class="info-head"><h2></h2><button type="button" class="close" aria-label="Close">×</button></div><div class="info-body"></div><div class="info-orders" hidden></div>`;
+    root.innerHTML = `<div class="info-head"><h2></h2><button type="button" class="close" aria-label="Close">×</button></div><div class="info-body"></div><div class="info-orders" hidden></div><button type="button" class="remove">Remove · half the price back</button>`;
+    root.querySelector<HTMLButtonElement>(".remove")!.addEventListener("click", () => {
+      const b = this.selected !== null ? this.grid.state.buildings[this.selected] : null;
+      if (b) this.onRemove(b);
+    });
     this.title = root.querySelector("h2")!;
     this.body = root.querySelector<HTMLElement>(".info-body")!;
     this.orders = root.querySelector<HTMLElement>(".info-orders")!;

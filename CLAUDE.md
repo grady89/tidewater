@@ -216,6 +216,12 @@ Leisure & tourism
   gulls; half `MAX_WALKERS`). A 3-second frame-rate probe at High picks one on the first launch (≥ 55 fps High,
   ≥ 35 Medium, else Low); the choice is remembered in localStorage and changed under "Quality…". View only.
 - Camera: orbit, zoom, pan (drag with middle/right or WASD). Edge scroll off by default.
+- Phones (`ui/mobile.ts`; a coarse pointer on a screen whose short side is ≤ 600 px, or `?mobile=1` / `?mobile=0`),
+  portrait first: the resources in one scrolling row and the tide in a line with the speed buttons on top; a bar of
+  build categories and More at the bottom; a category opens a one-row drawer of cards. A picked card arms the tool:
+  a tap pins its ghost, a street tool's one-finger drag lays out a run, and nothing is built until Place (Turn and
+  −/+ lift beside it). Unarmed, a tap opens a building's sheet (with Remove). One finger pans, two pinch to zoom and
+  twist to turn. More holds the tide clock, overlays, the ledger and loan, Town…, sound, reflections and quality.
 - Save/load: autosave to localStorage every cycle; manual save slots (3); load on start if present; "new town" resets,
   on an island chosen by a seed (the Town menu's seed field and "Random" button). Seed 0 is the original island, exactly;
   any other seed's island is generated and validated (`island.ts`: flats, a contiguous flats region, pier and harbor
@@ -240,7 +246,8 @@ src/
                           heightfield.ts (noise per seed), island.ts (seeded islands: validation, rerolls, tree sites),
                           cells.ts (the lattice helpers), money.ts (moveMoney: every purse change, with an audit hook)
   view/                   meshes for pieces (pieces/*.ts), walkers.ts, boats.ts, overlays.ts, effects.ts (storm, wave, fire, damage)
-  ui/                     hud.ts, buildMenu.ts, infoPanel.ts, notifications.ts, tideClock.ts, overlaysToggle.ts, saveMenu.ts
+  ui/                     hud.ts, buildMenu.ts, infoPanel.ts, notifications.ts, tideClock.ts, overlaysToggle.ts, saveMenu.ts,
+                          mobile.ts (the phone layout and touch placement)
   build/                  placement.ts (picking, ghost, validation → sim)
 shaders/                  water, sky, terrain (verbatim from reference + new uniforms only)
 test/                     smoke.ts (Playwright headless scenario), *.test.ts (sim-only unit checks by topic, no Babylon),

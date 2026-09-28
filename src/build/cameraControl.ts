@@ -11,6 +11,10 @@
 //
 // Right-click without a drag is still "remove" (placement.ts checks the drag distance), so nothing here fires
 // on a plain click. Edge scrolling is off, as the brief asks.
+//
+// Touch (phones): one finger grabs the ground like the left button (unless a street tool is drawing with it); two
+// fingers pinch to zoom about their midpoint, twist to turn, and move together to pan. After a pinch the camera
+// waits for every finger to lift, so the one left behind doesn't jerk the view.
 import { ArcRotateCamera, Matrix, Scene, Vector3 } from "@babylonjs/core";
 import { HALF } from "../sim/grid";
 import { ground as groundHeight } from "../view/ground";
@@ -51,6 +55,12 @@ export class CameraControl {
   leftDrag = true;
   /** Off while the World is shown: the canvas is shared, the pointer belongs to the globe then. */
   enabled = true;
+  /** Fingers on the screen, and the two-finger gesture's last midpoint, spread and angle. */
+  private readonly touches = new Map<number, { x: number; y: number }>();
+  private pinch: { x: number; y: number; spread: number; angle: number } | null = null;
+  private pinched = false;
+  /** How many fingers are down (ui/mobile.ts drops a street run when a second one lands). */
+  get fingers(): number { return this.touches.size; }
 
   constructor(private readonly camera: ArcRotateCamera, canvas: HTMLCanvasElement, private readonly scene: Scene) {
     camera.inputs.clear();
@@ -63,12 +73,23 @@ export class CameraControl {
     this.rect = () => canvas.getBoundingClientRect();
 
     canvas.addEventListener("pointerdown", e => {
-      if (!this.enabled || e.button > 2 || (e.button === 0 && !this.leftDrag)) return;
+      if (!this.enabled) return;
+      if (e.pointerType === "touch") {
+        this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        canvas.setPointerCapture(e.pointerId);
+        if (this.touches.size === 2) { this.drag = null; this.pinched = true; this.pinch = this.twoFingers(); }
+        if (this.touches.size !== 1 || this.pinched || !this.leftDrag) return;
+      }
+      if (e.button > 2 || (e.button === 0 && !this.leftDrag)) return;
       this.drag = { button: e.button, x: e.clientX, y: e.clientY, ground: this.groundAt(e.clientX, e.clientY) };
       canvas.setPointerCapture(e.pointerId);
       if (e.button === 1) e.preventDefault();
     });
     canvas.addEventListener("pointermove", e => {
+      if (e.pointerType === "touch" && this.touches.has(e.pointerId)) {
+        this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (this.touches.size >= 2 && this.pinch) { this.pinchMove(); return; }
+      }
       const d = this.drag;
       if (!d) return;
       const dx = e.clientX - d.x, dy = e.clientY - d.y;
@@ -87,9 +108,17 @@ export class CameraControl {
         this.camera.target.x = this.goal.x; this.camera.target.z = this.goal.z;
       }
     });
-    const end = (e: PointerEvent) => { if (this.drag && this.drag.button === e.button) this.drag = null; };
+    const end = (e: PointerEvent) => {
+      if (e.pointerType === "touch") {
+        this.touches.delete(e.pointerId);
+        if (this.touches.size < 2) this.pinch = null;
+        if (this.touches.size === 0) { this.pinched = false; this.drag = null; }
+        return;
+      }
+      if (this.drag && this.drag.button === e.button) this.drag = null;
+    };
     canvas.addEventListener("pointerup", end);
-    canvas.addEventListener("pointercancel", () => { this.drag = null; });
+    canvas.addEventListener("pointercancel", e => { this.drag = null; if (e.pointerType === "touch") end(e); });
     canvas.addEventListener("auxclick", e => { if (e.button === 1) e.preventDefault(); });
     canvas.addEventListener("wheel", e => {
       if (!this.enabled) return;
@@ -97,6 +126,32 @@ export class CameraControl {
       const units = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaMode === 2 ? e.deltaY * 800 : e.deltaY;
       this.zoomAt(Math.exp(units * WHEEL_ZOOM), e.clientX, e.clientY);
     }, { passive: false });
+  }
+
+  /** The first two fingers' midpoint, spread (px) and angle (rad). */
+  private twoFingers(): { x: number; y: number; spread: number; angle: number } | null {
+    const [a, b] = [...this.touches.values()];
+    if (!a || !b) return null;
+    return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, spread: Math.max(1, Math.hypot(b.x - a.x, b.y - a.y)), angle: Math.atan2(b.y - a.y, b.x - a.x) };
+  }
+
+  /** Two fingers moved: pan by the midpoint, zoom by the spread, turn by the angle, all at once and exact. */
+  private pinchMove(): void {
+    const prev = this.pinch, now = this.twoFingers();
+    if (!prev || !now) return;
+    const from = this.groundAt(prev.x, prev.y), to = this.groundAt(now.x, now.y);
+    if (from && to) {
+      this.goal.x += from.x - to.x; this.goal.z += from.z - to.z;
+      this.clampTarget();
+      this.camera.target.x = this.goal.x; this.camera.target.z = this.goal.z;
+    }
+    this.zoomAt(prev.spread / now.spread, now.x, now.y);
+    this.camera.radius = this.goal.dist;
+    let turn = now.angle - prev.angle;
+    if (turn > Math.PI) turn -= 2 * Math.PI; else if (turn < -Math.PI) turn += 2 * Math.PI;
+    this.goal.yaw += turn;
+    this.camera.alpha = this.goal.yaw;
+    this.pinch = now;
   }
 
   /** Dolly by `factor` toward the ground point under (clientX, clientY): that point stays under the cursor. */

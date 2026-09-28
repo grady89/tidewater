@@ -45,6 +45,7 @@ import { Ferry } from "./view/ferry";
 import { PierMarker } from "./view/marker";
 import { OverlayKind, Overlays } from "./view/overlays";
 import { Ship } from "./view/ship";
+import { MobileControls, phoneMode } from "./ui/mobile";
 import { Trees } from "./view/trees";
 import { PERSON_SCALE, Walkers } from "./view/walkers";
 import { setGroundSampler } from "./view/ground";
@@ -449,6 +450,7 @@ function islandFraming(): Framing {
 // A dialog belongs to the scene it was opened in: a switch cancels it, so a confirm can never land on the other
 // scene (a "Clear the sea?" answered from its own island would delete the ground under the player).
 function showWorld(): void {
+  mobile?.reset();
   mode = "world";
   document.body.dataset.mode = "world";
   worldRoot.hidden = false;
@@ -611,6 +613,15 @@ const speedControls = new SpeedControls(document.getElementById("speed")!, {
   onReflections: () => setReflections(!water.reflections),
   onSettings: () => settings.toggle(),
 });
+/** Phones (portrait): the map-first layout and touch placement (ui/mobile.ts); null on everything else. */
+const mobile: MobileControls | null = phoneMode()
+  ? new MobileControls(canvas, {
+    hudRoot: document.getElementById("hud")!, speedRoot: document.getElementById("speed")!, tutorialRoot: document.getElementById("tutorial")!,
+    placement, camera: cameraControl, showCategory: cat => hud.showCategory(cat as Parameters<typeof hud.showCategory>[0]),
+    buildingAt: c => grid.buildingAt(c), select: b => info.select(b),
+  })
+  : null;
+info.onRemove = b => placement.remove(b.cells[0]);
 
 window.addEventListener("keydown", e => {
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || dialogOpen()) return;
@@ -698,7 +709,8 @@ function syncView(): void {
   cameraControl.setWaterLevel(state.tide.level);
   terrain.update(camera.position, state.tide.level, state.tide.wetLevel);
   water.update(viewTime, camera.position, state.tide.level);
-  cameraControl.leftDrag = !placement.dragsLine;
+  cameraControl.leftDrag = mobile ? !mobile.drawing : !placement.dragsLine;
+  mobile?.update();
   hud.update({ tool: placement.tool, blocker: placement.blocker, warn: placement.warn, line: placement.line, lift: placement.liftable ? placement.lift : null, rotatable: placement.rotatable, stilt: placement.stilt, cost: placement.cost, fate: placement.fate, state });
   info.update(state);
   tutorial.update(state);

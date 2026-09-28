@@ -41,7 +41,7 @@ export class WorldUi {
       <div class="world-title"><h1>Tiny Tides</h1><p class="world-sub">A world of tidal towns. Pick a sea.</p></div>
       <div class="world-card glass" hidden></div>
       <div class="world-notice glass" hidden></div>
-      <div class="world-bottom"><div class="world-hint">Drag to spin · Click a sea · Enter to dive</div><div class="world-actions glass"><button type="button" class="trade-toggle">Trade</button><button type="button" class="import">Import a sea…</button><input type="file" accept="application/json,.json" hidden></div></div>
+      <div class="world-bottom"><div class="world-hint">${matchMedia("(pointer: coarse)").matches ? "Drag to spin · Tap a sea" : "Drag to spin · Click a sea · Enter to dive"}</div><div class="world-actions glass"><button type="button" class="trade-toggle">Trade</button><button type="button" class="import">Import a sea…</button><input type="file" accept="application/json,.json" hidden></div></div>
       <div class="world-trade glass" hidden></div>`;
     this.card = root.querySelector<HTMLElement>(".world-card")!;
     this.notice = root.querySelector<HTMLElement>(".world-notice")!;
