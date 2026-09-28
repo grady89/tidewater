@@ -970,3 +970,23 @@ closed) replayed in the sim alone (`scratch/replay.ts`, not committed) and turne
 - The first peak said "no workers" before anyone lived there; it now says no one lives here yet and what fills
   the homes. The "Make room" step names the three conditions for arrivals.
 - A pier click within a cell of a working spot takes that spot (`Placement.snapTo`).
+
+The same tester's full round (two seas, both exported; `scratch/inspect.ts` loads a sea export and prints every
+building's connection and the job assignment) added:
+
+- **The walkthrough never ran.** Its progress is one localStorage key, and the first session had finished it, so
+  every later sea opened on "Walkthrough done" and the tester built from the empty-state hints alone. Entering a
+  sea at cycle 0 now resets the walkthrough.
+- **"Placement needs a press-and-hold."** The tester drives a browser by script: a click with no pointer move first
+  found no hovered cell, because the cell was picked on pointermove only. The press and the release now pick where
+  they land. (A human's mouse moves first, which is why nobody saw it by hand.)
+- **The street is one tool.** On the Fjord the tester laid thirty walkways that never met the pier: the cells the
+  street needed were the hill's, which take paths, and the hint said so thirty times. A walkway run now lays a
+  path where only a path fits and a path run a walkway; `routePath` sees both.
+- **Every edge piece snaps** (outfall, shipyard, pier): "Needs deep water against the shore" was unplaceable by
+  hand.
+- **The loan waits three settlements** (`LOAN_GRACE_CYCLES`; `loan.holdUntil`, absent in older saves = at once)
+  before the instalments start: taken at cycle 5 with nothing earning, 24$ a tide made a stall a death spiral.
+- The HUD shows who is at work beside the job count (the tester read "2 / 5 jobs" as none filled); the ledger
+  line shows the cycle's upkeep (and loan) so the drain is accounted for; the connection warning says what a
+  street needs instead of "streets need a pier at one end".

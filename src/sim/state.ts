@@ -178,7 +178,7 @@ export interface SimState {
   /** Cells raised to dry ground by landfill (cell indices). */
   landfill: number[];
   /** The outstanding loan: what is still owed, the instalment per settlement, how many loans ever taken. */
-  loan: { owed: number; perCycle: number; taken: number };
+  loan: { owed: number; perCycle: number; taken: number; /** The cycle the instalments start (absent in older saves: at once). */ holdUntil?: number };
   fields: Fields;
   /** Pollution sources for the current cycle: per-tick rates at cells (rebuilt at every settlement). */
   emitters: Emitter[];

@@ -1,7 +1,7 @@
 // The UI: resource bar, build menu by category, tide clock, last-cycle ledger, notifications. Plain DOM over the
 // canvas, read-only over the sim.
 import { Fate, isBuildingTool, Tool } from "../build/placement";
-import { BOAT_COST, BUILDING_KINDS, BuildingKind, BUILDINGS, CATEGORIES, Category, CLEAR_TIMBER, LANDFILL_COST, LANTERN_COST, LIFT_STEP, LOAN_AMOUNT, LOAN_INTEREST, LOAN_REPAY_CYCLES, PLANK_ORDER_SIZE, PLANT_COST, TRADE_PLANK_PRICE } from "../sim/balance";
+import { BOAT_COST, BUILDING_KINDS, BuildingKind, BUILDINGS, CATEGORIES, Category, CLEAR_TIMBER, LANDFILL_COST, LANTERN_COST, LIFT_STEP, LOAN_AMOUNT, LOAN_GRACE_CYCLES, LOAN_INTEREST, LOAN_REPAY_CYCLES, PLANK_ORDER_SIZE, PLANT_COST, TRADE_PLANK_PRICE } from "../sim/balance";
 import { biomeFor, BiomeId, catalogFor, makesOf } from "../sim/biomes";
 import { canAfford } from "../sim/economy";
 import { GOOD_IDS, GOOD_ROLES, GoodId, GOODS, shownGoods } from "../sim/goods";
@@ -124,7 +124,7 @@ export class Hud {
         <label></label>
         <div class="score-value">—</div>
         <div class="trade-row"><span class="trade-status"></span><button type="button" class="order">Order ${PLANK_ORDER_SIZE} planks · ${PLANK_ORDER_SIZE * TRADE_PLANK_PRICE}$</button></div>
-        <div class="trade-row loan-row"><span class="loan-status"></span><button type="button" class="order loan" title="${LOAN_AMOUNT}$ now, ${Math.round(LOAN_AMOUNT * (1 + LOAN_INTEREST))}$ back over ${LOAN_REPAY_CYCLES} tides">Borrow ${LOAN_AMOUNT}$</button></div>
+        <div class="trade-row loan-row"><span class="loan-status"></span><button type="button" class="order loan" title="${LOAN_AMOUNT}$ now, ${Math.round(LOAN_AMOUNT * (1 + LOAN_INTEREST))}$ back over ${LOAN_REPAY_CYCLES} tides, starting after ${LOAN_GRACE_CYCLES}">Borrow ${LOAN_AMOUNT}$</button></div>
       </div>`;
 
     const tabs = root.querySelector<HTMLElement>(".tabs")!;
@@ -280,7 +280,8 @@ export class Hud {
       const text = `${Math.floor(r[g])}`;
       if (this.res[g].textContent !== text) this.res[g].textContent = text;
     }
-    this.res.population.textContent = `${population(state)} / ${jobs} jobs`;
+    const atWork = state.assignments.reduce((n, a) => n + a.n, 0);
+    this.res.population.textContent = `${population(state)} (${atWork} at work) · ${jobs} jobs`;
     this.res.tourists.textContent = `${state.tourists}`;
     this.res.happiness.textContent = `${Math.round(state.happiness * 100)}%`;
 
@@ -335,7 +336,7 @@ export class Hud {
       } else {
         const net = l.income - l.expenses;
         this.ledgerLabel.textContent = `Cycle ${l.cycle}`;
-        const extras = [l.tourism > 0 ? `${l.tourism.toFixed(0)}$ tourism` : "", l.trade !== 0 ? `${l.trade >= 0 ? "+" : ""}${l.trade.toFixed(0)}$ trade` : ""].filter(Boolean);
+        const extras = [l.tourism > 0 ? `${l.tourism.toFixed(0)}$ tourism` : "", l.trade !== 0 ? `${l.trade >= 0 ? "+" : ""}${l.trade.toFixed(0)}$ trade` : "", l.expenses > 0 ? `−${l.expenses.toFixed(0)}$ upkeep${state.loan.owed > 0 ? " & loan" : ""}` : ""].filter(Boolean);
         this.ledgerValue.textContent = `${net >= 0 ? "+" : ""}${net.toFixed(0)}$ · ${l.fishCaught.toFixed(0)} fish landed · ${(l.fishSold + l.shellfishSold).toFixed(0)} sold${extras.length ? " · " + extras.join(" · ") : ""}`;
         this.ledgerValue.classList.remove("flash");
         void this.ledgerValue.offsetWidth;

@@ -159,9 +159,11 @@ left open), ARCHITECTURE.md "Biomes" (where each piece lives), NOTES.md "Session
   `npm run quality` measures each coast at each preset.
 
 Known-rough:
-- The first blind playtest (NOTES.md Session E) fixed the dragged run, the market's staffing and the first-peak
-  message; the tester's other notes — small click targets on the gold ring, systems whose links go unexplained
-  (homes → workers → market → income) — are still open beyond the pier snap and the step-3 hint.
+- The first blind playtest (NOTES.md Session E) fixed the dragged run (now one street tool that routes), the
+  market's staffing, the first-peak message, the walkthrough that never reset, clicks without a hover, edge-piece
+  snapping and the loan's grace. Still open from the tester: the World's face picking is fiddly (empty faces get
+  hit), storms after cycle 6 read as unfair when nothing else earns, and the chain behind the Fjord's stockfish
+  (salt ← ship ← harbor ← planks) is not explained anywhere in the game.
 - The Fjord's ridges are smooth slabs under the snow cap; the shaper's noise (±1.3) is small against its
   profile. More noise on the crests, or a second ridge line, would break the silhouette.
 - The whaling station's berth shows an ordinary fishing boat; the ice-breaker pier is the pier plus a wedge and
