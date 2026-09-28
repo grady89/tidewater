@@ -27,6 +27,8 @@ export interface Building {
   floorY: number;
   /** Quarter turns from the default facing (door toward −z): 0–3. Odd turns swap a footprint's width and depth. */
   rot: number;
+  /** The player gave it a turn (R): it keeps it. Unset, it faces a street on its own and turns to one laid beside it later. */
+  turned?: boolean;
   /** Floor is below the water this tick. Breaks connectivity; nothing is destroyed. */
   cut: boolean;
   /** Linked to the network (a pier or market) through walkways this tick. */

@@ -205,7 +205,8 @@ Leisure & tourism
 - Tide clock: dial with current level, high/low markers, next event (spring tide, storm warning, trade ship ETA).
 - Build menu by category (Homes, Streets, Sea, Production, Services, Leisure) with cost, and greyed when unaffordable or unmet prerequisite (with reason).
 - Ghost preview with placement validity and, for tide-sensitive pieces, a fate tint (safe / spring-floods / floods every tide),
-  plus a door tab: a building faces an adjoining street on its own (`Grid.facing`), and R turns it by quarter turns
+  plus a door tab: a building faces an adjoining street on its own (`Grid.facing`; with none, its door looks to the lowest
+  ground, the sea), turns to a street laid beside it later (`Grid.reface`) unless the player turned it, and R turns it by quarter turns
   (`Building.rot`; odd turns swap a footprint's width and depth). Streets and everything in the water don't turn.
 - Click a building: info panel (workers filled/needed, output last cycle, status: working / idle: no workers / cut / damaged / polluted).
 - Overlays toggle: pollution, fish density, shark risk, fire risk, happiness, water coverage.

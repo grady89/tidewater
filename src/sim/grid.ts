@@ -1,7 +1,7 @@
 // Cell model over the terrain, occupancy index, and placement rules. Buildings live in SimState; the Grid is the
 // spatial index over them (rebuilt from state on load) plus the fixed terrain classification.
 import { CLEARANCE, SIZE, STILT_MIN, WALKWAY_SNAP } from "../config";
-import { BuildingKind, BUILDINGS, LIFT_MAX, LIFT_STEP, PlacementClass, STREET_STEP_MAX } from "./balance";
+import { BuildingKind, BUILDINGS, LIFT_MAX, LIFT_STEP, mayTurn, PlacementClass, STREET_STEP_MAX } from "./balance";
 import { biomeFor, catalogFor } from "./biomes";
 import { cellIndex, DIRS, HALF, inBounds } from "./cells";
 import { cellClass } from "./heightfield";
@@ -18,6 +18,9 @@ export type CellClass = "deep" | "flat" | "high";
 // The lattice helpers live in cells.ts (so the island generator can share them without importing the Grid);
 // they are re-exported here because this is where everything else looks for them.
 export { cellCenter, cellIndex, DIRS, HALF, inBounds, worldToCell } from "./cells";
+
+/** The four sides of a footprint in turn order (0 = −z, 1 = −x, 2 = +z, 3 = +x) and the step out of each. */
+const SIDES: [number, Cell][] = [[0, { i: 0, j: -1 }], [1, { i: -1, j: 0 }], [2, { i: 0, j: 1 }], [3, { i: 1, j: 0 }]];
 
 export class Grid {
   readonly heights = new Float32Array(SIZE * SIZE);
@@ -66,6 +69,9 @@ export class Grid {
     for (const k of state.landfill) this.applyLandfill({ i: Math.floor(k / SIZE) - HALF, j: (k % SIZE) - HALF });
     this.coolNewLand();
     this.rebuild();
+    // Towns saved before buildings turned to a street laid beside them: every door that meets no street, while one
+    // touches, turns to it now (a no-op for anything built since).
+    for (const b of Object.values(state.buildings)) this.reface(b);
   }
 
   /** New land from a lava flow reads as the lava field (unbuildable, glowing) until it has cooled; then the island's own material. */
@@ -193,23 +199,62 @@ export class Grid {
 
   /**
    * The turn that puts a building's door toward the street: the side of the footprint with the most walkways,
-   * piers or markets against it (0 = −z, 1 = −x, 2 = +z, 3 = +x). A footprint that isn't square keeps its shape,
-   * so only 0 and 2 are on offer for it. Nothing adjoining: 0.
+   * paths, piers or markets against it (0 = −z, 1 = −x, 2 = +z, 3 = +x); between equal sides, and with nothing
+   * adjoining, the side whose ground falls lowest (the door looks out to sea, not into the hill). A footprint that
+   * isn't square keeps its shape, so only 0 and 2 are on offer for it.
    */
   facing(cells: Cell[]): number {
-    const is = cells.map(c => c.i), js = cells.map(c => c.j);
-    const square = Math.max(...is) - Math.min(...is) === Math.max(...js) - Math.min(...js);
+    const count = this.streetSides(cells);
+    const ground = this.sideGround(cells);
+    const options = this.turnsKeepingShape(cells);
+    let best = options[0];
+    for (const k of options) if (count[k] > count[best] || (count[k] === count[best] && ground[k] < ground[best])) best = k;
+    return best;
+  }
+
+  /** Street pieces (anything the network runs through) against each side of a footprint: [−z, −x, +z, +x]. */
+  streetSides(cells: Cell[]): number[] {
     const count = [0, 0, 0, 0];
     const own = new Set(cells.map(c => cellIndex(c.i, c.j)));
-    for (const c of cells) for (const [k, d] of [[0, { i: 0, j: -1 }], [1, { i: -1, j: 0 }], [2, { i: 0, j: 1 }], [3, { i: 1, j: 0 }]] as [number, Cell][]) {
+    for (const c of cells) for (const [k, d] of SIDES) {
       const n = { i: c.i + d.i, j: c.j + d.j };
       if (!inBounds(n.i, n.j) || own.has(cellIndex(n.i, n.j))) continue;
       const b = this.buildingAt(n);
       if (b && BUILDINGS[b.kind].network !== "leaf") count[k]++;
     }
-    let best = 0;
-    for (const k of square ? [0, 1, 2, 3] : [0, 2]) if (count[k] > count[best]) best = k;
-    return best;
+    return count;
+  }
+
+  /** The mean ground height one to three cells out from each side of a footprint (off the map counts as open sea). */
+  private sideGround(cells: Cell[]): number[] {
+    const is = cells.map(c => c.i), js = cells.map(c => c.j);
+    const i0 = Math.min(...is), i1 = Math.max(...is), j0 = Math.min(...js), j1 = Math.max(...js);
+    const h = (i: number, j: number) => (inBounds(i, j) ? this.heights[cellIndex(i, j)] : -5);
+    const out = [0, 0, 0, 0];
+    for (let r = 1; r <= 3; r++) {
+      for (let i = i0; i <= i1; i++) { out[0] += h(i, j0 - r); out[2] += h(i, j1 + r); }
+      for (let j = j0; j <= j1; j++) { out[1] += h(i0 - r, j); out[3] += h(i1 + r, j); }
+    }
+    return [out[0] / (i1 - i0 + 1), out[1] / (j1 - j0 + 1), out[2] / (i1 - i0 + 1), out[3] / (j1 - j0 + 1)];
+  }
+
+  private turnsKeepingShape(cells: Cell[]): number[] {
+    const is = cells.map(c => c.i), js = cells.map(c => c.j);
+    return Math.max(...is) - Math.min(...is) === Math.max(...js) - Math.min(...js) ? [0, 1, 2, 3] : [0, 2];
+  }
+
+  /**
+   * A building the player has not turned whose door meets no street, while a street does touch it, turns to face
+   * it (keeping its shape). Returns whether it turned.
+   */
+  reface(b: Building): boolean {
+    if (b.turned || !mayTurn(b.kind)) return false;
+    const count = this.streetSides(b.cells);
+    if (count[b.rot] > 0 || !this.turnsKeepingShape(b.cells).includes(b.rot)) return false;
+    const next = this.facing(b.cells);
+    if (count[next] === 0 || next === b.rot) return false;
+    b.rot = next;
+    return true;
   }
 
   /** Does some cell touch a flat cell carrying a walkway? (Lumber camps must be served from the flats.) */
@@ -366,13 +411,24 @@ export class Grid {
     };
     for (const c of cells) this.occupancy[cellIndex(c.i, c.j)] = b;
     s.buildings[b.id] = b;
+    if (BUILDINGS[kind].network !== "leaf") this.refaceAround(cells);
     return b;
+  }
+
+  /** A street piece went down or came up: every building beside it whose door meets no street turns to one that does. */
+  private refaceAround(cells: Cell[]): void {
+    const seen = new Set<number>();
+    for (const c of cells) for (const n of this.neighbors(c)) {
+      const x = this.buildingAt(n);
+      if (x && !cells.some(o => o.i === n.i && o.j === n.j) && !seen.has(x.id)) { seen.add(x.id); this.reface(x); }
+    }
   }
 
   remove(b: Building): void {
     for (const c of b.cells) this.occupancy[cellIndex(c.i, c.j)] = null;
     delete this.state.buildings[b.id];
     this.state.assignments = this.state.assignments.filter(a => a.home !== b.id && a.work !== b.id);
+    if (BUILDINGS[b.kind].network !== "leaf") this.refaceAround(b.cells);
   }
 
   /** Flat cells within `radius` (Chebyshev) of `cells` whose terrain is above `level`: the exposed flats. */

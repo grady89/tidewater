@@ -12,7 +12,7 @@ import { startCell } from "../src/sim/start";
 import { TREE_SITES } from "../src/sim/trees";
 import { startStorm, startTsunami } from "../src/sim/events";
 
-import { tryPlace } from "../src/sim/economy";
+import { removeBuilding, tryPlace } from "../src/sim/economy";
 import { buildFlow, flowFor } from "../src/sim/fields";
 import { cellIndex, Grid } from "../src/sim/grid";
 import { crossCommuters, distanceField } from "../src/sim/network";
@@ -28,6 +28,26 @@ import { bridgeTo, growStreet, placeByWalkway, placeEdge, placeHarbor, settleIsl
 function town(seed = 7): { state: SimState; grid: Grid; town: ReturnType<typeof starterTown> } {
   const { state, grid } = newGame(seed);
   return { state, grid, town: starterTown(state, grid) };
+}
+
+/** An open flat cell with room round it, at least 4 cells from any in `skip`. */
+function openFlat(grid: Grid, skip: Cell[] = []): Cell {
+  for (let i = -30; i < 30; i++) for (let j = -30; j < 30; j++) {
+    const c = { i, j };
+    if (skip.some(s => Math.abs(s.i - i) < 4 && Math.abs(s.j - j) < 4)) continue;
+    const cells = [c, ...grid.neighbors(c), { i: i + 1, j: j + 1 }, { i: i + 1, j: j - 1 }];
+    if (cells.length === 7 && cells.every(x => grid.classAt(x) === "flat" && !grid.buildingAt(x)) && !grid.onIsle(cells)) return c;
+  }
+  throw new Error("no open flat");
+}
+/** The side of a cell (0 = −z, 1 = −x, 2 = +z, 3 = +x) whose ground one to three cells out is lowest. */
+function lowestSide(grid: Grid, c: { i: number; j: number }): number {
+  const h = (i: number, j: number) => (i >= -32 && i < 32 && j >= -32 && j < 32 ? grid.heightAt({ i, j }) : -5);
+  const steps = [{ i: 0, j: -1 }, { i: -1, j: 0 }, { i: 0, j: 1 }, { i: 1, j: 0 }];
+  const mean = steps.map(d => [1, 2, 3].reduce((n, r) => n + h(c.i + d.i * r, c.j + d.j * r), 0));
+  let best = 0;
+  for (let k = 1; k < 4; k++) if (mean[k] < mean[best]) best = k;
+  return best;
 }
 
 describe("second island (backlog 6)", () => {
@@ -193,7 +213,8 @@ describe("rotation", () => {
   it("a building faces the street on its own, takes a turn when given one, and old saves face −z", () => {
     const { state, grid } = newGame(1);
     state.resources.money += 5000;
-    // A walkway north (+z) of the hut: the door turns to it (rot 2). East (+x): rot 3. Nothing near: rot 0.
+    // A walkway north (+z) of the hut: the door turns to it (rot 2). East (+x): rot 3. Nothing near: the side whose
+    // ground falls lowest (the sea, not the hill).
     const a = openFlat(grid);
     expect(tryPlace(state, grid, "walkway", { i: a.i, j: a.j + 1 })).not.toBeNull();
     const north = tryPlace(state, grid, "hut", a)!;
@@ -202,7 +223,7 @@ describe("rotation", () => {
     expect(tryPlace(state, grid, "walkway", { i: b.i + 1, j: b.j })).not.toBeNull();
     expect(tryPlace(state, grid, "hut", b)!.rot).toBe(3);
     const c = openFlat(grid, [a, b]);
-    expect(tryPlace(state, grid, "hut", c)!.rot).toBe(0);
+    expect(tryPlace(state, grid, "hut", c)!.rot).toBe(lowestSide(grid, c));
     // A given turn wins over the street, and lands in the ledger as 0..3.
     const d = openFlat(grid, [a, b, c]);
     expect(tryPlace(state, grid, "walkway", { i: d.i, j: d.j + 1 })).not.toBeNull();
@@ -218,12 +239,58 @@ describe("rotation", () => {
     const tall = tryPlace(state, grid, "smokehouse", f, 0, 1)!;
     expect(tall.rot).toBe(1);
     expect(tall.cells).toEqual([{ i: f.i, j: f.j }, { i: f.i, j: f.j + 1 }]);
-    // Saves: the turn survives; a save from before rotation reads as 0.
+    // Saves: the turn survives; a save from before rotation reads as 0 (where no street touches it).
     const copy = deserialize(serialize(state));
     expect(copy.buildings[north.id].rot).toBe(2);
     const old = JSON.parse(serialize(state)) as SimState;
     for (const x of Object.values(old.buildings)) delete (x as Partial<Building>).rot;
     expect(deserialize(JSON.stringify(old)).buildings[north.id].rot).toBe(0);
+  });
+});
+
+describe("doors turn to the street", () => {
+  it("the starting hut looks out to sea; a street laid beside a building later turns its door to it; a turn given with R stays", () => {
+    for (const [seed, biome] of [[0, "tidewater"], [2, "cinder"], [2, "dunes"], [2, "delta"]] as const) {
+      const { grid } = newGame(1, seed, biome);
+      const hut = Object.values(grid.state.buildings).find(b => b.kind === "hut")!;
+      expect(hut.rot).toBe(lowestSide(grid, hut.cells[0]));
+      expect(hut.turned).toBeUndefined();
+    }
+    const { state, grid } = newGame(1);
+    state.resources.money += 5000;
+    const a = openFlat(grid);
+    const hut = tryPlace(state, grid, "hut", a)!;
+    const away = (hut.rot + 2) & 3; // the side behind the door
+    const step = [{ i: 0, j: -1 }, { i: -1, j: 0 }, { i: 0, j: 1 }, { i: 1, j: 0 }][away];
+    expect(tryPlace(state, grid, "walkway", { i: a.i + step.i, j: a.j + step.j })).not.toBeNull();
+    expect(hut.rot).toBe(away); // it turned to the walkway behind it
+    // A second street on another side leaves it facing the first.
+    const side = [{ i: 0, j: -1 }, { i: -1, j: 0 }, { i: 0, j: 1 }, { i: 1, j: 0 }][(away + 1) & 3];
+    const second = tryPlace(state, grid, "walkway", { i: a.i + side.i, j: a.j + side.j });
+    expect(hut.rot).toBe(away);
+    // Take the first away: it turns to the one that is left.
+    removeBuilding(state, grid, grid.buildingAt({ i: a.i + step.i, j: a.j + step.j })!);
+    if (second) expect(hut.rot).toBe((away + 1) & 3);
+    // A hut the player turned keeps its turn when a street comes.
+    const b = openFlat(grid, [a]);
+    const turned = tryPlace(state, grid, "hut", b, 0, 1)!;
+    expect(turned.turned).toBe(true);
+    expect(tryPlace(state, grid, "walkway", { i: b.i, j: b.j + 1 })).not.toBeNull();
+    expect(turned.rot).toBe(1);
+    // A save from before doors turned (a hut whose door meets no street while one touches it) is put right on load.
+    const c = openFlat(grid, [a, b]);
+    expect(tryPlace(state, grid, "walkway", { i: c.i, j: c.j + 1 })).not.toBeNull();
+    const old = tryPlace(state, grid, "hut", c)!;
+    expect(old.rot).toBe(2);
+    const json = JSON.parse(serialize(state)) as SimState;
+    json.buildings[old.id].rot = 0;
+    const loaded = deserialize(JSON.stringify(json));
+    new Grid(loaded);
+    expect(loaded.buildings[old.id].rot).toBe(2);
+    // And a round trip turns nothing built since.
+    const again = deserialize(serialize(state));
+    new Grid(again);
+    for (const x of Object.values(state.buildings)) expect(again.buildings[x.id].rot).toBe(x.rot);
   });
 });
 

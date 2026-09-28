@@ -68,6 +68,7 @@ export function tryPlace(state: SimState, grid: Grid, kind: BuildingKind, anchor
   pay(state, cost);
   const firstHarbor = kind === "harbor" && !grid.isleOpen();
   const b = grid.place(kind, cells, autoStilts(kind) ? lift : 0, rot ?? (mayTurn(kind) ? grid.facing(cells) : 0));
+  if (rot !== null && mayTurn(kind)) b.turned = true; // the player's turn: streets laid later leave it be
   if (firstHarbor) notify(state, "The ferry runs: the isle across the water is open to build on");
   return b;
 }

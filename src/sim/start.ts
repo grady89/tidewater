@@ -49,7 +49,7 @@ export function suggestPier(grid: Grid): Cell | null {
 
 export function seedTown(state: SimState, grid: Grid): void {
   const c = startCell(grid);
-  if (grid.canPlace("hut", [c])) grid.place("hut", [c]);
+  if (grid.canPlace("hut", [c])) grid.place("hut", [c], 0, grid.facing([c])); // its door to the sea, not the hill
   const isl = grid.island;
   if (isl.seed !== 0) notify(state, `Island ${isl.seed}: ${isl.stats.flats} flat cells, ${isl.stats.piers} pier sites${isl.rerolls ? ` (after ${isl.rerolls} reroll${isl.rerolls === 1 ? "" : "s"})` : ""}`);
   notify(state, "A hut on the flats. Build a pier, buy a boat, lay walkways.");
