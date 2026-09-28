@@ -6,6 +6,8 @@
 // study's values as defaults, and added three terms after the bands: snow above `snowLine` (999 = never), a
 // per-material tint read from the height texture's blue channel (0 = none), both additive. The World (docs/globe)
 // added `coastLift` (0 = the island): it raises the band mapping so a miniature's beach clears its water line.
+// The connected World (docs/world) added `glowMat`/`glowColor`/`glowAmount`: one material that gives off light of
+// its own (the Cinder's lava field), added after the lighting and before the fog; `glowAmount` 0 = nothing.
 // The colour math is verbatim.
 import { COMMON } from "./common";
 
@@ -28,6 +30,7 @@ export const terrainFS = COMMON + `
     uniform sampler2D heightTex; uniform vec3 matTints[9]; uniform float matMix[9]; // per-material tint, code in the blue channel
     uniform float tideScale;                                // the biome's tide multiplier: the bands follow the water line
     uniform float coastLift;                                // the World: lifts the bands so a miniature's sand shows (0 = the island)
+    uniform float glowMat; uniform vec3 glowColor; uniform float glowAmount; // a self-lit material (the lava), 0 = none
     void main(){
       if (vW.y < clipY) discard;
       vec3 L = (frame * vec4(vW, 1.0)).xyz;
@@ -40,7 +43,8 @@ export const terrainFS = COMMON + `
       col = mix(col, rock, smoothstep(0.80, 0.62, LN.y) * step(0.5, y));
       // biomes: snow above the line, and the cell material's tint
       col = mix(col, snowColor, smoothstep(snowLine, snowLine + 0.8, L.y));
-      float mcode = texture2D(heightTex, L.xz / 64.0 + 0.5).b * 255.0;
+      // the material code from the nearest texel (256 = HEIGHT_TEX_SIZE): a blend between two codes is no third material
+      float mcode = texture2D(heightTex, (floor((L.xz / 64.0 + 0.5) * 256.0) + 0.5) / 256.0).b * 255.0;
       for (int k = 1; k < 9; k++) col = mix(col, matTints[k], matMix[k] * step(abs(mcode - float(k)), 0.5));
       y = L.y;
       // submerged and wet sand
@@ -51,6 +55,7 @@ export const terrainFS = COMMON + `
       float nd = max(dot(vN, sunDir), 0.0);
       vec3 amb = mix(groundAmb, skyAmb, LN.y*0.5+0.5);
       vec3 lit = col * (sunColor * nd * 1.05 + amb);
+      lit += glowColor * glowAmount * step(abs(mcode - glowMat), 0.5);
       float d = distance(camPos, vW);
       lit = mix(lit, fogColor, smoothstep(fogNear, fogFar, d));
       gl_FragColor = vec4(lit, 1.0);

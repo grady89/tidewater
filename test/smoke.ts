@@ -1083,8 +1083,8 @@ try {
   // ---- Biomes (docs/biomes, docs/world): the Fjord, the Atoll and the later coasts beside Tidewater ----
   // Each coast: a sector of its own, the starter town positive over four cycles, every unique kind producing, its
   // hazard and its moment forced through the console API and seen by the view, and shots by day and night.
-  const COAST_FOOD: Record<string, string> = { fjord: "stockfish", atoll: "coconut", delta: "rice" };
-  for (const coast of [{ id: "fjord" as const, face: 0, seed: 2 }, { id: "atoll" as const, face: 6, seed: 2 }, { id: "delta" as const, face: 2, seed: 2 }]) {
+  const COAST_FOOD: Record<string, string> = { fjord: "stockfish", atoll: "coconut", delta: "rice", cinder: "taro" };
+  for (const coast of [{ id: "fjord" as const, face: 0, seed: 2 }, { id: "atoll" as const, face: 6, seed: 2 }, { id: "delta" as const, face: 2, seed: 2 }, { id: "cinder" as const, face: 7, seed: 2 }]) {
     const founded = await page.evaluate(async ({ id, face, seed }) => {
       const api = (window as unknown as { __tidewater: Api }).__tidewater;
       const url = "/test/scenario.ts";
@@ -1162,6 +1162,44 @@ try {
       assert(fj.ice.seaIce === 1 && fj.ice.view > 0.5 && /frozen/.test(fj.ice.label), "Fjord: sea ice: the water whitens and the tide clock says so");
       assert(fj.slopeHut && fj.buried && fj.avalanches > 0, "Fjord: a storm's avalanche buried the hut on the slope");
       assert(fj.aurora === 1 && (fj.fauna.seals + fj.fauna.puffins) > 0, "Fjord: the aurora is on and seals or puffins are about");
+    } else if (coast.id === "cinder") {
+      assert(founded.tide === 1 && founded.boat === "dugout" && founded.hat === "bandana" && founded.house === "basalt", "the Cinder's tide, dugouts, bandanas and basalt houses");
+      const cn = await page.evaluate(async () => {
+        const api = (window as unknown as { __tidewater: Api }).__tidewater;
+        const s = api.sim;
+        const kinds = (k: string) => (Object.values(s.buildings) as Building[]).filter(b => b.kind === k);
+        // Hands for the terraces up the slope (nearest-first fills them last).
+        const url4 = "/test/scenario.ts";
+        const sc4 = (await import(url4)) as typeof import("./scenario");
+        api.grant(3000);
+        sc4.placeByWalkway(s, api.grid, "house", 6);
+        for (const b of Object.values(s.buildings) as Building[]) if (["hut", "house"].includes(b.kind)) b.residents = api.grid.capacityOf(b);
+        api.grantGood("timber", 20);
+        api.advance(2);
+        const produced = { taroOut: kinds("taroTerrace").reduce((n, b) => n + b.output, 0), cocoaOut: kinds("cocoaTerrace").reduce((n, b) => n + b.output, 0), taro: s.resources.taro, cocoa: s.resources.cocoa, sulfur: s.resources.sulfur, glass: s.resources.glass, terraces: kinds("taroTerrace").length + kinds("cocoaTerrace").length, vents: kinds("sulfurWorks").length, spring: kinds("hotSpring").length };
+        const day = api.view.fauna();
+        const calm = api.view.mountain();
+        // The mountain trembles (steam thickens, the view shivers), then erupts: ash, a lava flow, new land, a wave for the neighbours.
+        api.forceBiome("tremors");
+        await new Promise(r => setTimeout(r, 400));
+        const tremor = { ...api.view.mountain(), label: document.querySelector("#hud .tide-event")?.textContent ?? "" };
+        const land0 = s.landfill.length;
+        const erupted = api.forceBiome("eruption");
+        await new Promise(r => setTimeout(r, 500));
+        const eruption = { n: erupted.biomeState.eruptions ?? 0, log: s.log.filter(m => /mountain erupts/.test(m)), outbox: s.outbox.filter(e => e.kind === "tsunami" && e.from === "eruption").length, newLand: s.newLand.length, landfill: s.landfill.length - land0, ...api.view.mountain() };
+        api.advance(1);
+        await new Promise(r => setTimeout(r, 300));
+        const ash = { falling: (s.biomeState.ash ?? -1) === s.tide.cycle, flakes: api.view.mountain().ash };
+        api.frameTown(30);
+        return { produced, day, calm, tremor, eruption, ash, fauna: api.view.fauna() };
+      });
+      console.log("Biome cinder:", JSON.stringify(cn));
+      assert(cn.produced.terraces >= 2 && cn.produced.vents >= 1 && cn.produced.spring >= 1 && (cn.produced.taro > 0 || cn.produced.taroOut > 0) && cn.produced.sulfur > 0, "Cinder: terraces on the fertile band, sulfur works on a vent, the hot spring; taro and sulfur made");
+      assert(cn.calm.glow > 0 && cn.calm.steam > 0, "Cinder: the lava field glows and the vents steam");
+      assert(cn.tremor.shake > 0 && cn.tremor.steam > cn.calm.steam && /trembles/.test(cn.tremor.label), "Cinder: the tremors thicken the steam, shiver the view and the tide clock says so");
+      assert(cn.eruption.n >= 1 && cn.eruption.log.length > 0 && cn.eruption.outbox > 0 && cn.eruption.landfill > 0 && cn.eruption.newLand > 0, "Cinder: the eruption: a lava flow makes new land, and a wave goes out to the neighbours");
+      assert(cn.ash.falling && cn.ash.flakes > 0, "Cinder: ash falls over the town the cycle after");
+      assert(cn.fauna.iguanas + cn.fauna.boobies > 0, "Cinder: iguanas or boobies about");
     } else if (coast.id === "delta") {
       assert(founded.tide === 1 && founded.boat === "sampan" && founded.hat === "conical" && founded.house === "reed" && founded.palms === "mangrove", "the Delta's tide, sampans, conical hats, reed stilt houses and mangroves");
       const dl = await page.evaluate(async () => {

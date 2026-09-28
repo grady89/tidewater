@@ -12,7 +12,7 @@ import { FOG_FAR, FOG_NEAR } from "./water";
 
 /** Every uniform the terrain shader takes (the World builds its own materials from the same list). */
 export const TERRAIN_UNIFORMS = ["world", "worldViewProjection", "sunDir", "sunColor", "skyAmb", "groundAmb", "fogColor", "camPos", "waterLevel", "wetLevel", "clipY", "frame", "fogNear", "fogFar",
-  "sandDeep", "sand", "grassLo", "grassHi", "rock", "snowLine", "snowColor", "matTints", "matMix", "tideScale", "coastLift"];
+  "sandDeep", "sand", "grassLo", "grassHi", "rock", "snowLine", "snowColor", "matTints", "matMix", "tideScale", "coastLift", "glowMat", "glowColor", "glowAmount"];
 export const TERRAIN_SAMPLERS = ["heightTex"];
 
 /** The biome's look on a terrain material: the band colours, the snow line, the material tints, the tide scale. */
@@ -28,6 +28,9 @@ export function applyTerrainLook(material: ShaderMaterial, look: BiomeLook, tide
     tints.push(v.x, v.y, v.z); mixes.push(tint ? tint.mix : 0);
   }
   material.setArray3("matTints", tints).setFloats("matMix", mixes);
+  // A glowing material (the lava field): its code, colour and a base strength; the island scales it by the dark.
+  const g = look.glow;
+  material.setFloat("glowMat", g ? MATERIALS.indexOf(g.material) : -9).setVector3("glowColor", g ? c(g.color) : new Vector3(0, 0, 0)).setFloat("glowAmount", g ? g.amount : 0);
 }
 
 /** The 16-bit height encoding the water shader decodes: (h + 5) / 12 across r, g; the cell's material code in b. */
@@ -79,6 +82,8 @@ export interface Terrain {
   setLook(look: BiomeLook, tideScale?: number): void;
   /** Coral bleaching per cell (0..1, a 64×64 field) into the height texture's alpha, for the water shader. */
   setBleach(field: number[] | null): void;
+  /** The glowing material's strength this frame (the look's amount, brought up by the dark). */
+  setGlow(amount: number): void;
 }
 
 const SUBDIVISIONS = 170;
@@ -166,6 +171,7 @@ export function createTerrain(scene: Scene, height: HeightFn = terrainHeight): T
       heightTex.update(hdata);
     },
     setLook(look, tideScale = 1) { applyTerrainLook(material, look, tideScale); },
+    setGlow(amount) { material.setFloat("glowAmount", amount); },
     setBleach(field) {
       const TW = HEIGHT_TEX_SIZE;
       for (let row = 0; row < TW; row++) for (let col = 0; col < TW; col++) {

@@ -10,9 +10,8 @@ import { island, islandFailures, rerollRate } from "../src/sim/island";
 import { materialCode } from "../src/sim/materials";
 import { newGame } from "../src/sim/start";
 import { Building, buildingList, Cell, SimState } from "../src/sim/state";
-import { updateNetwork } from "../src/sim/network";
 import { advanceCycles } from "../src/sim/tick";
-import { joinByLine, placeByWalkway, placeNear, starterTown } from "./scenario";
+import { placeByWalkway, placeJoined, starterTown } from "./scenario";
 
 function cinderTown(seed = 4) {
   const { state, grid } = newGame(1, seed, "cinder");
@@ -22,17 +21,6 @@ function cinderTown(seed = 4) {
 }
 function fillHomes(state: SimState, grid: Grid): void {
   for (const b of buildingList(state)) if (BUILDINGS[b.kind].residents > 0) b.residents = grid.capacityOf(b);
-}
-/** A kind on its material, joined by the shortest walk from the nearest street piece the town already reaches. */
-function placeJoined(state: SimState, grid: Grid, kind: keyof typeof BUILDINGS, from: Cell): Building | null {
-  const b = placeNear(state, grid, kind, from);
-  if (!b) return null;
-  updateNetwork(state, grid, state.tide.level);
-  const links = buildingList(state).filter(x => x.id !== b.id && x.reached && BUILDINGS[x.kind].network !== "leaf");
-  links.sort((p, q) => Math.hypot(p.cells[0].i - b.cells[0].i, p.cells[0].j - b.cells[0].j) - Math.hypot(q.cells[0].i - b.cells[0].i, q.cells[0].j - b.cells[0].j));
-  if (links[0]) joinByLine(state, grid, links[0].cells[0], b.cells[0]);
-  updateNetwork(state, grid, state.tide.level);
-  return b;
 }
 
 describe("the Cinder's island", () => {

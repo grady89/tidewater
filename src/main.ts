@@ -2,7 +2,7 @@
 import { ArcRotateCamera, Color4, DefaultRenderingPipeline, Engine, Matrix, Scene, Vector3 } from "@babylonjs/core";
 import { CameraControl } from "./build/cameraControl";
 import { Placement, Tool } from "./build/placement";
-import { LANES_ENABLED, SIM_TICK, SIZE, TIDE_PERIOD } from "./config";
+import { LANES_ENABLED, SIM_TICK, SIZE, TIDE_PERIOD, TREMOR_SHAKE } from "./config";
 import { BUILDINGS, STORM_WAVE_AMP, WAVE_WIDTH } from "./sim/balance";
 import { districtOf } from "./sim/districts";
 import { startStorm, startTsunami } from "./sim/events";
@@ -546,6 +546,9 @@ let lastLight: Lighting = MORNING;
 let stormMix = 0;
 let iceMix = 0;
 let lastBleachCycle = -1;
+/** The ground is redrawn when a lava flow makes land, and again when it cools (the Cinder). */
+const landKeyOf = (s: SimState) => s.newLand.length + ":" + (s.biomeState.eruptions ?? 0) + ":" + s.world.seed + s.world.biome;
+let lastLandKey = landKeyOf(state);
 let bleachShown = false;
 let lastFrameTime = 0;
 
@@ -560,10 +563,12 @@ function syncView(): void {
   lastLight = light;
   lights.apply(light);
   terrain.setLighting(light);
+  if (look.glow) terrain.setGlow(look.glow.amount * (0.3 + 0.7 * Math.min(1, light.lamp)));
   water.setLighting(light);
   sky.setLighting(light);
   sky.setAurora(look.sky.aurora * (1 - stormMix), viewTime);
   // The reef's bleaching reaches the water shader once a cycle (it only changes at the settlement).
+  if (landKeyOf(state) !== lastLandKey) { lastLandKey = landKeyOf(state); syncGround(); }
   if (state.tide.cycle !== lastBleachCycle) { lastBleachCycle = state.tide.cycle; if (look.lagoon.mix > 0 || bleachShown) { terrain.setBleach(look.lagoon.mix > 0 ? state.fields.bleach : null); bleachShown = look.lagoon.mix > 0; } }
   const iceTarget = (state.biomeState.seaIce ?? 0) > 0 ? 1 : 0;
   iceMix += (iceTarget - iceMix) * Math.min(1, frameDt / 4);
@@ -577,7 +582,10 @@ function syncView(): void {
   boats.sync(state, viewTime);
   ferry.sync(state, viewTime, crossCommuters(state, grid));
   walkers.sync(state, viewTime, ferry.riders());
-  effects.sync(state, viewTime);
+  effects.sync(state, grid, viewTime);
+  // The mountain trembles: the view shivers (not with reduced motion); the target itself never moves.
+  const shiver = reducedMotion() ? 0 : effects.shake * TREMOR_SHAKE;
+  camera.targetScreenOffset.set(Math.sin(viewTime * 41) * shiver, Math.sin(viewTime * 29 + 1) * shiver);
   ship.sync(state, viewTime);
   wildlife.sync(state, viewTime);
   fauna.sync(state, viewTime);
@@ -753,6 +761,8 @@ const api = {
     fauna: () => ({ gulls: wildlife.gullCount, crabs: wildlife.crabCount, seals: wildlife.sealCount, puffins: wildlife.puffinCount, whales: wildlife.whaleCount, turtles: wildlife.turtleCount, shoals: wildlife.shoalCount, ...fauna.counts } as Record<string, number>),
     /** What the view shows of the coast: the look in use, sea ice, the aurora, the hatching's dark lanterns, the bleached count. */
     biome: () => ({ look: look.id, ice: iceMix, aurora: look.sky.aurora, hatching: hatching(state), lanterns: views.lanternCounts, bleached: state.biomeState.bleached ?? 0, palms: look.trees.kit, boat: look.boat, hat: look.walker.hat, house: look.house }),
+    /** The mountain (the Cinder): steam puffs, ash flakes, the shiver, the lava's glow this frame. */
+    mountain: () => ({ steam: effects.steamCount, ash: effects.ashCount, shake: effects.shake, glow: look.glow ? look.glow.amount : 0 }),
     ferry: () => ferry.pose,
     ferryTerminals: () => { const t = ferryTerminals(grid); return t ? { harbor: t.harbor.id, isle: t.isle.map(b => b.id) } : null; },
     commuters: () => crossCommuters(state, grid),

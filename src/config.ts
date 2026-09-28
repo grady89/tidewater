@@ -12,6 +12,8 @@ export const TIDE_PERIOD = 120;
 
 /** Game seconds per simulation tick. The ledger advances in these fixed steps regardless of frame rate. */
 export const SIM_TICK = 1 / 20;
+/** How far the view shivers while the Cinder's mountain trembles (screen offset, world units at the target). */
+export const TREMOR_SHAKE = 0.05;
 
 /** Water above this is "high water" (boats sail, high-water producers run); below LOW is "low water". Between is slack. */
 export const HIGH_WATER_MARK = 0.25;

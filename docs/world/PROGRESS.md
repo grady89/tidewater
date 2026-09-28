@@ -5,7 +5,7 @@ whenever unsure: re-read CLAUDE.md, BIOMES.md and this file, then continue from 
 DONE. Update after every step. Build + test + smoke green before every commit; commit per step; push `world`
 after each stage; never push `main`. Calls BIOMES.md leaves open go in `docs/world/decisions.md`.
 
-Last thing that worked: 2a — the Cinder's ledger (cone, lava band, fertile band, vents, spring; five kinds; the eruption with new land and a wave in the outbox); 157 unit tests, smoke green.
+Last thing that worked: 2b — the Cinder's view (look, lava glow in the terrain shader, vent steam, ash, the tremor shiver, the eruption redraws the ground); smoke green. Stage 2 pushed.
 
 ## Stages
 
@@ -16,7 +16,7 @@ Last thing that worked: 2a — the Cinder's ledger (cone, lava band, fertile ban
 | 1b | Delta, sim (BIOMES.md §3.4): shaper (river on the high edge, braided channels, flats, mangrove, levee), swell every 6th cycle and the king tide, rice paddy / crab pots / salt pan / indigo vats / warden tower / croc net, crocodiles in the shark role, fever season, the rice harvest, mangrove clearing, rain more often, validation; tests | DONE | decisions #2–#14; also fixed the spring-low bonus that never paid (#3) |
 | 1c | Delta, view: look, sampans, reed stilt houses with wide eaves, conical hats, mangroves, flamingos / herons / crocodiles / fireflies, the kinds' meshes, frogs / insects / rain; smoke section; shots | DONE | view/fauna.ts holds every later coast's creatures; view/pieces/ the coasts' meshes; the look's `bands` shift brings the reeds down the flats |
 | 2a | Cinder, sim (§3.5): shaper (cone, radial ridges, black flats, lava band, fertile band, vents, springs), taro / cocoa terraces, glassworks, sulfur works, hot-spring bathhouse, basalt sea walls, the eruption (tremors, ash, lava flow, new land cooling three cycles), a tsunami queued for the neighbours; validation; tests | DONE | decisions #15–#17; the wave goes to `state.outbox` for the World event bus (4d) |
-| 2b | Cinder, view: look, dugouts, flat-roofed basalt houses, bandanas, iguanas / boobies / glowing plankton, lava glow, tremor shake and steam, ash, rumble / hiss; the kinds' meshes; smoke; shots | TODO | |
+| 2b | Cinder, view: look, dugouts, flat-roofed basalt houses, bandanas, iguanas / boobies / glowing plankton, lava glow, tremor shake and steam, ash, rumble / hiss; the kinds' meshes; smoke; shots | DONE | the glow is one additive term on a material code (uniforms only); the material code is read from the nearest texel, so a blend of two codes is no third material (it drew seams on every coast) |
 | 3a | Dunes, sim (§3.6): shaper (sandbars, lagoon, dunes, headland, oases), date grove, coffee terrace, sponge divers' hut, Great Cistern, dredger, wells cover 3, sandstorm (no rain, fire up, harbor silts), drought, night market; validation; tests | TODO | |
 | 3b | Dunes, view: look, dhows, domed cube houses, head wraps, pelicans / dolphins / ghost crabs, sandstorm haze, the clearest stars, dry wind and sand; meshes; smoke; shots | TODO | |
 | 4a | World ledger: the world clock (idle World settles every built sea once per TIDE_PERIOD; in a sea, at the active peaks), the World record, order-independent settlement; test that two orderings give one hash | TODO | |
@@ -41,3 +41,4 @@ Last thing that worked: 2a — the Cinder's ledger (cone, lava band, fertile ban
 - 1b: Delta ledger; 151 unit tests, smoke green (129 s)
 - 1c: Delta view; the first 1c smoke failed on the harvest (its well was off the street: no coverage), fixed in the smoke; green (131 s)
 - 2a: Cinder ledger; 157 unit tests, smoke green (131 s)
+- 2b: Cinder view; the first smoke failed (terraces unreached: a steep join), placeJoined now tries the next nearest street; green

@@ -391,7 +391,7 @@ export class Audio {
     if (this.insectGain && this.rainGain && this.rumbleGain && this.hissGain && this.sandGain) {
       const gust = 0.6 + 0.4 * Math.sin(t * 0.37) * Math.sin(t * 0.11 + 1.3);
       const shower = Math.max(0, Math.sin(t * 0.021) * Math.sin(t * 0.0073 + 2) - 0.35);
-      const tremor = (state.biomeState.tremor ?? 0) > 0 ? 1 : 0;
+      const tremor = (state.biomeState.eruptAt ?? -1) > state.tide.cycle ? 1 : 0; // the Cinder's tremors (sim/biomes/cinder.ts)
       this.insectGain.gain.setTargetAtTime((amb.insects ?? 0) * (night ? 0.018 : 0.003) * (1 - stormMix), t, 1.2);
       this.rainGain.gain.setTargetAtTime((amb.rain ?? 0) * (0.02 * shower + 0.07 * stormMix), t, 0.8);
       this.rumbleGain.gain.setTargetAtTime((amb.rumble ?? 0) * (0.05 + 0.25 * tremor), t, 0.8);

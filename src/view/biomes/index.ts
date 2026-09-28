@@ -7,6 +7,7 @@ import type { RoofShape } from "../roofs";
 import { ATOLL_LOOK } from "./atoll";
 import { FJORD_LOOK } from "./fjord";
 import { DELTA_LOOK } from "./delta";
+import { CINDER_LOOK } from "./cinder";
 
 export type BoatKit = "dory" | "longboat" | "outrigger" | "sampan" | "dugout" | "dhow";
 export type HatKit = "straw" | "knit" | "hood" | "conical" | "bandana" | "wrap";
@@ -40,6 +41,8 @@ export interface BiomeLook {
   walker: { hat: HatKit; colors: readonly string[] };
   trees: { kit: TreeKit; trunk: string; leaves: readonly string[] };
   fauna: readonly FaunaKind[];
+  /** A material that glows of itself (the Cinder's lava field): its colour and strength by day; the night brings it up. */
+  glow?: { material: "lava" | "vent" | "spring"; color: string; amount: number };
   /** Ambience parameters for view/audio.ts (0..1 levels; `padRoot` in Hz). */
   ambience: { surf: number; gulls: boolean; wind: number; ice: number; palms: number; birds: number; padRoot: number;
     /** The later coasts' layers (0..1, absent = off): frogs and insects at night, rain, a low rumble, steam hiss, blown sand. */
@@ -77,6 +80,7 @@ export const TIDEWATER_LOOK: BiomeLook = registerLook({
 registerLook(FJORD_LOOK);
 registerLook(ATOLL_LOOK);
 registerLook(DELTA_LOOK);
+registerLook(CINDER_LOOK);
 
 /** The look for a biome id; Tidewater's for anything not registered. */
 export function lookOf(id: BiomeId): BiomeLook {

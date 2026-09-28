@@ -2,7 +2,10 @@
 // buildings; the floats and buoys of every shark net, riding the water. View only.
 import { Color3, Matrix, Mesh, MeshBuilder, Quaternion, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
 import { CELLS } from "../sim/fields";
-import { cellCenter, HALF } from "../sim/grid";
+import { cellCenter, Grid, HALF } from "../sim/grid";
+import { SIZE } from "../config";
+import { ashFalling, trembling } from "../sim/biomes/cinder";
+import { materialCode } from "../sim/materials";
 import { BUILDINGS } from "../sim/balance";
 import { Building, SimState } from "../sim/state";
 import type { BiomeLook } from "./biomes";
@@ -34,6 +37,15 @@ export class Effects {
   private flameMatrices = new Float32Array(0);
   private smokeMatrices = new Float32Array(0);
   burning = 0;
+  /** Steam puffs and ash flakes drawn this frame (the Cinder), for checks. */
+  steamCount = 0;
+  ashCount = 0;
+  /** How hard the ground shakes (the mountain trembling), for the camera. */
+  shake = 0;
+  private steam: Mesh | null = null;
+  private ash: Mesh | null = null;
+  private ventCells: { x: number; y: number; z: number }[] = [];
+  private ventKey = "";
 
   constructor(scene: Scene) {
     this.scene = scene;
@@ -98,6 +110,61 @@ export class Effects {
     this.finKit = kit;
     this.fins.dispose();
     this.fins = this.buildFins(kit);
+  }
+
+  /**
+   * The mountain (the Cinder): white steam curling off every vent site, thick while the mountain trembles; grey
+   * flakes drifting down over the town while the ash falls. Both are thin instances, built on first use.
+   */
+  private syncMountain(state: SimState, grid: Grid, viewTime: number): void {
+    const vent = materialCode("vent");
+    const key = grid.terrainVersion + ":" + state.world.seed + state.world.biome;
+    if (key !== this.ventKey) {
+      this.ventKey = key;
+      this.ventCells = [];
+      for (let k = 0; k < grid.materials.length; k++) if (grid.materials[k] === vent) this.ventCells.push({ x: Math.floor(k / SIZE) - HALF + 0.5, z: (k % SIZE) - HALF + 0.5, y: grid.heights[k] });
+    }
+    const shaking = trembling(state);
+    this.shake = shaking ? 1 : 0;
+    const puffs = shaking ? 6 : 3;
+    if (this.ventCells.length) {
+      if (!this.steam) {
+        const p = MeshBuilder.CreateSphere("steam", { diameter: 0.5, segments: 4 }, this.scene);
+        this.steam = mergeFlat("steam", [tint(p, "#f2ece0")], this.scene);
+        const m = new StandardMaterial("steamMat", this.scene);
+        m.diffuseColor = new Color3(0.95, 0.94, 0.92); m.emissiveColor = new Color3(0.35, 0.35, 0.35); m.alpha = 0.55;
+        this.steam.material = m;
+        this.steam.isPickable = false; this.steam.alwaysSelectAsActiveMesh = true;
+      }
+      const buf = new Float32Array(this.ventCells.length * puffs * 16);
+      let n = 0;
+      for (const [idx, v] of this.ventCells.entries()) for (let k = 0; k < puffs; k++) {
+        const t = ((viewTime * (shaking ? 0.5 : 0.25) + k / puffs + idx * 0.37) % 1);
+        const s = 0.4 + t * (shaking ? 2.2 : 1.4);
+        Matrix.Compose(new Vector3(s, s * 0.8, s), Quaternion.Identity(), new Vector3(v.x + Math.sin(t * 5 + idx) * 0.3, v.y + 0.3 + t * (shaking ? 3.5 : 2), v.z + t * 0.6)).copyToArray(buf, n++ * 16);
+      }
+      this.steam.setEnabled(true);
+      this.steam.thinInstanceSetBuffer("matrix", buf, 16, false);
+      this.steamCount = n;
+    } else if (this.steam) { this.steam.setEnabled(false); this.steamCount = 0; }
+    if (ashFalling(state)) {
+      if (!this.ash) {
+        const f = MeshBuilder.CreateBox("ash", { width: 0.06, height: 0.015, depth: 0.06 }, this.scene);
+        this.ash = mergeFlat("ash", [tint(f, "#6b6a66")], this.scene);
+        this.ash.isPickable = false; this.ash.alwaysSelectAsActiveMesh = true;
+      }
+      const N = 220, buf = new Float32Array(N * 16);
+      const bs = Object.values(state.buildings);
+      const c = bs.length ? bs[0].cells[0] : { i: 0, j: 0 };
+      for (let k = 0; k < N; k++) {
+        const h = (k * 0.6180339887) % 1, g = (k * 0.7548776662) % 1;
+        const fall = ((viewTime * 0.35 + h) % 1);
+        Matrix.Compose(new Vector3(1, 1, 1), Quaternion.FromEulerAngles(k, viewTime + k, 0), new Vector3(c.i + (h - 0.5) * 30, 7 - fall * 7, c.j + (g - 0.5) * 30)).copyToArray(buf, k * 16);
+      }
+      this.ash.setEnabled(true);
+      this.ash.thinInstanceSetBuffer("matrix", buf, 16, false);
+      this.ashCount = N;
+    } else if (this.ash) { this.ash.setEnabled(false); this.ashCount = 0; }
   }
 
   /** Every net's floats sit on the water: the tide and the swell carry them, the net hangs below. */
@@ -205,8 +272,9 @@ export class Effects {
     this.smoke.thinInstanceSetBuffer("matrix", this.smokeMatrices, 16, false);
   }
 
-  sync(state: SimState, viewTime: number): void {
+  sync(state: SimState, grid: Grid, viewTime: number): void {
     this.frame++;
+    this.syncMountain(state, grid, viewTime);
     this.syncFins(state, viewTime);
     this.syncFire(state, viewTime);
     this.syncNets(state, viewTime);
