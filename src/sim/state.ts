@@ -3,7 +3,7 @@ import { TIDE_HI } from "../config";
 import { BuildingKind, FISH_CAP, ResourceKind, SERVICE_KINDS, ServiceKind, STARTING_FISH, STARTING_MONEY } from "./balance";
 import { filled, zeros } from "./fields";
 import { emptyStock, GoodId } from "./goods";
-import { BiomeId, tideScaleOf } from "./biomes";
+import { BiomeId, Surge, surgeOf, tideScaleOf } from "./biomes";
 import { initialTrees, TreeSite } from "./trees";
 
 export function emptyCoverage(): Record<ServiceKind, number[]> {
@@ -98,6 +98,8 @@ export interface TideState {
   override: number | null;
   /** The biome's multiplier on every level (tides.ts); 1 for Tidewater. */
   scale: number;
+  /** The coast's river surge (the Delta): swells and king tides lift its peaks. Absent elsewhere. */
+  surge?: Surge;
 }
 
 export interface Assignment { home: number; work: number; n: number }
@@ -220,7 +222,7 @@ export function createState(seed = 1, islandSeed = 0, biome: BiomeId = "tidewate
     rng: seed | 0,
     time: 0,
     tick: 0,
-    tide: { phase: Math.PI * 0.5, level: TIDE_HI * tideScaleOf(biome), wetLevel: 0, cycle: 0, peaked: false, override: null, scale: tideScaleOf(biome) },
+    tide: { phase: Math.PI * 0.5, level: TIDE_HI * tideScaleOf(biome), wetLevel: 0, cycle: 0, peaked: false, override: null, scale: tideScaleOf(biome), ...(surgeOf(biome) ? { surge: { ...surgeOf(biome)! } } : {}) },
     phase: "high",
     resources: { money: STARTING_MONEY, ...emptyStock(), fish: STARTING_FISH },
     buildings: {},

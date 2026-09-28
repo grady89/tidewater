@@ -811,7 +811,7 @@ const api = {
   },
   /** Force the weather: a storm through this cycle, or the tsunami sequence now. */
   /** Force a coast's hazard or moment (the smoke): advances the clock to it, or starts it, and syncs the view. */
-  forceBiome(event: "whaleSeason" | "seaIce" | "avalanche" | "hatching" | "bleach" | "cyclone") {
+  forceBiome(event: string) {
     const cycle0 = state.tide.cycle;
     const until = (done: () => boolean) => { for (let k = 0; k < 40 && !done(); k++) advanceCycles(state, grid, 1); };
     switch (event) {
@@ -828,6 +828,12 @@ const api = {
         break;
       }
       case "cyclone": startStorm(state, grid); break;
+      default: {
+        // The later coasts name their own moments (Biome.force): the king tide, the eruption, the drought…
+        const own = biomeFor(state).force?.[event];
+        if (!own) throw new Error(`${state.world.biome} has no moment called ${event}`);
+        own(state, grid);
+      }
     }
     viewTime += (state.tide.cycle - cycle0) * TIDE_PERIOD;
     syncView();

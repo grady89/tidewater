@@ -42,6 +42,8 @@ export function routeWaste(state: SimState): void {
   }
   for (const b of buildings) {
     if (b.kind === "smokehouse" && b.workers > 0) emitters.push({ k: cellIndex(b.cells[0].i, b.cells[0].j), rate: SMOKEHOUSE_POLLUTION * staffing(b) / TICKS_PER_CYCLE });
+    const own = BUILDINGS[b.kind].pollution;
+    if (own && b.workers > 0 && !b.damaged) emitters.push({ k: cellIndex(b.cells[0].i, b.cells[0].j), rate: own * staffing(b) / TICKS_PER_CYCLE });
     if ((b.kind === "dock" || b.kind === "pier") && b.boats > 0) emitters.push({ k: cellIndex(b.cells[0].i, b.cells[0].j), rate: DOCK_POLLUTION * b.boats / TICKS_PER_CYCLE });
   }
   state.emitters = emitters;

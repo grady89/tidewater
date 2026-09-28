@@ -24,11 +24,17 @@ export function serviceStrength(state: SimState, b: Building): number {
   const def = BUILDINGS[b.kind];
   if (!def.service || !b.reached || b.cut || b.damaged) return 0;
   const s = def.workers > 0 ? staffing(b) : 1;
+  const coast = biomeFor(state).serviceStrength;
   if (b.kind === "tavern") {
-    if (state.resources.smoked >= TAVERN_SMOKED_PER_CYCLE) { state.resources.smoked -= TAVERN_SMOKED_PER_CYCLE; return s; }
-    return s * TAVERN_DRY_FACTOR;
+    if (state.resources.smoked >= TAVERN_SMOKED_PER_CYCLE) { state.resources.smoked -= TAVERN_SMOKED_PER_CYCLE; return coast ? coast(state, b, s) : s; }
+    return coast ? coast(state, b, s * TAVERN_DRY_FACTOR) : s * TAVERN_DRY_FACTOR;
   }
-  return s;
+  return coast ? coast(state, b, s) : s;
+}
+
+/** A service building's radius on this coast (the Dunes' wells reach 3). */
+export function serviceRadius(state: SimState, b: Building): number {
+  return biomeFor(state).serviceRadius?.[b.kind] ?? BUILDINGS[b.kind].service?.radius ?? 0;
 }
 
 /** Rebuild every coverage layer from the buildings. */
@@ -38,9 +44,10 @@ export function rebuildCoverage(state: SimState, grid: Grid | null = null): void
   for (const k of SERVICE_KINDS) cov[k].fill(0);
   for (const b of buildingList(state).sort((x, y) => x.id - y.id)) {
     const def = BUILDINGS[b.kind];
-    if (def.service) paint(cov[def.service.kind], b.cells, def.service.radius, serviceStrength(state, b));
+    if (def.service) paint(cov[def.service.kind], b.cells, serviceRadius(state, b), serviceStrength(state, b));
     if (b.lantern && b.reached && !b.cut && !(dimmed && grid && dimmed(state, grid, b))) paint(cov.night, b.cells, LANTERN_RADIUS, 1);
   }
+  if (grid) for (const src of biomeFor(state).coverage?.(state, grid) ?? []) paint(cov[src.kind], src.cells, src.radius, src.value);
 }
 
 export function coverageAt(state: SimState, kind: keyof SimState["fields"]["coverage"], c: Cell): number {

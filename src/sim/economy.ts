@@ -11,7 +11,7 @@ import {
   WASTE_BACKLOG_PENALTY_MAX, WASTE_BACKLOG_PENALTY_PER_UNIT, mayTurn } from "./balance";
 import { at } from "./fields";
 import { active, damageNear, fireSources, repairDamage, rollIgnitions } from "./fire";
-import { biomeFor } from "./biomes";
+import { biomeFor, BiomeId, costOf } from "./biomes";
 import { whaleSeason } from "./biomes/fjord";
 import { consumeLuxury, eat, favouriteInStock, foodsInStock, foodTotal, levelAllowed } from "./food";
 import { goodsOfRole } from "./goods";
@@ -46,9 +46,9 @@ export function autoStilts(kind: BuildingKind): boolean {
   return f === "stilts" || f === "street";
 }
 
-/** What a placement costs: the base price plus STILT_COST_PER_UNIT per unit of stilt length (auto-sized kinds). */
-export function placeCost(kind: BuildingKind, stilt = 0): Cost {
-  const c = BUILDINGS[kind].cost;
+/** What a placement costs on a coast: its price there plus STILT_COST_PER_UNIT per unit of stilt length (auto-sized kinds). */
+export function placeCost(kind: BuildingKind, stilt = 0, biome: BiomeId = "tidewater"): Cost {
+  const c = costOf(kind, biome);
   if (!autoStilts(kind) || stilt <= 0) return c;
   return { ...c, money: Math.round(c.money + STILT_COST_PER_UNIT * stilt) };
 }
@@ -61,7 +61,7 @@ export function tryPlace(state: SimState, grid: Grid, kind: BuildingKind, anchor
   const cells = grid.footprint(kind, anchor, rot ?? 0);
   if (!cells || !grid.canPlace(kind, cells)) return null;
   const floor = grid.floorFor(kind, cells, autoStilts(kind) ? lift : 0);
-  const cost = placeCost(kind, grid.stiltLength(kind, cells, floor));
+  const cost = placeCost(kind, grid.stiltLength(kind, cells, floor), state.world.biome);
   if (!canAfford(state, cost)) return null;
   pay(state, cost);
   const firstHarbor = kind === "harbor" && !grid.isleOpen();
@@ -72,7 +72,7 @@ export function tryPlace(state: SimState, grid: Grid, kind: BuildingKind, anchor
 
 /** Remove a building and refund part of its price, as city builders do, so a bad start can be undone. */
 export function removeBuilding(state: SimState, grid: Grid, b: Building): number {
-  const refund = Math.round(BUILDINGS[b.kind].cost.money * REMOVE_REFUND);
+  const refund = Math.round(costOf(b.kind, state.world.biome).money * REMOVE_REFUND);
   grid.remove(b);
   moveMoney(state, refund, "refund");
   return refund;
@@ -172,7 +172,7 @@ export function shiftEnd(state: SimState, grid: Grid, phase: Phase): void {
     if (isHarbour(b) && b.atSea) {
       b.atSea = false;
       const density = b.ground ? fishAt(state, b.ground) : 0;
-      const fish = b.boats * BOAT_BASE_FISH * staffing(b) * netLoftBonus(state, b) * toolBonus(state, b) * density;
+      const fish = b.boats * BOAT_BASE_FISH * staffing(b) * netLoftBonus(state, b) * toolBonus(state, b) * density * (biomeFor(state).harbourFactor?.(state, b) ?? 1);
       depleteGround(state, b);
       b.output += addCapped(state, "fish", fish);
       state.last.fishCaught += fish;
@@ -190,6 +190,7 @@ export function shiftEnd(state: SimState, grid: Grid, phase: Phase): void {
       if (graded) b.output += addCapped(state, "pearls", PEARLS_PER_SHIFT * staffing(b) * toolBonus(state, b) * (springLow ? SPRING_LOW_BONUS : 1));
     }
   }
+  biomeFor(state).shiftEnd?.(state, grid, phase, springLow);
 }
 
 /** Land production, once a cycle: wood, planks, smoked goods, and boats from the yard. */
@@ -204,9 +205,12 @@ function produce(state: SimState, grid: Grid, buildings: Building[]): void {
     r.iron -= iron;
     b.output = iron;
   }
+  const producers = biomeFor(state).producers;
   for (const b of buildings) {
     if (!active(b) || staffing(b) === 0) continue;
     const s = staffing(b);
+    const own = producers?.[b.kind];
+    if (own) { b.output = own(state, grid, b, s); continue; }
     switch (b.kind) {
       case "lumberCamp": {
         const felled = fellTrees(state, b, LUMBER_TREES_PER_CYCLE * s);
@@ -283,7 +287,7 @@ export function homeHappiness(state: SimState, home: Building, fed: number, jobs
   const injury = home.shock > 0 || home.injured > 0 ? HAPPY.injury : 0;
   const damage = home.damaged || damageNear(grid, c, DAMAGE_GRIEF_RADIUS) ? HAPPY.damage : 0;
   const favourite = favouriteInStock(state) ? HAPPY.favourite : 0;
-  const biome = biomeFor(state).happiness?.(state) ?? 0;
+  const biome = (biomeFor(state).happiness?.(state) ?? 0) + (biomeFor(state).homeHappiness?.(state, grid, home) ?? 0);
   const h = HAPPY.base + HAPPY.fed * fed + HAPPY.jobs * jobs + HAPPY.water * at(cov.water, c) + HAPPY.leisure * at(cov.leisure, c)
     + HAPPY.night * at(cov.night, c) + favourite + biome - HAPPY.pollution * foul - backlog - injury - damage;
   return Math.max(0, Math.min(1, h));

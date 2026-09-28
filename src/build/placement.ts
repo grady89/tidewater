@@ -6,6 +6,7 @@ import { BuildingKind, BUILDINGS, PlacementClass, ROTATABLE_CLASSES, STREET_STEP
 import { autoStilts, boatPurchaseBlocker, buyBoat, canAfford, placeCost, removeBuilding, tryPlace } from "../sim/economy";
 import { BOAT_COST, LANDFILL_COST, LANTERN_COST, LIFT_MAX, PLANT_COST } from "../sim/balance";
 import { CLEARANCE } from "../config";
+import type { BiomeId } from "../sim/biomes";
 import { DIRS, Grid, HALF, inBounds, worldToCell } from "../sim/grid";
 import { Axis, linePath, MAX_LINE, routePath } from "./line";
 export { linePath, routePath } from "./line";
@@ -182,7 +183,7 @@ export class Placement {
     const f = BUILDINGS[this.tool].floor;
     if (typeof f === "number") return f * t.scale;
     if (f === "street") return t.hi + CLEARANCE;
-    if (f === "stilts") return t.springHi + CLEARANCE;
+    if (f === "stilts") return t.floodHi + CLEARANCE;
     return t.hi;
   }
 
@@ -254,7 +255,7 @@ export class Placement {
     const rot = this.rotatable ? (this.turns ?? this.grid.facing(cells)) : 0;
     const y = this.grid.floorFor(kind, cells, this.toolLift);
     const stilt = this.grid.stiltLength(kind, cells, y);
-    const cost = placeCost(kind, stilt).money;
+    const cost = placeCost(kind, stilt, this.grid.state.world.biome).money;
     const no = (blocker: string) => ({ cells, blocker, warn: null, fate: "safe" as Fate, y, stilt, cost, rot });
     if (!this.grid.inCatalog(kind)) return no("Not built on this coast");
     if (!this.grid.classOk(def.cls, cells)) return no(classHint(def.cls));
@@ -269,7 +270,7 @@ export class Placement {
     if (def.needsLink && !this.grid.touchesLink(cells)) return no("Must touch a pier or a raised walkway (they bridge deep water)");
     if (def.requires && !this.grid.has(def.requires)) return no(`Requires a ${BUILDINGS[def.requires].name.toLowerCase()}`);
     if (def.touches && !this.grid.touchesKind(cells, def.touches)) return no(`Must touch the ${BUILDINGS[def.touches].name.toLowerCase()}`);
-    if (!canAfford(state, placeCost(kind, stilt))) return no(`Costs ${costLabel(kind, stilt)}`);
+    if (!canAfford(state, placeCost(kind, stilt, state.world.biome))) return no(`Costs ${costLabel(kind, stilt, state.world.biome)}`);
     // Placeable. Caution when nothing it touches is on the network: it would stand idle until a street reaches it.
     let warn: string | null = null;
     if (def.network !== "root" && !cells.some(c => this.grid.neighbors(c).some(n => { const b = this.grid.buildingAt(n); return !!b && (b.reached || BUILDINGS[b.kind].network === "root"); }))) {
@@ -343,7 +344,7 @@ export class Placement {
     const k = this.lineKindAt(c);
     if (!k) return Infinity;
     const cells = this.grid.footprint(k, c)!;
-    return placeCost(k, this.grid.stiltLength(k, cells, this.grid.floorFor(k, cells, this.toolLift))).money;
+    return placeCost(k, this.grid.stiltLength(k, cells, this.grid.floorFor(k, cells, this.toolLift)), this.grid.state.world.biome).money;
   }
 
   /** The nearest cell within `r` of `c` under a pier, dock or harbor: the boat tool's click lands beside the berth as often as on it. */
@@ -390,7 +391,7 @@ export class Placement {
       const fits = k !== kind || this.fitsKind(kind, c);
       // Each cell prices its own stilts (the run is laid in order, so later cells may snap to earlier ones; the
       // preview prices each against the ground alone, which is the floor of what it will cost).
-      if (fits) { const cells = this.grid.footprint(k, c)!; cost += placeCost(k, this.grid.stiltLength(k, cells, this.grid.floorFor(k, cells, this.toolLift))).money; }
+      if (fits) { const cells = this.grid.footprint(k, c)!; cost += placeCost(k, this.grid.stiltLength(k, cells, this.grid.floorFor(k, cells, this.toolLift)), this.grid.state.world.biome).money; }
       return fits;
     });
     return { cells: this.linePath, ok, cost };
@@ -553,8 +554,8 @@ export class Placement {
   }
 }
 
-export function costLabel(kind: BuildingKind, stilt = 0): string {
-  const c = placeCost(kind, stilt);
+export function costLabel(kind: BuildingKind, stilt = 0, biome: BiomeId = "tidewater"): string {
+  const c = placeCost(kind, stilt, biome);
   const parts = [`${c.money}$`];
   if (c.planks) parts.push(`${c.planks} planks`);
   if (c.timber) parts.push(`${c.timber} timber`);

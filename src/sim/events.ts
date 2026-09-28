@@ -61,7 +61,7 @@ export function rollStorm(state: SimState, grid: Grid): void {
   if (s.active) { s.active = false; }
   const cycle = state.tide.cycle;
   if (cycle < STORM_FIRST_CYCLE || cycle - s.lastCycle < 2) return;
-  if (rand(state) < STORM_CHANCE) startStorm(state, grid);
+  if (rand(state) < STORM_CHANCE * (biomeFor(state).storm?.chance ?? 1)) startStorm(state, grid);
 }
 
 export function startStorm(state: SimState, grid: Grid): void {

@@ -1,0 +1,39 @@
+# The connected World — progress ledger (branch `world`)
+
+The truth for the overnight build. Statuses: TODO / IN PROGRESS / DONE / BLOCKED. After any compaction, or
+whenever unsure: re-read CLAUDE.md, BIOMES.md and this file, then continue from the first item that is not
+DONE. Update after every step. Build + test + smoke green before every commit; commit per step; push `world`
+after each stage; never push `main`. Calls BIOMES.md leaves open go in `docs/world/decisions.md`.
+
+Last thing that worked: branch `world` created from main 879b19e; every file the brief lists read.
+
+## Stages
+
+| # | Stage / step | Status | Notes |
+|---|---|---|---|
+| 0 | Ledger: this file, decisions.md | DONE | |
+| 1a | Shared hooks the three coasts need, as data on the Biome and the catalog (no biome-id branches): per-kind producers and a shift hook, tide surge (river swell / king tide) with the building clearance following it, predator naming and a net flag, static coverage sources, service-radius overrides, per-coast costs, storm variants (rain, fire, fog, chance), per-kind pollution and fire emitters, console force events, material rules on clearing | TODO | Tidewater / Fjord / Atoll ledgers unchanged (fuzz hashes) |
+| 1b | Delta, sim (BIOMES.md §3.4): shaper (river on the high edge, braided channels, flats, mangrove, levee), swell every 6th cycle and the king tide, rice paddy / crab pots / salt pan / indigo vats / warden tower / croc net, crocodiles in the shark role, fever season, the rice harvest, mangrove clearing, rain more often, validation; tests | TODO | |
+| 1c | Delta, view: look, sampans, reed stilt houses with wide eaves, conical hats, mangroves, flamingos / herons / crocodiles / fireflies, the kinds' meshes, frogs / insects / rain; smoke section; shots | TODO | |
+| 2a | Cinder, sim (§3.5): shaper (cone, radial ridges, black flats, lava band, fertile band, vents, springs), taro / cocoa terraces, glassworks, sulfur works, hot-spring bathhouse, basalt sea walls, the eruption (tremors, ash, lava flow, new land cooling three cycles), a tsunami queued for the neighbours; validation; tests | TODO | |
+| 2b | Cinder, view: look, dugouts, flat-roofed basalt houses, bandanas, iguanas / boobies / glowing plankton, lava glow, tremor shake and steam, ash, rumble / hiss; the kinds' meshes; smoke; shots | TODO | |
+| 3a | Dunes, sim (§3.6): shaper (sandbars, lagoon, dunes, headland, oases), date grove, coffee terrace, sponge divers' hut, Great Cistern, dredger, wells cover 3, sandstorm (no rain, fire up, harbor silts), drought, night market; validation; tests | TODO | |
+| 3b | Dunes, view: look, dhows, domed cube houses, head wraps, pelicans / dolphins / ghost crabs, sandstorm haze, the clearest stars, dry wind and sand; meshes; smoke; shots | TODO | |
+| 4a | World ledger: the world clock (idle World settles every built sea once per TIDE_PERIOD; in a sea, at the active peaks), the World record, order-independent settlement; test that two orderings give one hash | TODO | |
+| 4b | Routing: consignments on shortest lane paths, a hop a cycle, lane throughput = cargo ships × CARGO_HOLD, hub caps, cargo ships from the shipyard (planks + iron) | TODO | |
+| 4c | People: migration from unhappy or full seas to connected seas with room, on a cargo ship | TODO | |
+| 4d | Weather and the event bus: storms born on a face drift to a random neighbour each cycle; a sea sees one a cycle early; eruptions queue tsunamis for adjacent built faces; pending events per sector, applied at its next settlement or on entry | TODO | |
+| 4e | The Trade Company sails the lanes: one route per connected component, one harbor a cycle, the price slide persisting, the favourite-coast premium; unconnected seas keep the standalone visit | TODO | |
+| 4f | View: lanes on the World, cargo ships travelling them, the storm knot; in a sea a cargo ship from the deep edge and a ledger line "from <sea>: …"; the card's connections, imports and exports; a World Trade panel | TODO | |
+| 4g | LANES_ENABLED = true (flag kept) | TODO | |
+| 4h | Tests (multi-hop + hub limit, migration, storm drift, eruption across faces, company route, idle World), smoke (adjacent harbors trade within three cycles, the lane and a ship on the World, an eruption warns its neighbour), fuzzer World mode (goods conserved across a hop, no negative stock, hash-stable ordering) | TODO | |
+| 5 | Balance: each new coast's starter positive in 4 cycles, level 2 ~8, level 3 ~15 with a company purchase; two connected seas reach level 3 without purchases by ~20; a hub without a warehouse throttles; NOTES.md | TODO | |
+| 6 | Review and audit: each new coast beside Tidewater at noon and dusk (biomeShots.ts), cohesion audit, the World with four seas, two lanes and a ship; fixes; monkey 5 min from the World with lanes on | TODO | |
+| 7 | Docs: ARCHITECTURE.md, HANDOFF.md (World section), BIOMES.md deviations, NOTES.md, this file | TODO | |
+| 8 | Only if everything above is DONE and nothing BLOCKED: pirates v0 behind PIRATES_ENABLED = false | TODO | |
+
+## Blocked
+(none)
+
+## Run log
+- 2026-09-28 · start · branch `world` from main 879b19e (World polish two, the dive hand-over, the Fjord's back shore)

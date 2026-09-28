@@ -28,7 +28,7 @@ export function settleOnly(state: SimState, grid: Grid): void {
   const t = state.tide;
   t.cycle++;
   t.phase = Math.PI / 2 + t.cycle * Math.PI * 2;
-  t.level = peakLevel(t.cycle, t.scale);
+  t.level = peakLevel(t.cycle, t.scale, t.surge);
   t.wetLevel = Math.max(t.level, t.wetLevel);
   t.peaked = false;
   state.time += 120;

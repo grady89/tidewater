@@ -46,6 +46,14 @@ export interface BuildingDef {
   maxRise?: number;
   /** A cell material every footprint cell must have (the biomes' pieces: a dive platform on the lagoon). */
   material?: Material;
+  /** A cell of this material must lie beside the footprint (a coffee terrace by an oasis). */
+  nearMaterial?: Material;
+  /** Pollution a fully staffed one puts into the water each cycle, at its first cell (indigo vats). */
+  pollution?: number;
+  /** Fire risk a staffed one raises each cycle, spread over its cells (the glassworks). */
+  fireRisk?: number;
+  /** Predator risk cannot cross its cell (shark nets, croc nets). */
+  stopsPredators?: boolean;
   /** Must touch a flat cell that carries a walkway (lumber camps on the hill). */
   needsWalkway?: boolean;
   /** Must touch a pier, dock, harbor or walkway (docks: crew walk in over a pier or a raised walkway). */
@@ -113,7 +121,7 @@ export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
   marketSquare: { name: "Market square", category: "Leisure", w: 2, d: 2, cls: "flat", touches: "market", cost: { money: 100 }, workers: 0, residents: 0, upkeep: 0.5, floor: "stilts", network: "link", service: { kind: "leisure", radius: 6 }, desc: "Leisure within 6; must touch the fish market" },
   clinic: { name: "Clinic", category: "Services", w: 2, d: 1, cls: "flat", cost: { money: 200 }, workers: 3, residents: 0, upkeep: 2, floor: "stilts", network: "leaf", desc: "Heals the injured so they can work again" },
   lifeguard: { name: "Lifeguard tower", category: "Services", w: 1, d: 1, cls: "beach", cost: { money: 90 }, workers: 1, residents: 0, upkeep: 1, floor: "ground", network: "leaf", service: { kind: "lifeguard", radius: 5 }, desc: "On a beach; shark incidents within 5 drop 80%" },
-  sharkNet: { name: "Shark net", category: "Sea", w: 1, d: 1, cls: "flatOrDeep", cost: { money: 20 }, workers: 0, residents: 0, upkeep: 0.1, floor: 1.0, network: "leaf", desc: "Per water cell; shark risk can't cross" },
+  sharkNet: { name: "Shark net", category: "Sea", w: 1, d: 1, cls: "flatOrDeep", cost: { money: 20 }, workers: 0, residents: 0, upkeep: 0.1, floor: 1.0, network: "leaf", stopsPredators: true, desc: "Per water cell; shark risk can't cross" },
   harbor: { name: "Harbor", category: "Sea", w: 3, d: 3, cls: "deep", terrain: { min: -99, max: -1.5 }, cost: { money: 600, planks: 60 }, workers: 0, residents: 0, upkeep: 6, floor: 1.0, network: "root", slots: 6, desc: "Trade ship berth; 6 boats; needs water deeper than 1.5" },
   inn: { name: "Inn", category: "Leisure", w: 2, d: 2, cls: "flat", cost: { money: 250, planks: 20 }, workers: 2, residents: 0, upkeep: 2, floor: "stilts", network: "leaf", desc: "Tourists off the trade ship stay and spend" },
   lighthouse: { name: "Lighthouse", category: "Sea", w: 1, d: 1, cls: "highOrEdge", cost: { money: 400 }, workers: 0, residents: 0, upkeep: 2, floor: "ground", network: "leaf", desc: "Boats ride out storms; the trade ship calls every 2 tides" },
@@ -147,6 +155,8 @@ export const LANDFILL_COST = { money: 45, timber: 4 };
 export const PLANT_COST = 3;
 /** Timber from clearing a grown tree by hand. */
 export const CLEAR_TIMBER = 1;
+/** What clearing a tree on a cell of this material does instead: its timber, and pollution let into the water (mangroves). */
+export const CLEAR_BY_MATERIAL: Partial<Record<Material, { timber: number; pollution: number }>> = {};
 
 /** Share of a building's money cost returned when the player removes it (planks and timber are not returned). */
 export const REMOVE_REFUND = 0.5;

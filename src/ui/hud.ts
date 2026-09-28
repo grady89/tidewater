@@ -2,7 +2,7 @@
 // canvas, read-only over the sim.
 import { Fate, isBuildingTool, Tool } from "../build/placement";
 import { BOAT_COST, BUILDING_KINDS, BuildingKind, BUILDINGS, CATEGORIES, Category, CLEAR_TIMBER, LANDFILL_COST, LANTERN_COST, LIFT_STEP, LOAN_AMOUNT, LOAN_GRACE_CYCLES, LOAN_INTEREST, LOAN_REPAY_CYCLES, PLANK_ORDER_SIZE, PLANT_COST, TRADE_PLANK_PRICE } from "../sim/balance";
-import { biomeFor, BiomeId, catalogFor, makesOf } from "../sim/biomes";
+import { biomeFor, BiomeId, catalogFor, costOf, makesOf } from "../sim/biomes";
 import { canAfford } from "../sim/economy";
 import { GOOD_IDS, GOOD_ROLES, GoodId, GOODS, shownGoods } from "../sim/goods";
 import { Grid } from "../sim/grid";
@@ -30,7 +30,7 @@ export interface HudState {
 
 interface ToolDef { tool: Tool; label: string; category: Category; cost: string }
 const TOOLS: ToolDef[] = [
-  ...BUILDING_KINDS.map(kind => ({ tool: kind as Tool, label: BUILDINGS[kind].name, category: BUILDINGS[kind].category, cost: costOf(kind) })),
+  ...BUILDING_KINDS.map(kind => ({ tool: kind as Tool, label: BUILDINGS[kind].name, category: BUILDINGS[kind].category, cost: costText(kind) })),
   { tool: "boat", label: "Boat", category: "Sea", cost: `${BOAT_COST}$` },
   { tool: "lanternPost", label: "Lantern post", category: "Streets", cost: `${LANTERN_COST}$` },
   { tool: "landfill", label: "Landfill", category: "Land", cost: `${LANDFILL_COST.money}$+${LANDFILL_COST.timber}t` },
@@ -39,8 +39,8 @@ const TOOLS: ToolDef[] = [
 ];
 const KEYS = "123456789";
 
-function costOf(kind: BuildingKind): string {
-  const c = BUILDINGS[kind].cost;
+function costText(kind: BuildingKind, biome: BiomeId = "tidewater"): string {
+  const c = costOf(kind, biome);
   const parts = [`${c.money}$`];
   if (c.planks) parts.push(`${c.planks}p`);
   if (c.timber) parts.push(`${c.timber}t`);
@@ -243,11 +243,12 @@ export class Hud {
     if (tool === "plantTree") return state.resources.money >= PLANT_COST ? null : "no money";
     if (tool === "clearTree") return null;
     const def = BUILDINGS[tool];
+    const cost = costOf(tool, state.world.biome);
     if (def.requires && !this.grid.has(def.requires)) return `needs ${BUILDINGS[def.requires].name.toLowerCase()}`;
-    if (!canAfford(state, def.cost)) {
+    if (!canAfford(state, cost)) {
       const r = state.resources;
-      if (r.money < def.cost.money) return "no money";
-      if ((def.cost.planks ?? 0) > r.planks) return "no planks";
+      if (r.money < cost.money) return "no money";
+      if ((cost.planks ?? 0) > r.planks) return "no planks";
       return "no timber";
     }
     return null;
@@ -256,7 +257,12 @@ export class Hud {
   update(s: HudState): void {
     const { state } = s;
     const r = state.resources;
-    if (state.world.biome !== this.biome) { this.biome = state.world.biome; this.showCategory(this._category); }
+    if (state.world.biome !== this.biome) {
+      this.biome = state.world.biome;
+      // The coast's own prices on the cards (basalt sea walls on the Cinder).
+      for (const t of TOOLS) if (isBuildingTool(t.tool)) { const el = this.buttons.get(t.tool)?.querySelector<HTMLElement>(".cost"); if (el) el.textContent = costText(t.tool, this.biome); }
+      this.showCategory(this._category);
+    }
     // Follow the tool's category only when the tool changes; otherwise a clicked tab would snap straight back.
     if (s.tool !== this.lastTool) {
       this.lastTool = s.tool;

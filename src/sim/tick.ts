@@ -26,7 +26,8 @@ export function tick(state: SimState, grid: Grid, dt = SIM_TICK): void {
   tickTsunami(state, grid, dt);
   tickPollution(state, grid, dt);
   tickSharks(state, grid, dt, state.sharkEmitters);
-  tickFire(state, grid, dt, state.storm.active);
+  const storm = biomeFor(state).storm;
+  tickFire(state, grid, dt, state.storm.active && (storm?.rain ?? true), state.storm.active ? storm?.fire ?? 1 : 1);
 
   const phase = phaseFor(state.tide.level, grid.tides);
   if (phase !== state.phase) {
