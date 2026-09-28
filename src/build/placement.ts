@@ -7,7 +7,7 @@ import { autoStilts, boatPurchaseBlocker, buyBoat, canAfford, placeCost, removeB
 import { BOAT_COST, LANDFILL_COST, LANTERN_COST, LIFT_MAX, PLANT_COST } from "../sim/balance";
 import { CLEARANCE } from "../config";
 import { Grid, HALF, inBounds, worldToCell } from "../sim/grid";
-import { linePath, MAX_LINE, routePath } from "./line";
+import { Axis, linePath, MAX_LINE, routePath } from "./line";
 export { linePath, routePath } from "./line";
 import { ground as groundHeight } from "../view/ground";
 import { addLandfill, clearBlocker, clearTree, landfillBlocker, plantBlocker, plantTree } from "../sim/land";
@@ -50,6 +50,8 @@ export class Placement {
   private readonly mats: Record<"ok" | "spring" | "always" | "bad", StandardMaterial>;
   private down: { x: number; y: number; button: number } | null = null;
   private lineStart: Cell | null = null;
+  /** The axis the pointer left the start cell on: the L bends after that leg. */
+  private lineAxis: Axis | null = null;
   private linePath: Cell[] = [];
 
   /** Line tools draw with the left button, so the camera must not grab the ground with it. */
@@ -135,7 +137,7 @@ export class Placement {
       if (!this.enabled) return;
       this.refresh(); // pick where the press lands, not where the pointer last moved
       this.down = { x: e.clientX, y: e.clientY, button: e.button };
-      if (e.button === 0 && this.dragsLine && this.hover) this.lineStart = this.hover;
+      if (e.button === 0 && this.dragsLine && this.hover) { this.lineStart = this.hover; this.lineAxis = null; }
     });
     canvas.addEventListener("pointerup", e => {
       const d = this.down;
@@ -208,6 +210,12 @@ export class Placement {
       }
       if (hit < 0) return null;
       x = o.x + d.x * hit; z = o.z + d.z * hit;
+      // Over water the ground lies far below the pointer, so the terrain hit lands cells beyond the deck the
+      // player points at (a drag begun on the pier began three cells past it): there, pick the deck plane.
+      if (groundHeight(x, z) < this.grid.state.tide.level && Math.abs(d.y) > 1e-6) {
+        const t = (this.pickY() - o.y) / d.y;
+        if (t > 0) { x = o.x + d.x * t; z = o.z + d.z * t; }
+      }
     } else {
       if (Math.abs(d.y) < 1e-6) return null;
       const t = (this.pickY() - o.y) / d.y;
@@ -393,7 +401,8 @@ export class Placement {
     this.line = { count: ok.filter(Boolean).length, cost };
     const okM: number[] = [], badM: number[] = [];
     cells.forEach((c, k) => {
-      const y = ok[k] ? this.grid.floorFor(this.lineKindAt(c) ?? (this.tool as BuildingKind), [c], this.toolLift) : this.pickY();
+      // A ground piece's ghost rides the rendered ground, which on a slope sits above the cell's own height.
+      const y = ok[k] ? Math.max(this.grid.floorFor(this.lineKindAt(c) ?? (this.tool as BuildingKind), [c], this.toolLift), groundHeight(c.i + 0.5, c.j + 0.5) + 0.05) : this.pickY();
       Matrix.Compose(new Vector3(0.96, 1, 0.96), Quaternion.Identity(), new Vector3(c.i + 0.5, y, c.j + 0.5)).copyToArray(ok[k] ? okM : badM, (ok[k] ? okM : badM).length);
     });
     for (const [mesh, m] of [[this.lineGhosts.ok, okM], [this.lineGhosts.bad, badM]] as [Mesh, number[]][]) {
@@ -425,24 +434,18 @@ export class Placement {
     if (this.lineStart && this.hover) {
       this.ghostStilts.setEnabled(false);
       this.ghostDoor.setEnabled(false);
-      // Paint: the run follows the pointer's own track, cell by cell, so a street can bend where the player
-      // bends it. Each pointer step adds the route from the last painted cell (the L when it is clear, else the
-      // shortest way round whatever blocks it; the plain L, shown red, when there is no way); revisited cells are
-      // skipped.
-      if (this.linePath.length === 0) this.linePath = [this.lineStart];
-      const last = this.linePath[this.linePath.length - 1];
-      if (last.i !== this.hover.i || last.j !== this.hover.j) {
-        const seen = new Set(this.linePath.map(c => `${c.i},${c.j}`));
-        const from = this.grid.buildingAt(last), to = this.grid.buildingAt(this.hover);
-        const step = routePath(last, this.hover, c => this.lineFits(c) && !seen.has(`${c.i},${c.j}`), MAX_LINE, { cost: c => this.lineCostAt(c), startCells: from?.cells, goalCells: to?.cells })
-          ?? linePath(last, this.hover).slice(1);
-        for (const c of step) {
-          const key = `${c.i},${c.j}`;
-          if (seen.has(key) || this.linePath.length >= MAX_LINE) continue;
-          seen.add(key);
-          this.linePath.push(c);
-        }
-      }
+      // The run is one street from where the drag began to the pointer: straight, or one bend after the leg
+      // the pointer left the start cell on, and routed round whatever blocks it (the cheapest way, with the
+      // fewest turns). It is recomputed from the start on every move, so a wobble of the hand leaves no
+      // staircase; another bend is another drag, from the end of this one. Where no route exists the plain L
+      // shows, red where it cannot go.
+      const start = this.lineStart, end = this.hover;
+      if (this.lineAxis === null && (end.i !== start.i || end.j !== start.j)) this.lineAxis = Math.abs(end.i - start.i) >= Math.abs(end.j - start.j) ? "i" : "j";
+      const axis = this.lineAxis ?? undefined;
+      const from = this.grid.buildingAt(start), to = this.grid.buildingAt(end);
+      const body = routePath(start, end, c => this.lineFits(c), MAX_LINE, { cost: c => this.lineCostAt(c), axis, startCells: from?.cells, goalCells: to?.cells })
+        ?? linePath(start, end, axis).slice(1);
+      this.linePath = (this.lineFits(start) ? [start, ...body] : body).slice(0, MAX_LINE);
       this.showLine();
       this.blocker = null; this.warn = null;
       const laid = this.line && this.line.count > 0;
@@ -468,7 +471,8 @@ export class Placement {
     this.fate = fate;
     const is = cells.map(c => c.i), js = cells.map(c => c.j);
     const minI = Math.min(...is), maxI = Math.max(...is), minJ = Math.min(...js), maxJ = Math.max(...js);
-    this.ghost.position.set((minI + maxI + 1) / 2, y, (minJ + maxJ + 1) / 2);
+    const onGround = isBuildingTool(this.tool) && BUILDINGS[this.tool].floor === "ground";
+    this.ghost.position.set((minI + maxI + 1) / 2, onGround ? Math.max(y, groundHeight((minI + maxI + 1) / 2, (minJ + maxJ + 1) / 2) + 0.05) : y, (minJ + maxJ + 1) / 2);
     this.ghost.scaling.x = maxI - minI + 0.96;
     this.ghost.scaling.z = maxJ - minJ + 0.96;
     this.ghost.material = blocker ? this.mats.bad : fate === "safe" ? this.mats.ok : this.mats[fate];

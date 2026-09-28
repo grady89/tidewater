@@ -162,8 +162,9 @@ Known-rough:
 - Two blind playtest rounds (NOTES.md Session E) fixed the dragged run (one street tool, routed from any side of
   the pier to any side of the hut, cost-weighted), the market's staffing, the first-peak message, the walkthrough
   that never reset, clicks without a hover, edge-piece and berth snapping, the loan (grace, then paid from
-  earnings only), storms (no boat loss before cycle 20, never the last boat), the cost tag at the cursor and the
-  faded drawing of anything the street does not reach. Still open from the tester: the World's face picking is
+  earnings only), storms (no boat loss before cycle 20, never the last boat), the cost tag at the cursor, the
+  faded drawing of anything the street does not reach, and (Grady's pass) one-street drags with a turn-costed
+  route instead of painted staircases, ground ghosts on the rendered ground, the toast off the walkthrough. Still open from the tester: the World's face picking is
   fiddly (empty faces get hit), and the chain behind the Fjord's stockfish (salt ← ship ← harbor ← planks) is
   not explained anywhere in the game. The tester also reported a "Round2 Fjord" sea vanishing while the old
   "Round1 Fjord" changed stats; no code path was found that writes one face's town under another's meta, and the

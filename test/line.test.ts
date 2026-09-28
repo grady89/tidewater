@@ -41,6 +41,22 @@ describe("the dragged run", () => {
     updateNetwork(state, grid, state.tide.level);
     expect(hut.reached).toBe(true);
   });
+  it("goes first along the axis it is told to", () => {
+    expect(linePath({ i: 0, j: 0 }, { i: 2, j: 3 }, "i").slice(0, 3)).toEqual([{ i: 0, j: 0 }, { i: 1, j: 0 }, { i: 2, j: 0 }]);
+    expect(linePath({ i: 0, j: 0 }, { i: 3, j: 2 }, "j").slice(0, 3)).toEqual([{ i: 0, j: 0 }, { i: 0, j: 1 }, { i: 0, j: 2 }]);
+    const route = routePath({ i: 0, j: 0 }, { i: 3, j: 2 }, () => true, MAX_LINE, { axis: "j" })!;
+    expect(route[0]).toEqual({ i: 0, j: 1 });
+  });
+  it("bends once round a hill rather than climbing it in a staircase", () => {
+    // A block across the L's corner: the way round is a longer L, not a diagonal of one-cell steps.
+    const hill = (c: Cell) => c.i >= 2 && c.i <= 4 && c.j >= 0 && c.j <= 2;
+    const route = routePath({ i: 0, j: 0 }, { i: 6, j: 3 }, c => !hill(c) && c.j >= -1 && c.j <= 5 && c.i >= -1 && c.i <= 7, MAX_LINE)!;
+    expect(route[route.length - 1]).toEqual({ i: 6, j: 3 });
+    let turns = 0, dir = "";
+    let prev = { i: 0, j: 0 };
+    for (const c of route) { const d = c.i !== prev.i ? "i" : "j"; if (dir && d !== dir) turns++; dir = d; prev = c; }
+    expect(turns).toBeLessThanOrEqual(2);
+  });
   it("takes the cheaper way round when the L is blocked", () => {
     const blocked = (c: Cell) => c.i === 3 && c.j === 0;
     const route = routePath({ i: 0, j: 0 }, { i: 6, j: 0 }, c => !blocked(c) && c.j >= 0 && c.j <= 2, MAX_LINE, { cost: c => (c.j === 0 ? 10 : 1) })!;

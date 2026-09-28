@@ -1017,3 +1017,23 @@ Round 2 (the same tester, after those fixes; one export) confirmed the fixes and
 - `__tidewater.world.export(face)` returns a sea's export JSON for testers whose browser drops downloads.
 - Not bugs: the "hut stacked on the market" had no overlapping footprints in the export (the hut stood beside
   it); the second fish market that never sold was simply off the street — the fade now says so.
+
+Grady's own pass (2026-09-28, by mouse) found what the scripted tester could not:
+
+- **The painted drag laid staircases.** The run followed the pointer's track cell by cell, so a diagonal hand
+  made a diagonal of one-cell steps, each with rails on its two open sides — rails "in the middle of the path",
+  and stairs at every wobble. A drag is now one street from where it began to the pointer: straight, or one
+  bend after the leg the pointer left the start cell on (`Placement.lineAxis`), recomputed from the start on
+  every move; another bend is another drag from the end of the first (the route leaves from beside an occupied
+  cell). Where the L is blocked, `routePath` runs Dijkstra over (cell, heading) with a turn cost
+  (`RouteOptions.turnCost`, 2) on a binary heap, so the way round a hill has one bend, not a staircase.
+- **The gap at the pier, at last.** Street tools pick the terrain under the pointer, and over water the seabed
+  lies two metres below the deck, so a drag begun on the pier began three cells past it (both blind rounds
+  and Grady saw the gap). `pickCell` now takes the deck plane wherever the ground under the hit is below the
+  tide.
+- **A path's ghost was buried.** Ground pieces' ghosts (the dragged run's cells and the single ghost) now sit on
+  the rendered ground (`view/ground`), which on a slope stands above the cell's own height.
+- The achievement toast sat on the walkthrough; it now rises above the speed bar.
+- "Backwards stairs": the treads are built by the lower deck and climb toward the shared edge, which the code and
+  a side view confirm; the stairs Grady saw were on the staircase-laid cells. If one still reads backwards after
+  this build, a close-up with the tide clock in frame is the thing to send.
