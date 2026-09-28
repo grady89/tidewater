@@ -52,7 +52,7 @@ import { Wildlife } from "./view/wildlife";
 import { computeLighting, createLights, dayFraction, duskAt, Lighting, MORNING } from "./world/lighting";
 import { createSky } from "./world/sky";
 import { createTerrain } from "./world/terrain";
-import { createWater } from "./world/water";
+import { createWater, FOG_FAR, FOG_NEAR } from "./world/water";
 
 const SEED = 1;
 const bootStart = performance.now();
@@ -278,13 +278,71 @@ const worldUi = new WorldUi(worldRoot, {
     if (json && m) download(`tinytides-${m.name.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.json`, json);
   },
   importFile: (file, face) => { void importSectorFile(file, face); },
+  preview: (face, seed, biome) => world.setPreview(face, seed, biome),
   defaultName: () => defaultName(store),
 });
-/** The framing the island shows first: the town's centroid at frameTown's distance (docs/globe/hero.md). */
+/** The framing the island shows first: the town's centroid at Home's distance (docs/globe/hero.md). */
 function townFraming(): Framing {
   let x = 0, z = 0, n = 0;
   for (const b of Object.values(state.buildings)) for (const c of b.cells) { x += c.i + 0.5; z += c.j + 0.5; n++; }
-  return { cx: n ? x / n : 0, cz: n ? z / n : 0, targetY: 0.6, radius: 22, alpha: -0.8, beta: 0.95 };
+  return { cx: n ? x / n : 0, cz: n ? z / n : 0, targetY: 0.6, radius: LANDING_DIST, alpha: -0.8, beta: 0.95 };
+}
+
+// ---------- the hand-over between the World and the island ----------
+// A dive and a return are one camera path, the World's flight. While the town is near, the island's own camera
+// stands where the flight camera stands (in the face's frame), and the two scenes are dissolved into each other
+// across HANDOVER_FAR..HANDOVER_NEAR of distance to the town: the World is drawn and copied into the veil (a 2D
+// canvas over the game canvas), then the island is drawn under it. The coarse miniature never fills the screen,
+// and nothing cuts. Reduced motion and `instant` keep the cuts.
+const LANDING_DIST = 30;
+const HANDOVER_FAR = 90, HANDOVER_NEAR = 40;
+const DIVE_SECONDS = 1.8, RETURN_SECONDS = 1.6;
+const veil = document.createElement("canvas");
+veil.id = "veil";
+veil.hidden = true;
+canvas.after(veil);
+const veilCtx = veil.getContext("2d")!;
+let handover: { face: number; worldShare: number } | null = null;
+
+/** One frame of a dive or a return: the flight moves on, and the scenes its distance to the town calls for are drawn. */
+function handoverFrame(dt: number): void {
+  const h = handover!;
+  world.stepFlight();
+  const pose = world.flightInFace(h.face);
+  const rel = pose ? pose.position.subtract(pose.target) : null;
+  const d = rel ? rel.length() : Infinity;
+  const w = smoothstep(HANDOVER_NEAR, HANDOVER_FAR, d); // the World's share of the picture
+  h.worldShare = w;
+  if (w > 0) world.render(dt);
+  if (w >= 1 || !pose || !rel) { veil.hidden = true; return; }
+  if (w > 0) {
+    if (veil.width !== canvas.width || veil.height !== canvas.height) { veil.width = canvas.width; veil.height = canvas.height; }
+    veilCtx.clearRect(0, 0, veil.width, veil.height);
+    veilCtx.drawImage(canvas, 0, 0);
+    veil.style.opacity = String(w);
+    veil.hidden = false;
+  } else veil.hidden = true;
+  cameraControl.follow(pose.target.x, pose.target.z, d, Math.atan2(rel.z, rel.x), Math.acos(Math.max(-1, Math.min(1, rel.y / d))));
+  // The island's fog is set for a camera at play distances; further out it would wash the island out against the
+  // miniature it is dissolving with, so it is pushed back by the extra distance, and is exactly itself on landing.
+  setIslandFog(Math.max(0, d - LANDING_DIST));
+  syncView();
+  scene.render();
+}
+function setIslandFog(extra: number): void {
+  terrain.material.setFloat("fogNear", FOG_NEAR + extra).setFloat("fogFar", FOG_FAR + extra);
+  water.material.setFloat("fogNear", FOG_NEAR + extra).setFloat("fogFar", FOG_FAR + extra);
+}
+/** The island's HUD fades in as the dive lands (it was hidden with the World up). */
+function arrive(): void {
+  document.body.classList.remove("arriving");
+  void document.body.offsetWidth;
+  document.body.classList.add("arriving");
+  window.setTimeout(() => document.body.classList.remove("arriving"), 600);
+}
+function smoothstep(a: number, b: number, x: number): number {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
 }
 function islandFraming(): Framing {
   const p = cameraControl.pose;
@@ -325,12 +383,13 @@ async function enterSector(face: number, opts: { instant?: boolean } = {}): Prom
     const framing = townFraming();
     const instant = !!opts.instant || reducedMotion();
     worldRoot.classList.add("fading");
-    await world.flyTo(face, framing, instant ? 0 : 1.4);
+    if (!instant) handover = { face, worldShare: 1 };
+    try { await world.flyTo(face, framing, instant ? 0 : DIVE_SECONDS); } finally { handover = null; veil.hidden = true; setIslandFog(0); }
     cameraControl.jumpTo(framing.cx, framing.cz, framing.radius, framing.alpha, framing.beta);
     showIsland();
+    if (!instant) arrive();
     worldRoot.classList.remove("fading");
     syncView();
-    if (!instant) cameraControl.settle(30);
     save();
   };
   transition = run();
@@ -346,9 +405,12 @@ async function returnToWorld(opts: { instant?: boolean } = {}): Promise<boolean>
   const run = async () => {
     if (!homeless) { save(); refreshFace(face); }
     const framing = islandFraming();
+    const instant = homeless || !!opts.instant || reducedMotion();
     showWorld();
     worldUi.hideCard();
-    await world.flyBack(face, framing, homeless || opts.instant || reducedMotion() ? 0 : 1.2);
+    if (!instant) { handover = { face, worldShare: 0 }; worldRoot.classList.add("fading"); }
+    try { await world.flyBack(face, framing, instant ? 0 : RETURN_SECONDS); } finally { handover = null; veil.hidden = true; setIslandFog(0); worldRoot.classList.remove("fading"); }
+    cameraControl.jumpTo(framing.cx, framing.cz, framing.radius, framing.alpha, framing.beta); // the island's camera as the player left it
     worldUi.showCard(face, faceMeta(face));
   };
   transition = run();
@@ -405,7 +467,7 @@ const worldPointerEnd = (e: PointerEvent) => {
 };
 canvas.addEventListener("pointerup", worldPointerEnd);
 canvas.addEventListener("pointercancel", worldPointerEnd);
-canvas.addEventListener("pointerleave", () => { if (mode === "world" && !worldDown) { world.setHover(null); canvas.classList.remove("hovering"); hoverCandidate = null; } });
+canvas.addEventListener("pointerleave", () => { if (mode === "world" && !worldDown && !transition) { world.setHover(null); canvas.classList.remove("hovering"); hoverCandidate = null; } });
 
 // ---------- quality presets ----------
 // Remembered in localStorage; on the first launch a PROBE_SECONDS frame-rate probe at High picks one.
@@ -539,6 +601,11 @@ function syncView(): void {
 let cardAfterEntrance: number | null = null;
 engine.runRenderLoop(() => {
   const realDt = Math.min(engine.getDeltaTime() / 1000, 0.1);
+  if (handover) {
+    handoverFrame(realDt);
+    if (probe) probeFrame();
+    return;
+  }
   if (mode === "world") {
     world.setSelected(worldUi.shownFace);
     world.render(realDt);
@@ -797,6 +864,9 @@ const api = {
     front: () => world.frontFace,
     shownCard: () => worldUi.shownFace,
     pose: () => world.pose,
+    /** Hold a running dive or return at a fraction of its time (null lets it run on); the hand-over as it stands. */
+    holdFlight: (u: number | null) => world.holdFlight(u),
+    handover: () => (handover ? { ...handover, veil: !veil.hidden } : null),
     drawCalls: () => world.drawCalls,
     entranceDone: () => world.entranceDone,
     reducedMotion: () => reducedMotion(),
@@ -804,6 +874,69 @@ const api = {
     setReducedMotion: (on: boolean | null) => { reducedOverride = on; },
     /** Faces that show a miniature, with how many roof instances each carries. */
     miniatures: () => world.faces.map(f => ({ face: f.face.index, built: !!f.record, roofs: f.roofs.reduce((n, m) => n + m.thinInstanceCount, 0), level: f.water.position.y })),
+    /** The seed preview on an empty face's card: which face, seed and coast, and whether its ground is up. */
+    preview: () => { const p = world.previewing; return p ? { ...p, ground: !!world.faces[p.face].terrain, surfaced: world.faces[p.face].surfaced } : null; },
+    /** Each face's terminator shade (1 lit, down to the floor turned away) and hover lift. */
+    faceLight: () => world.faceLight,
+    /** The stage as rendered: the mean colour of a strip along the top and of one beside the globe at its height (0–255), and the stars. */
+    async stage() {
+      const W = engine.getRenderWidth(), H = engine.getRenderHeight();
+      const read = (x: number, y: number, w: number, h: number) => new Promise<number[]>(res => world.scene.onAfterRenderObservable.addOnce(() => { void engine.readPixels(Math.round(x * W), Math.round(H - (y + h) * H), Math.round(w * W), Math.round(h * H)).then(px => { const a = px as Uint8Array; const s = [0, 0, 0]; for (let i = 0; i < a.length; i += 4) { s[0] += a[i]; s[1] += a[i + 1]; s[2] += a[i + 2]; } const n = a.length / 4; res(s.map(v => Math.round(v / n))); }); }));
+      const top = await read(0.3, 0.02, 0.4, 0.04);
+      const side = await read(0.02, 0.47, 0.1, 0.06);
+      return { top, side, stars: world.starCount };
+    },
+    /** The clouds over a face: how many, the most opaque of them and of the rest, their mean radius. */
+    clouds: (face: number) => world.cloudProbe(face),
+    /**
+     * The coast of a face's miniature as rendered. Pixels around the face's centre are classed sea (water, foam, or
+     * flats seen through the water: sand hues darker than 0.68), sand (sand hues, lit and dry), green; then every
+     * row and column is walked for runs of sand with sea on one side and green on the other. Returns how many such
+     * runs there are and their median width in CSS pixels — the sand band between the foam and the green.
+     */
+    async coast(face: number, halfPx = 120) {
+      const c = api.world.screenOf(face);
+      const k = engine.getHardwareScalingLevel();
+      const r = canvas.getBoundingClientRect();
+      const W = engine.getRenderWidth(), H = engine.getRenderHeight();
+      const half = Math.round(halfPx / k);
+      const cx = Math.round((c.x - r.left) / k), cy = Math.round((c.y - r.top) / k);
+      const x0 = Math.max(0, cx - half), x1 = Math.min(W, cx + half), yTop = Math.max(0, cy - half), yBot = Math.min(H, cy + half);
+      const w = x1 - x0, h = yBot - yTop;
+      const px = await new Promise<ArrayBufferView>(res => world.scene.onAfterRenderObservable.addOnce(() => { void engine.readPixels(x0, H - yBot, w, h).then(res); }));
+      const a = px as Uint8Array;
+      const SEA = 1, SAND = 2, GREEN = 3;
+      const cls = new Uint8Array(w * h);
+      let sand = 0, green = 0, sea = 0;
+      for (let i = 0; i < w * h; i++) {
+        const R = a[i * 4] / 255, G = a[i * 4 + 1] / 255, B = a[i * 4 + 2] / 255;
+        const mx = Math.max(R, G, B), mn = Math.min(R, G, B), v = mx, s = mx > 0 ? (mx - mn) / mx : 0;
+        let hue = 0;
+        if (mx > mn) { if (mx === R) hue = 60 * (((G - B) / (mx - mn)) % 6); else if (mx === G) hue = 60 * ((B - R) / (mx - mn) + 2); else hue = 60 * ((R - G) / (mx - mn) + 4); }
+        if (hue < 0) hue += 360;
+        const sandHue = hue >= 20 && hue <= 62 && s >= 0.12;
+        const cl = sandHue && v >= 0.68 && s <= 0.55 ? SAND : sandHue ? SEA : hue > 65 && hue < 165 && s > 0.15 && v > 0.2 ? GREEN : (s < 0.12 && v > 0.75) || (hue >= 170 && hue <= 240 && s > 0.12) ? SEA : 0;
+        cls[i] = cl;
+        if (cl === SAND) sand++; else if (cl === GREEN) green++; else if (cl === SEA) sea++;
+      }
+      // Runs of sand along rows and columns, bounded by sea on one side and green on the other.
+      const widths: number[] = [];
+      const walk = (len: number, at: (t: number) => number) => {
+        let t = 0;
+        while (t < len) {
+          if (at(t) !== SAND) { t++; continue; }
+          const from = t;
+          while (t < len && at(t) === SAND) t++;
+          const before = from > 0 ? at(from - 1) : 0, after = t < len ? at(t) : 0;
+          if ((before === SEA && after === GREEN) || (before === GREEN && after === SEA)) widths.push((t - from) * k);
+        }
+      };
+      for (let y = 0; y < h; y++) walk(w, x => cls[y * w + x]);
+      for (let x = 0; x < w; x++) walk(h, y => cls[y * w + x]);
+      widths.sort((p, q) => p - q);
+      const median = widths.length ? widths[Math.floor(widths.length / 2)] : 0;
+      return { sand, green, sea, runs: widths.length, median, box: [x0, yTop, w, h] };
+    },
     lookAt: (face: number) => world.lookAt(face, true),
     hoverFace: (face: number | null) => { world.setHover(face); if (face !== null) worldUi.showCard(face, faceMeta(face)); },
     migrated: () => migrated.map(m => m.name),

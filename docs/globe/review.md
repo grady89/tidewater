@@ -54,12 +54,13 @@ face turned from the sun, the dive at 0.35 / 0.8 / 1.25 s, the island after the 
 
 - **Entrance**: the rise from −60 over 1.6 s, the fog pulling out, the swell settling 3 → 1, built seas
   surfacing 0.25 s apart, last played last. At t = 0 the frame is the empty horizon; the globe comes up out of it.
-- **Dive**: 1.4 s flight (inOutCubic) from the orbit to the pose that equals the island's frameTown framing in
-  the face's frame; the cut lands the island camera at radius 22, yaw −0.8, beta 0.95 and it settles to 30. The
-  settle uses the camera's own easing (~0.3 s), not the 0.8 s motion.md planned; it reads as an arrival and is
-  kept. At the end of the flight the miniature is blocky for a few frames before the cut — accepted.
-- **Return**: the island camera's pose mapped into the face's frame, 1.2 s back to the remembered orbit, the
-  card back on the sea.
+- **Dive**: 1.8 s from the orbit to the town framing at radius 30 in the face's frame. The first build flew all the
+  way down to radius 22 over the miniature and cut to the island there, which Grady saw as blocky and then a
+  sudden flip to the real island; the miniature's 2-unit cells cannot hold up at that distance. Now the island's
+  camera shadows the flight from 90 units out and the scenes dissolve by 40 (shots/globe/dive-handover.png is
+  held halfway), and the flight lands at Home's distance with no settle.
+- **Return**: the same path out from wherever the island's camera is, 1.6 s, the dissolve the other way
+  (shots/globe/return-handover.png), the card back on the sea.
 - **Reduced motion**: cuts (78 / 22 ms in the smoke), no drift, no rise, hover without easing.
 - **Keyboard**: arrows step 0.4 rad, Enter opens the front face's card and dives, Escape hides the card on the
   World and returns from the island's top level (a change from the Town menu opening there; the speed bar's
@@ -71,14 +72,50 @@ face turned from the sun, the dive at 0.35 / 0.8 / 1.25 s, the island after the 
 - **Composition offset** (hero.md: the target 12 units left on wide screens): not needed — at 1280 wide the card
   clears the globe; the globe stays centred.
 
+## Polish two (2026-09-28)
+
+Grady's brief: light the miniatures with the face's sun and give their coast a sand band; smaller, whiter clouds
+in two bands on an atmosphere; a dusk stage with a glow and stars; a gentle terminator; the seed preview and a
+hover lift that reads. Found by looking, with the probes added for it (`api.world.coast`, `stage`, `clouds`,
+`faceLight`, `preview`):
+
+1. **The islands were nearly black by day.** One world sun lit every face, and at 11:00 (the smoke's clock) it
+   stood behind the globe, so the faces in view got the shaders' ambient only. Each face now has its own sun
+   (the island's, in its frame) and a fixed stage light drives only a gentle terminator (decisions #18–19).
+2. **No sand at high tide.** A miniature at high water shows its flats under the sea (brown through it) and grass
+   straight at the water line. `coastLift` lifts the bands on the miniature so dry sand runs 0.45 above its water
+   line (decision #22). The probe separates dry sand (sand hues, value ≥ 0.68) from flats seen through water.
+3. **The atmosphere was opaque.** Babylon adds its opacity fresnel to the material's alpha; at alpha 1 the shell
+   hid the globe. Alpha ~0 and a limb-only fresnel (decision #21).
+4. **A crease across the stage.** The sky shader's gradient turned to the camera drew a line at the globe's height
+   (pow(h, 0.4) is clamped at its horizon) and its stars were squares; the stage is a vertex-coloured dome with
+   instanced stars (decision #20).
+
+Checked and kept: the dive and the return pass through the atmosphere and the clouds without a flash (both fade
+under 150 / 175 units); the preview is replaced by the real miniature when the sea is founded; hovering across
+empty faces rebuilds a preview each time (an island is 3–9 ms, a miniature one ground mesh).
+
+| What | Value |
+|---|---|
+| Sand band on the smoke's sea (seed 0) | median 4 CSS px, 101 runs between sea and green |
+| Stage (top strip · beside the globe), RGB | (26, 32, 67) · (52, 42, 92); 420 stars |
+| Clouds | 18, mean radius 86.9 (the shell is 86.3); over the selected face 0.2, elsewhere 1 |
+| Terminator | shade 0.62 on the faces turned away, 1 toward the stage light |
+| Hover lift | 5 units |
+| Draw calls | 17 empty · 42 with twelve towns (was 15 · 39: the stage, the atmosphere, the stars) |
+| Frame rate with twelve towns | 165 fps (the display cap) |
+| Boot into the World | 527 ms empty · 611 ms with twelve towns |
+| Heap after 20 round trips | +1.4 % after GC (78.7 → 79.8 MB) |
+
 ## Open
 
 - **Touch**: pinch and tap go through Babylon's ArcRotateCamera inputs and the click path; unverified headless.
 - **Only Tidewater exists**; the other biomes are shown uncharted and unselectable. `BAND_GATING` is off.
 - **The miniature roofs** are three thin-instanced primitives 1.2 units wide; up close (the last frames of a
   dive) they are boxes. Fine at the orbit.
-- **The below-horizon sky** by day is the study's horizon colour; the tilt shows the blue above it. If the World
-  ever wants its own backdrop that is a new uniform on the sky shader (a below-horizon colour), not a rewrite.
+- **The below-horizon sky**: superseded by the stage dome (polish two, decision #20).
+- **The terminator is a stage effect**, not the clock's: a player who wants "the night side where it is night"
+  would need the sun direction back on the clock (decision #19), which puts the dark side in front at midday.
 
 ## Numbers (smoke, RTX 4060 laptop, headless Chrome)
 
@@ -87,6 +124,6 @@ face turned from the sun, the dive at 0.35 / 0.8 / 1.25 s, the island after the 
 | Boot into the World | 393 ms empty · 558 ms with twelve towns · 325 ms with the 300-building town |
 | Draw calls | 15 empty · 39 with twelve one-hut towns · at most 63 (a miniature and three roof meshes per face) |
 | Frame rate | 165 fps (the display cap) with twelve towns |
-| Dive / return | 1416 ms / 1200 ms; 78 / 22 ms with reduced motion |
+| Dive / return | 1922 ms / 1627 ms (the dissolve 443 ms over 70 frames head-on); 81 / 25 ms with reduced motion |
 | Heap after 20 round trips (3 seas, after GC) | −1.4 % (69.6 → 68.7 MB) |
 | Twelve sectors in localStorage | 25 keys; twelve fresh towns 20 k UTF-16 units; twelve 300-building towns < 2.6 M packed |

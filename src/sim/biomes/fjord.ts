@@ -19,6 +19,8 @@ import type { Grid } from "../grid";
 const HEAD_Z = -12;
 const CHANNEL_HALF = 3.2, BANK_TOP = 6.5, CREST_X = 12.5, OUTER_SHORE = 19.5;
 const CHANNEL_DEPTH = -3.6, CREST_HEIGHT = 5.1;
+/** The col behind the head (how far the valley climbs above the flats) and the back shore's fall to deep water. */
+const COL_RISE = 3.0, BACK_FALL_FROM = -21.5, BACK_FALL_TO = -30.5;
 const TREE_COUNT = 150;
 
 /** The Fjord's heightfield for one noise seed: a cross-section in |x| swept along z, the channel filling at the head. */
@@ -46,8 +48,11 @@ export function fjordHeight(seed: number): HeightFn {
     // Noise on the ridges and the head, not in the channel.
     const land = smooth(chHalf + 0.5, BANK_TOP + 1, xr) * (1 - headT) + headT;
     h += ledge + n * land * (0.35 + 0.65 * smooth(BANK_TOP, crestX, xr)) + detail;
-    // The head's back wall: the valley climbs to a col at the top edge; the mouth opens to the sea; the flanks fall away.
-    h += 5.5 * smooth(HEAD_Z - 9, -31, z) * headT;
+    // Behind the head the valley climbs to a col between the ridges, then the whole island falls to the sea well
+    // inside the square, so the back is a shore like the flanks and the mouth, never a cliff cut off at the edge.
+    h += COL_RISE * smooth(HEAD_Z - 8, HEAD_Z - 12, z) * headT * (1 - smooth(BANK_TOP, crestX, xr));
+    const back = smooth(BACK_FALL_FROM, BACK_FALL_TO, z);
+    h = h * (1 - back) - 4 * back;
     const mouth = smooth(23, 30, z) * (xr > chHalf ? 1 : 0);
     h = h * (1 - mouth) - 4 * mouth;
     const flank = smooth(OUTER_SHORE, OUTER_SHORE + 4, xr);

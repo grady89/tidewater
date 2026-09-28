@@ -4,7 +4,9 @@
 // bands so the World's tilted miniatures are coloured as if flat; and `fogNear`/`fogFar` in place of the fog
 // literals (45, 140), with the same defaults. The biomes (docs/biomes) turned the five band colours into uniforms with the
 // study's values as defaults, and added three terms after the bands: snow above `snowLine` (999 = never), a
-// per-material tint read from the height texture's blue channel (0 = none), both additive. The colour math is verbatim.
+// per-material tint read from the height texture's blue channel (0 = none), both additive. The World (docs/globe)
+// added `coastLift` (0 = the island): it raises the band mapping so a miniature's beach clears its water line.
+// The colour math is verbatim.
 import { COMMON } from "./common";
 
 export const terrainVS = `
@@ -25,11 +27,12 @@ export const terrainFS = COMMON + `
     uniform float snowLine; uniform vec3 snowColor;       // snow above the line (999 = never)
     uniform sampler2D heightTex; uniform vec3 matTints[9]; uniform float matMix[9]; // per-material tint, code in the blue channel
     uniform float tideScale;                                // the biome's tide multiplier: the bands follow the water line
+    uniform float coastLift;                                // the World: lifts the bands so a miniature's sand shows (0 = the island)
     void main(){
       if (vW.y < clipY) discard;
       vec3 L = (frame * vec4(vW, 1.0)).xyz;
       vec3 LN = normalize((frame * vec4(vN, 0.0)).xyz);
-      float y = L.y / tideScale;
+      float y = (L.y - coastLift) / tideScale;
       vec3 col = mix(sandDeep, sand, smoothstep(-1.2, 0.0, y));
       col = mix(col, grassLo, smoothstep(0.55, 0.95, y));
       col = mix(col, grassHi, smoothstep(1.4, 3.2, y));

@@ -12,7 +12,12 @@ export interface WorldUiHooks {
   exportSector(face: number): void;
   importFile(file: File, face: number | null): void;
   defaultName(): string;
+  /** Preview the island a seed would make on an empty face (null clears it). */
+  preview(face: number | null, seed: number, biome: Biome): void;
 }
+
+/** How long the seed field must rest before the preview follows it (typing a number is several changes). */
+const PREVIEW_DEBOUNCE_MS = 150;
 
 export class WorldUi {
   private readonly card: HTMLElement;
@@ -22,6 +27,7 @@ export class WorldUi {
   private seedValue = "";
   private nameValue = "";
   private biomeValue: Biome = "tidewater";
+  private previewTimer = 0;
 
   constructor(private readonly root: HTMLElement, private readonly hooks: WorldUiHooks) {
     root.innerHTML = `
@@ -61,6 +67,7 @@ export class WorldUi {
       this.card.querySelector(".rename")!.addEventListener("click", () => this.hooks.rename(face));
       this.card.querySelector(".export")!.addEventListener("click", () => this.hooks.exportSector(face));
       this.card.querySelector(".delete")!.addEventListener("click", () => this.hooks.remove(face));
+      this.previewNow(null);
       if (!same) this.reveal();
       return;
     }
@@ -75,25 +82,41 @@ export class WorldUi {
       <div class="card-actions"><button type="button" class="begin primary">Begin</button></div>`;
     const seed = this.card.querySelector<HTMLInputElement>(".seed")!, name = this.card.querySelector<HTMLInputElement>(".name")!;
     seed.value = this.seedValue; name.value = this.nameValue;
-    seed.addEventListener("input", () => { this.seedValue = seed.value; });
+    seed.addEventListener("input", () => { this.seedValue = seed.value; this.previewSoon(face); });
     name.addEventListener("input", () => { this.nameValue = name.value; });
     for (const el of [seed, name]) el.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); this.begin(face); } });
-    this.card.querySelector(".random")!.addEventListener("click", () => { seed.value = String(Math.floor(Math.random() * 999999) + 1); this.seedValue = seed.value; });
+    this.card.querySelector(".random")!.addEventListener("click", () => { seed.value = String(Math.floor(Math.random() * 999999) + 1); this.seedValue = seed.value; this.previewNow(face); });
     const blurb = this.card.querySelector<HTMLElement>(".biome-blurb")!;
     blurb.textContent = biomeBlurb(this.biomeValue);
     for (const b of this.card.querySelectorAll<HTMLButtonElement>(".biome")) {
       b.classList.toggle("active", b.dataset.biome === this.biomeValue);
-      b.addEventListener("click", () => { this.biomeValue = b.dataset.biome as Biome; blurb.textContent = biomeBlurb(this.biomeValue); for (const o of this.card.querySelectorAll(".biome")) o.classList.toggle("active", o === b); });
+      b.addEventListener("click", () => { this.biomeValue = b.dataset.biome as Biome; blurb.textContent = biomeBlurb(this.biomeValue); for (const o of this.card.querySelectorAll(".biome")) o.classList.toggle("active", o === b); this.previewNow(face); });
     }
     this.card.querySelector(".begin")!.addEventListener("click", () => this.begin(face));
+    this.previewNow(face);
     if (!same) this.reveal();
+  }
+
+  /** The seed field as a seed: a whole number from 0, else 0 (what Begin would use). */
+  private get seedNumber(): number {
+    const n = Math.floor(Number(this.seedValue));
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  }
+
+  /** Show the island for the card's seed and coast on `face` now (null clears any preview). */
+  private previewNow(face: number | null): void {
+    clearTimeout(this.previewTimer);
+    this.hooks.preview(face, this.seedNumber, this.biomeValue);
+  }
+
+  private previewSoon(face: number): void {
+    clearTimeout(this.previewTimer);
+    this.previewTimer = window.setTimeout(() => { if (this.shown === face && !this.shownBuilt) this.hooks.preview(face, this.seedNumber, this.biomeValue); }, PREVIEW_DEBOUNCE_MS);
   }
 
   /** Begin from the new-sector card (the Enter key lands here too). */
   begin(face: number): void {
-    const n = Math.floor(Number(this.seedValue));
-    const seed = Number.isFinite(n) && n >= 0 ? n : 0;
-    this.hooks.begin(face, seed, this.biomeValue, this.nameValue.trim() || this.hooks.defaultName());
+    this.hooks.begin(face, this.seedNumber, this.biomeValue, this.nameValue.trim() || this.hooks.defaultName());
   }
 
   private reveal(): void {
@@ -105,6 +128,7 @@ export class WorldUi {
   hideCard(): void {
     this.card.hidden = true;
     this.shown = null;
+    this.previewNow(null);
   }
 
   /** A line above the hint (migration, import results); empty hides it. */

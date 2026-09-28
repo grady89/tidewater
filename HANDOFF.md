@@ -62,7 +62,7 @@ screenOf, migrated, setClock, clock, setNotice, scene).
 | View | `src/view/` | Every asset rebuilt from `reference/` sheets: buildings from a small kit (gable/hip roofs, shuttered windows, blue doors, railings, lanterns…) merged per 8×8 chunk; thin instances for trees (three-tier conifers), walkers (hat, tunic, basket for porters), boats (with net floats while fishing), gulls with flapping wings, crabs, lanterns, fins, flames, smoke; the trade ship and the ferry. Reads the ledger, writes nothing. |
 | World | `src/world/`, `shaders/` | The study's terrain/water/sky. Additions are uniforms and additive terms only: storm swell, tsunami crest, reflection (`reflectMix`), caustics, terrain `clipY` for the mirror pass, sky moon/stars. One fix to the study: the horizon clamp. Terrain keeps a height grid (landfill raises it) and exposes `heightAt`, which every prop uses through `view/ground.ts`. |
 | UI | `src/ui/` | Resource bar, build menu (7 tabs incl. Land), tide clock, ledger line, order-planks and borrow buttons, info panel (district, "fishing N cells out"), notifications, 6-step walkthrough card that pulses the tab and tool, achievement popup, speed bar with mute, reflections and Quality…, Town menu (the sea's name and the World button, island seed field + Random, new town behind an in-page confirm, the opt-in playtest log with notes and a JSON export), settings panel (High / Medium / Low, probe-chosen at first launch), in-page dialogs (`ui/dialog.ts`). |
-| The World | `src/globe/`, `sim/sectors.ts`, `sim/compress.ts`, `view/roofs.ts` | The game launches into a floating dodecahedron of twelve seas ("Tiny Tides" on its title): each face is the water shader on its own frame with its own heightmap; a built face carries a miniature of its real island (terrain shader, roofs as thin instances coloured from the real buildings, water at the real tide); empty faces are misted sea. Drag with inertia, idle drift, hover lifts a face and opens its card, click or Enter dives (a 1.4 s camera flight that lands on the island's own framing), Escape or the Town menu's World button returns. Twelve sectors in localStorage (LZW-packed), rename / delete / export / import, the old autosave and slots migrated once. docs/globe/ has the design, decisions, review and audit. |
+| The World | `src/globe/`, `sim/sectors.ts`, `sim/compress.ts`, `view/roofs.ts` | The game launches into a floating dodecahedron of twelve seas ("Tiny Tides" on its title): each face is the water shader on its own frame with its own heightmap; a built face carries a miniature of its real island (terrain shader, roofs as thin instances coloured from the real buildings, water at the real tide); empty faces are misted sea. Drag with inertia, idle drift, hover lifts a face and opens its card, click or Enter dives (a 1.8 s camera flight on which the island's own camera takes over and the two scenes dissolve into each other), Escape or the Town menu's World button returns. Twelve sectors in localStorage (LZW-packed), rename / delete / export / import, the old autosave and slots migrated once. docs/globe/ has the design, decisions, review and audit. |
 | Audio | `view/audio.ts` | Procedural only: surf, shift bell, tsunami thrum, a breathing pad, gull cries scaled by the flock, shipyard hammering. |
 | Tests | `test/` | 86 sim-only checks in eight topic files (`sim`, `economy`, `fields`, `fire`, `town`, `world`, `sectors`, `globe` `.test.ts`) plus `fuzz.test.ts` and `playtest.test.ts`; `scenario.ts` (shared scripted towns); `smoke.ts` (launches into the World, then every milestone, then the World's checks); the QA tools `fuzz.ts` (+ `fuzzCore.ts`, `fuzzWorker.ts`), `monkey.ts`, `quality.ts`, `deploycheck.ts`. ARCHITECTURE.md maps the modules, the tick and the World. |
 
@@ -72,7 +72,7 @@ screenOf, migrated, setClock, clock, setNotice, scene).
   with reflections on every frame and the World with twelve towns. A 300-building town reloads in ~0.5 s to the
   World and cuts into the island in ~0.6 s more. **Integrated graphics still unmeasured.**
 - The World: boot 0.4 s empty / 0.56 s with twelve towns; 15 draw calls empty, 39 with twelve one-hut towns
-  (63 at most); dive 1.4 s, return 1.2 s; twenty World → sea → World round trips leave the JS heap where it was
+  (63 at most); dive 1.8 s, return 1.6 s; twenty World → sea → World round trips leave the JS heap where it was
   (−1.4 % after GC). Twelve 300-building towns pack to under 2.6 M UTF-16 units of localStorage (8 MB plain).
   On the software renderer (`npm run quality`, SwiftShader) the World runs 18 / 18.5 / 23.6 fps at High /
   Medium / Low against the island's 14 / 12 / 14 — lighter than the island, still under 30 there.
@@ -107,8 +107,8 @@ screenOf, migrated, setClock, clock, setNotice, scene).
 What it is: the game opens on a dodecahedron of twelve seas floating in the island's own sky; each face is a
 sea, a built one shows a miniature of its town's real island, and diving into one is a camera flight that hands
 over to the resident island scene at the same framing. Read docs/globe/direction.md → experience.md → hero.md
-→ motion.md for the design, decisions.md for what the brief left open (15 items), review.md for what the
-frame-by-frame pass found and fixed, audit.md for the launch checklist, PROGRESS.md for the ledger.
+→ motion.md for the design, decisions.md for what the briefs left open (24 items), review.md for what the
+frame-by-frame pass found and fixed (and "Polish two"), audit.md for the launch checklist, PROGRESS.md for the ledger.
 
 How it is built (ARCHITECTURE.md "The World" has the detail): a second Babylon `Scene` on the one engine;
 `main.ts` owns `mode`, hides the island's DOM with `body[data-mode]`, and skips the island's loop/tick/autosave
@@ -123,8 +123,16 @@ What to know:
   listed "uncharted" and disabled. `BAND_GATING` (config.ts, off) confines each coast to its band when on.
 - **Escape at the island's top level returns to the World** (it used to open the Town menu; the speed bar's
   Town… still does, and the menu has the World button). Every dialog is in-page (`ui/dialog.ts`).
-- **The sun follows the player's clock** (06:00 dawn, 12:00 noon, 18:00 sunset); the World has a moonlit floor
-  at night. `world.setClock(hours)` pins it for shots.
+- **Polish two (2026-09-28)**: the globe stands on a dusk stage (a vertex-coloured dome: navy above, indigo at
+  the globe's height, a lavender glow behind it, instanced stars) inside a fresnel atmosphere shell that carries
+  15–20 small white clouds in two bands; a cloud over the hovered or selected face thins to 20 %. Each face is
+  lit by its own sun (the island's, in its frame); a fixed stage light puts a gentle terminator (62 % floor) on
+  the far limb. Miniatures lift their colour bands (`coastLift`) so a sand band shows at any tide. An empty
+  face's card previews its seed's island; the hover lift is 5 units. docs/globe/review.md "Polish two" and
+  decisions #18–24 have the why; shots/globe/ has the frames (world-hover-preview.png is new).
+- **The light's colour follows the player's clock** (06:00 dawn, 12:00 noon, 18:00 sunset), and the World has a
+  moonlit floor at night; the light's direction is fixed on the stage since polish two. `world.setClock(hours)`
+  pins it for shots.
 - **Touch is untested** beyond Babylon's own pinch/drag inputs and the click path (first tap opens the card,
   second dives). **Integrated graphics unmeasured** for the World as for the island.
 - The first-launch quality probe now measures the World (that is what a first launch shows); its verdict

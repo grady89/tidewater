@@ -1,31 +1,35 @@
 // The World: a second Babylon Scene on the island's engine — a dodecahedron of twelve seas at island scale,
 // each face the game's water shader with its own heightmap, built faces carrying a miniature of their real
-// island (terrain shader, roof instances from the real buildings, water at the real tide). One sun by the
-// player's clock, the island's sky, clouds, fog. Reads sector records; writes nothing into any ledger.
-import { ArcRotateCamera, Color3, Color4, DefaultRenderingPipeline, Engine, FreeCamera, Matrix, Mesh, MeshBuilder, Quaternion, RawTexture, Scene, ShaderMaterial, StandardMaterial, Texture, TransformNode, Vector2, Vector3, VertexBuffer, VertexData } from "@babylonjs/core";
+// island (terrain shader, roof instances from the real buildings, water at the real tide). Each face is lit by its
+// own sun (the island's, by the player's clock) and dimmed by a gentle terminator away from the stage light; the
+// stage behind is a dusk gradient with a glow and stars; an atmosphere shell carries two bands of clouds. An
+// empty face whose card is open previews the island its seed would make. Reads sector records; writes nothing
+// into any ledger.
+import { ArcRotateCamera, Color3, Color4, DefaultRenderingPipeline, Engine, FreeCamera, FresnelParameters, Matrix, Mesh, MeshBuilder, Quaternion, RawTexture, Scene, ShaderMaterial, StandardMaterial, Texture, TransformNode, Vector2, Vector3, VertexBuffer, VertexData } from "@babylonjs/core";
 import { SIZE } from "../config";
 import { DUSK_MIN } from "../sim/daylight";
 import { HeightFn } from "../sim/heightfield";
-import { biomeOf } from "../sim/biomes";
+import { biomeOf, BiomeId } from "../sim/biomes";
 import { island } from "../sim/island";
 import { tidesFor } from "../sim/tides";
 import { SectorRecord } from "../sim/sectors";
+import { SimState } from "../sim/state";
 import { terrainFS, terrainVS } from "../../shaders/terrain";
 import { waterFS, waterVS } from "../../shaders/water";
 import { flatMaterial, mergeFlat, tint } from "../world/flatMesh";
 import { computeLighting, createLights, Lighting, SceneLights } from "../world/lighting";
-import { createSky, Sky } from "../world/sky";
 import { applyTerrainLook, encodeHeightInto, TERRAIN_SAMPLERS, TERRAIN_UNIFORMS } from "../world/terrain";
 import { applyWaterLook, WATER_UNIFORMS } from "../world/water";
-import { lookFor, TIDEWATER_LOOK } from "../view/biomes";
-import { clampToPentagon, EDGE, EDGES, Face, FACE_CIRCUMRADIUS, FACES, faceToward, insidePentagon, pentagonDisc, SOLID_INRADIUS, toLocal, V3 } from "./geometry";
+import { lookOf, TIDEWATER_LOOK } from "../view/biomes";
+import { clampToPentagon, EDGE, EDGES, Face, FACE_CIRCUMRADIUS, FACES, faceToward, insidePentagon, pentagonDisc, SOLID_CIRCUMRADIUS, toLocal, V3 } from "./geometry";
 import { MINI_CELLS, miniatureHeights, roofPlacements } from "./miniature";
 
 // ---------- tuning (docs/globe/motion.md) ----------
 const CAM_RADIUS = 340, CAM_MIN = 230, CAM_MAX = 420;
 const INERTIA = 0.92, WHEEL_PRECISION = 24, PINCH_PRECISION = 60;
 const IDLE_AFTER = 4, IDLE_RATE = 0.035, IDLE_RAMP = 2;
-const HOVER_LIFT = 2, HOVER_UP = 0.18, HOVER_DOWN = 0.24, HOVER_SUN = 0.2;
+/** The hovered face rises and brightens: 2 units barely read at the orbit (review.md), 5 do. */
+const HOVER_LIFT = 5, HOVER_UP = 0.18, HOVER_DOWN = 0.24, HOVER_SUN = 0.25;
 /** The globe is the thing that turns (a trackball under the pointer); the camera only zooms. */
 const SPIN_RAD_PER_PX = 0.0055, SPIN_EASE = 10, SPIN_STOP = 0.0004, SPIN_FLICK_MAX = 2.5;
 const KEY_STEP = 0.4;
@@ -41,11 +45,46 @@ const SURFACE_START = 1.2, SURFACE_EACH = 0.5, SURFACE_GAP = 0.25, SURFACE_FROM 
 /** Rings of the ocean disc: 48 puts the triangles at ~0.8 × 1.2 units, the island's own water grid density. */
 const DISC_RINGS = 48;
 const HEIGHT_TEX = 128;
-const CLOUD_COUNT: Record<string, number> = { high: 40, medium: 24, low: 8 };
-const CLOUD_RATE = 0.02;
-const CLOUD_ALPHA = 0.92, CLOUD_FADE_NEAR = 115, CLOUD_FADE_FAR = 175;
-/** How much of the sun-facing light a face turned fully from the sun keeps (shade, not night). */
-const SHADE_FLOOR = 0.55;
+// Clouds: two drifting bands on the atmosphere shell, a third of the old size, white over a grey-blue underside.
+const CLOUD_COUNT: Record<string, number> = { high: 18, medium: 18, low: 15 };
+const CLOUD_BANDS = [
+  { lat: 0.42, jitter: 0.14, tiltX: 0.2, tiltZ: 0, speed: 0.03 },
+  { lat: -0.35, jitter: 0.12, tiltX: 0, tiltZ: -0.18, speed: 0.021 },
+];
+const CLOUD_TOP = "#f4f2ec", CLOUD_UNDER = "#d9dbe0";
+const CLOUD_ALPHA = 0.97, CLOUD_FADE_NEAR = 115, CLOUD_FADE_FAR = 175;
+/** A cloud over the hovered or selected face thins to this, over about a tenth of a second. */
+const CLOUD_OVER_FACE = 0.2, CLOUD_FADE_RATE = 9;
+// The stage (docs/globe/review.md, polish two): behind the globe a dusk gradient — deep navy at the top of the
+// frame, a warmer indigo at the globe's height, a little darker below — with a soft lavender glow behind the
+// globe and a sparse field of small stars. The gradient and glow are vertex colours on a dome computed in code
+// (the island's sky shader has a crease at its horizon that showed as a line across the frame); the stars are
+// thin instances. The faces keep daylight.
+const STAGE_TOP = "#0e1633", STAGE_MID = "#33295a", STAGE_LOW = "#221c40", STAGE_GLOW = "#7d6fb0";
+/** The glow's strength at its centre (behind the globe) and its angular width (radians). */
+const STAGE_GLOW_STRENGTH = 0.45, STAGE_GLOW_WIDTH = 0.3;
+const STAGE_RADIUS = 900, STAR_COUNT = 420, STAR_RADIUS = 850, STAR_SIZE = 2.2;
+/** The stage light (toward it, world space): upper left, a little in front, so the terminator sits on the far limb. */
+const STAGE_SUN = new Vector3(-0.5, 0.62, -0.6).normalize();
+/** The terminator: a face turned from the stage light keeps this much of its light (gentle, not night). */
+const TERMINATOR_FLOOR = 0.62, TERMINATOR_FROM = -0.35, TERMINATOR_TO = 0.3;
+/** The atmosphere: a translucent shell just outside the solid, bright at the limb (fresnel), the clouds ride on it. */
+const ATMOS_R = SOLID_CIRCUMRADIUS + 5, ATMOS_COLOR = "#9cc3e6", ATMOS_RIM = 0.75, ATMOS_FADE_NEAR = 95, ATMOS_FADE_FAR = 150;
+/**
+ * The miniature's sand band: the bands are lifted so dry sand runs this far above the water line at any tide (world
+ * units). Measured at the default distance (api.world.coast): a median band of 4.7 CSS px on a Tidewater face at
+ * high tide, 3.3 px on the Atoll; at 0.2 the Tidewater band is 2.7 px and the Atoll's under 1.
+ */
+const SAND_RISE = 0.45;
+/** A seed preview surfaces over this long; its water sits at mean sea level. */
+const PREVIEW_RISE = 0.5, PREVIEW_LEVEL = 0;
+/**
+ * The share of a flight in which its aim (the look-at point and the up vector) turns. A dive turns first and then
+ * comes straight in; a return leaves straight out and turns last. So while the town is near, the flight camera looks
+ * at the town with the face's up — a pose the island's own camera can take, which is what lets the two scenes
+ * dissolve into each other mid-flight (main.ts, the hand-over).
+ */
+const AIM_SHARE = 0.45;
 
 const outCubic = (t: number) => 1 - Math.pow(1 - Math.min(1, Math.max(0, t)), 3);
 const inOutCubic = (t: number) => { t = Math.min(1, Math.max(0, t)); return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
@@ -79,8 +118,12 @@ interface FaceView {
   record: SectorRecord | null;
   lift: number;
   liftGoal: number;
-  /** Terrain rise during the entrance, 0..1. */
+  /** Terrain rise during the entrance (or a seed preview's surfacing), 0..1. */
   surfaced: number;
+  /** When a seed preview started surfacing (performance.now()), or null. */
+  riseStart: number | null;
+  /** The terminator's share of the light this frame (1 toward the stage light, TERMINATOR_FLOOR turned away). */
+  shade: number;
   fog: [number, number];
   swell: number;
 }
@@ -96,13 +139,20 @@ export class World {
   readonly flight: FreeCamera;
   readonly pipe: DefaultRenderingPipeline;
   private readonly lights: SceneLights;
-  private readonly sky: Sky;
+  /** The stage's frame: the camera's up and forward at the orbit (the gradient runs along up, the glow sits on forward). */
+  private readonly stageUp: Vector3;
+  private readonly stageForward: Vector3;
   private readonly root: TransformNode;
   readonly faces: FaceView[] = [];
   private readonly dummyReflect: RawTexture;
   private readonly cloudMesh: Mesh;
-  private clouds: { u: Vector3; v: Vector3; r: number; phase: number; speed: number; scale: number; yaw: number }[] = [];
+  private readonly atmosphere: Mesh;
+  private readonly stars: Mesh;
+  private clouds: { band: number; lat: number; lon: number; r: number; speed: number; scale: number; yaw: number; alpha: number }[] = [];
   private cloudMatrices = new Float32Array(0);
+  private cloudColors = new Float32Array(0);
+  /** The empty face whose card previews a seed's island, if any. */
+  private preview: { face: number; seed: number; biome: BiomeId } | null = null;
   private cloudCount = CLOUD_COUNT.high;
   /** The thirty edge rails with their sea-lane gates, one merged mesh. */
   readonly edges: Mesh;
@@ -122,7 +172,11 @@ export class World {
   private entrance = 0;
   private lighting: Lighting = computeLighting(DUSK_MIN, 0.25);
   /** Flights and the entrance run on the wall clock, so a tab that stalls or throttles its frames lands them on its next frame. */
-  private flightAnim: { from: Pose; to: Pose; start: number; seconds: number; done: () => void } | null = null;
+  private flightAnim: { from: Pose; to: Pose; start: number; seconds: number; aimFirst: boolean; near: number; far: number; done: () => void } | null = null;
+  /** The pose the flight camera was last given (world space). */
+  private flightPose: Pose | null = null;
+  /** A test hold: the running flight stays at this fraction of its time (null runs it on the clock). */
+  private flightHold: number | null = null;
   private entranceStart = 0;
   private orbitPose: { alpha: number; beta: number; radius: number } | null = null;
   entranceDone = true;
@@ -130,7 +184,8 @@ export class World {
   constructor(readonly engine: Engine, private readonly canvas: HTMLCanvasElement, private readonly opts: WorldOptions) {
     const scene = new Scene(engine);
     this.scene = scene;
-    scene.clearColor = new Color4(0.81, 0.90, 0.95, 1);
+    const clear = Color3.FromHexString(STAGE_TOP);
+    scene.clearColor = new Color4(clear.r, clear.g, clear.b, 1);
     scene.autoClear = true;
     // The camera sits still (its angles are pinned) and only zooms; drags spin the globe under it.
     const lookBeta = Math.acos(FACES[1].normal.y) + LOOK_TILT, lookAlpha = -Math.PI / 2;
@@ -148,7 +203,10 @@ export class World {
     this.flight = new FreeCamera("flight", new Vector3(0, 0, -CAM_RADIUS), scene);
     this.flight.minZ = 1; this.flight.maxZ = 2000;
     this.lights = createLights(scene);
-    this.sky = createSky(scene);
+    const elev = Math.PI / 2 - lookBeta;
+    this.stageUp = new Vector3(0, Math.cos(elev), Math.sin(elev));
+    this.stageForward = new Vector3(0, -Math.sin(elev), Math.cos(elev));
+    this.buildStage();
     this.pipe = new DefaultRenderingPipeline("worldpp", false, scene, [cam, this.flight]);
     this.pipe.fxaaEnabled = true;
     this.pipe.bloomEnabled = true; this.pipe.bloomThreshold = 0.9; this.pipe.bloomWeight = 0.15; this.pipe.bloomKernel = 48; this.pipe.bloomScale = 0.5;
@@ -161,6 +219,8 @@ export class World {
     this.ringMat.emissiveColor = Color3.FromHexString("#ffb859").scale(0.45);
     for (const face of FACES) this.faces.push(this.buildFace(face));
     this.edges = this.buildEdges();
+    this.atmosphere = this.buildAtmosphere();
+    this.stars = this.buildStars();
     this.cloudMesh = this.buildClouds();
     this.setCloudCount(this.cloudCount);
     // The camera's own inputs keep only the zoom (wheel, pinch): its angles are pinned above.
@@ -254,7 +314,7 @@ export class World {
     const ring = this.buildRing(face);
     ring.parent = node;
     ring.setEnabled(false);
-    return { face, node, land, water, waterMat, heightTex, hdata, terrain: null, terrainMat: null, roofs: [], ring, record: null, lift: 0, liftGoal: 0, surfaced: 1, fog: FOG_UNCHARTED, swell: 1 };
+    return { face, node, land, water, waterMat, heightTex, hdata, terrain: null, terrainMat: null, roofs: [], ring, record: null, lift: 0, liftGoal: 0, surfaced: 1, riseStart: null, shade: 1, fog: FOG_UNCHARTED, swell: 1 };
   }
 
   /** The selection ring: five lantern-lit rails just inside a face's outline, shown on the face whose card is open. */
@@ -299,78 +359,243 @@ export class World {
     return edges;
   }
 
+  /** The stage dome: a sphere around the camera, coloured per vertex by its height up the frame and its angle from the globe. */
+  private buildStage(): Mesh {
+    const dome = MeshBuilder.CreateSphere("stage", { diameter: 2 * STAGE_RADIUS, segments: 64, sideOrientation: Mesh.BACKSIDE }, this.scene);
+    const pos = dome.getVerticesData(VertexBuffer.PositionKind)!;
+    const top = Color3.FromHexString(STAGE_TOP), mid = Color3.FromHexString(STAGE_MID), low = Color3.FromHexString(STAGE_LOW), glow = Color3.FromHexString(STAGE_GLOW);
+    const colors = new Float32Array((pos.length / 3) * 4);
+    const d = new Vector3();
+    for (let v = 0; v < pos.length / 3; v++) {
+      d.set(pos[v * 3], pos[v * 3 + 1], pos[v * 3 + 2]).normalize();
+      const up = Vector3.Dot(d, this.stageUp);
+      const c = up >= 0 ? Color3.Lerp(mid, top, smooth(-0.02, 0.42, up)) : Color3.Lerp(mid, low, smooth(0, -0.55, up));
+      const angle = Math.acos(Math.max(-1, Math.min(1, Vector3.Dot(d, this.stageForward))));
+      const g = STAGE_GLOW_STRENGTH * Math.exp(-((angle / STAGE_GLOW_WIDTH) ** 2));
+      colors[v * 4] = Math.min(1, c.r + glow.r * g); colors[v * 4 + 1] = Math.min(1, c.g + glow.g * g); colors[v * 4 + 2] = Math.min(1, c.b + glow.b * g); colors[v * 4 + 3] = 1;
+    }
+    dome.setVerticesData(VertexBuffer.ColorKind, colors);
+    const mat = new StandardMaterial("stageMat", this.scene);
+    mat.disableLighting = true;
+    mat.emissiveColor = Color3.White();
+    mat.backFaceCulling = false;
+    dome.material = mat;
+    dome.infiniteDistance = true;
+    dome.isPickable = false;
+    return dome;
+  }
+
+  /** Small flat stars scattered over the stage, thicker toward the top, none below the globe's height. */
+  private buildStars(): Mesh {
+    const star = MeshBuilder.CreatePolyhedron("star", { type: 1, size: STAR_SIZE / 2 }, this.scene);
+    tint(star, "#ffffff");
+    const mat = new StandardMaterial("starMat", this.scene);
+    mat.disableLighting = true;
+    mat.emissiveColor = Color3.White();
+    star.material = mat;
+    star.isPickable = false;
+    star.infiniteDistance = true;
+    const upQ = new Quaternion();
+    Quaternion.FromUnitVectorsToRef(Vector3.Up(), this.stageUp, upQ);
+    const up = upQ.toRotationMatrix(new Matrix());
+    let seed = 7;
+    const rnd = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
+    const m: number[] = [], c: number[] = [];
+    while (m.length < STAR_COUNT * 16) {
+      // Uniform on the sphere, kept above the stage's horizon (thinning as they near it).
+      const z = rnd() * 2 - 1, a = rnd() * Math.PI * 2, r = Math.sqrt(1 - z * z);
+      const local = new Vector3(r * Math.cos(a), z, r * Math.sin(a));
+      if (local.y < 0.04 || rnd() > local.y * 2.5) continue;
+      const d = Vector3.TransformNormal(local, up).scale(STAR_RADIUS);
+      const k = 0.5 + rnd() * 0.9;
+      Matrix.Compose(new Vector3(k, k, k), Quaternion.RotationYawPitchRoll(rnd() * 6, rnd() * 6, 0), d).copyToArray(m, m.length);
+      const b = 0.55 + rnd() * 0.45;
+      c.push(b, b, Math.min(1, b * 1.08), 1);
+    }
+    star.thinInstanceSetBuffer("matrix", new Float32Array(m), 16, false);
+    star.thinInstanceSetBuffer("color", new Float32Array(c), 4, false);
+    star.alwaysSelectAsActiveMesh = true;
+    return star;
+  }
+
+  /** The atmosphere: a sphere just outside the solid, clear where it faces the camera and bright at the limb. */
+  private buildAtmosphere(): Mesh {
+    const shell = MeshBuilder.CreateSphere("atmosphere", { diameter: 2 * ATMOS_R, segments: 48 }, this.scene);
+    const m = new StandardMaterial("atmosphereMat", this.scene);
+    const c = Color3.FromHexString(ATMOS_COLOR);
+    m.diffuseColor = c.scale(0.35);
+    m.specularColor = Color3.Black();
+    m.emissiveColor = c;
+    // Babylon's fresnel term is pow(bias + |N·V|, power): 1 facing the camera, 0 at the limb; left is the limb's
+    // value, right the centre's. The opacity term is added to the material's alpha, so that stays near zero.
+    m.emissiveFresnelParameters = new FresnelParameters({ bias: 0, power: 0.6, leftColor: Color3.White(), rightColor: Color3.Black() });
+    m.opacityFresnelParameters = new FresnelParameters({ bias: 0, power: 0.45, leftColor: new Color3(ATMOS_RIM, ATMOS_RIM, ATMOS_RIM), rightColor: Color3.Black() });
+    m.alpha = 0.001;
+    m.disableDepthWrite = true;
+    m.backFaceCulling = true;
+    shell.material = m;
+    shell.alphaIndex = 20;
+    shell.isPickable = false;
+    shell.parent = this.root;
+    return shell;
+  }
+
+  /** One cloud: five flattened blobs, white on top and grey-blue underneath (by each facet's normal). */
   private buildClouds(): Mesh {
     const parts: Mesh[] = [];
     for (const [x, y, z, d] of [[0, 0, 0, 12], [7, -0.6, 2.4, 8.6], [-7.6, -0.9, -1.4, 7.6], [2.4, 1, -6.2, 6.8], [-3.4, 0.5, 5.8, 6.2]]) {
-      const s = MeshBuilder.CreateSphere("cloud", { diameter: d, segments: 4 }, this.scene);
-      s.scaling.y = 0.42;
-      s.position.set(x, y, z);
-      parts.push(tint(s, "#f7f3e8"));
+      const b = MeshBuilder.CreateSphere("cloud", { diameter: d / 3, segments: 4 }, this.scene);
+      b.scaling.y = 0.42;
+      b.position.set(x / 3, y / 3, z / 3);
+      parts.push(tint(b, CLOUD_TOP));
     }
     const mesh = mergeFlat("clouds", parts, this.scene);
+    const normals = mesh.getVerticesData(VertexBuffer.NormalKind)!;
+    const colors = mesh.getVerticesData(VertexBuffer.ColorKind)!;
+    const top = Color3.FromHexString(CLOUD_TOP), under = Color3.FromHexString(CLOUD_UNDER);
+    for (let v = 0; v < normals.length / 3; v++) {
+      const k = normals[v * 3 + 1] < -0.15 ? under : top;
+      colors[v * 4] = k.r; colors[v * 4 + 1] = k.g; colors[v * 4 + 2] = k.b; colors[v * 4 + 3] = 1;
+    }
+    mesh.setVerticesData(VertexBuffer.ColorKind, colors);
     const mat = flatMaterial(this.scene).clone("cloudMat") as StandardMaterial;
     mat.alpha = CLOUD_ALPHA;
-    // Seen from under the globe the bellies would take the hemisphere's ground colour; a little self-light keeps
-    // them cloud-pale from every side.
-    mat.emissiveColor = Color3.FromHexString("#f7f3e8").scale(0.3);
+    // Mostly self-lit, so they read white on the shaded side and from under the globe; the sun adds the rest.
+    mat.emissiveColor = new Color3(0.72, 0.72, 0.72);
     mesh.material = mat;
     mesh.parent = this.root;
+    mesh.alphaIndex = 30;
     mesh.alwaysSelectAsActiveMesh = true;
     return mesh;
   }
 
-  /** Seeded orbits for the clouds: each drifts around its own great circle above the faces. */
+  /** Seeded places in the two bands: a latitude jittered about the band's, a longitude, a size, a heading. */
   setCloudCount(n: number): void {
     this.cloudCount = n;
     let seed = 11;
     const rnd = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
     this.clouds = [];
     for (let k = 0; k < n; k++) {
-      const axis = new Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize();
-      const u = Vector3.Cross(axis, Math.abs(axis.y) < 0.9 ? Vector3.Up() : Vector3.Right()).normalize();
-      const v = Vector3.Cross(axis, u).normalize();
-      this.clouds.push({ u, v, r: SOLID_INRADIUS + 18 + rnd() * 12, phase: rnd() * Math.PI * 2, speed: CLOUD_RATE * (0.7 + rnd() * 0.6) * (rnd() < 0.5 ? 1 : -1), scale: 0.7 + rnd() * 0.7, yaw: rnd() * Math.PI * 2 });
+      const band = k % CLOUD_BANDS.length, b = CLOUD_BANDS[band];
+      this.clouds.push({ band, lat: b.lat + (rnd() - 0.5) * 2 * b.jitter, lon: rnd() * Math.PI * 2, r: ATMOS_R + rnd() * 1.5, speed: b.speed * (0.85 + rnd() * 0.3), scale: 0.8 + rnd() * 0.6, yaw: rnd() * Math.PI * 2, alpha: 1 });
     }
     this.cloudMatrices = new Float32Array(Math.max(1, n) * 16);
+    this.cloudColors = new Float32Array(Math.max(1, n) * 4).fill(1);
     this.cloudMesh.setEnabled(n > 0);
   }
 
-  private syncClouds(): void {
+  /** Where a cloud is, in the globe's own (unspun) frame: its band's circle, turned by the band's tilt. */
+  private cloudAt(c: { band: number; lat: number; lon: number; r: number }): Vector3 {
+    const b = CLOUD_BANDS[c.band];
+    const p = new Vector3(Math.cos(c.lat) * Math.cos(c.lon), Math.sin(c.lat), Math.cos(c.lat) * Math.sin(c.lon)).scale(c.r);
+    return Vector3.TransformCoordinates(p, Matrix.RotationX(b.tiltX).multiply(Matrix.RotationZ(b.tiltZ)));
+  }
+
+  /** Does a cloud at `pos` (globe frame, footprint radius `r`) lie over face `face`? Its centre or any rim point. */
+  private static cloudOver(pos: Vector3, r: number, face: number): boolean {
+    const d = pos.normalizeToNew();
+    const t1 = Vector3.Cross(d, Math.abs(d.y) < 0.9 ? Vector3.Up() : Vector3.Right()).normalize(), t2 = Vector3.Cross(d, t1);
+    const at = (v: Vector3) => faceToward({ x: v.x, y: v.y, z: v.z }) === face;
+    if (at(d)) return true;
+    for (const t of [t1, t1.scale(-1), t2, t2.scale(-1)]) if (at(pos.add(t.scale(r)))) return true;
+    return false;
+  }
+
+  private syncClouds(dt: number): void {
     if (!this.clouds.length) return;
     const tilt = new Quaternion(), tiltMat = new Matrix();
-    this.clouds.forEach((c, k) => {
-      const a = c.phase + this.time * c.speed;
-      const pos = c.u.scale(Math.cos(a) * c.r).add(c.v.scale(Math.sin(a) * c.r));
+    const faded = [this.hover, this.selected].filter((f): f is number => f !== null);
+    const k = this.opts.reducedMotion() ? 1 : Math.min(1, dt * CLOUD_FADE_RATE);
+    this.clouds.forEach((c, i) => {
+      c.lon += c.speed * dt;
+      const pos = this.cloudAt(c);
       // A cloud lies flat over the face beneath it: its up is the radial direction, whatever the globe's spin.
       Quaternion.FromUnitVectorsToRef(Vector3.Up(), pos.normalizeToNew(), tilt);
       Matrix.FromQuaternionToRef(tilt, tiltMat);
-      Matrix.Scaling(c.scale, c.scale, c.scale).multiply(Matrix.RotationY(c.yaw + a)).multiply(tiltMat).multiply(Matrix.Translation(pos.x, pos.y, pos.z)).copyToArray(this.cloudMatrices, k * 16);
+      Matrix.Scaling(c.scale, c.scale, c.scale).multiply(Matrix.RotationY(c.yaw + c.lon)).multiply(tiltMat).multiply(Matrix.Translation(pos.x, pos.y, pos.z)).copyToArray(this.cloudMatrices, i * 16);
+      const goal = faded.some(f => World.cloudOver(pos, 4 * c.scale, f)) ? CLOUD_OVER_FACE : 1;
+      c.alpha += (goal - c.alpha) * k;
+      this.cloudColors[i * 4 + 3] = c.alpha;
     });
     this.cloudMesh.thinInstanceSetBuffer("matrix", this.cloudMatrices, 16, false);
+    this.cloudMesh.thinInstanceSetBuffer("color", this.cloudColors, 4, false);
+  }
+
+  /** For probes: each cloud's opacity and whether it lies over a face. */
+  cloudProbe(face: number): { n: number; over: number; overAlpha: number; otherAlpha: number; radius: number } {
+    let over = 0, overAlpha = 0, otherAlpha = 0, radius = 0;
+    for (const c of this.clouds) {
+      const pos = this.cloudAt(c);
+      radius += pos.length() / this.clouds.length;
+      if (World.cloudOver(pos, 4 * c.scale, face)) { over++; overAlpha = Math.max(overAlpha, c.alpha); } else otherAlpha = Math.max(otherAlpha, c.alpha);
+    }
+    return { n: this.clouds.length, over, overAlpha, otherAlpha, radius };
   }
 
   // ---------- sectors ----------
 
-  /** Show a sector on a face (a real miniature) or clear it (uncharted sea). */
+  /** Show a sector on a face (a real miniature) or clear it (uncharted sea). A real sector replaces any preview. */
   setSector(index: number, record: SectorRecord | null): void {
     const fv = this.faces[index];
+    if (this.preview?.face === index) this.preview = null;
     fv.record = record;
+    fv.riseStart = null;
+    this.clearMiniature(fv);
+    if (!record) { this.uncharted(fv); return; }
+    this.buildMiniature(fv, { seed: record.state.world.seed, biome: record.state.world.biome, landfill: record.state.landfill, level: record.state.tide.level, state: record.state });
+  }
+
+  /**
+   * Preview the island a seed would make on an empty face (the new-sea card): the miniature without roofs, water at
+   * mean sea level, surfacing like the entrance's seas. Null (or a built face) clears the preview.
+   */
+  setPreview(face: number | null, seed = 0, biome: BiomeId = "tidewater"): void {
+    const prev = this.preview;
+    if (prev && prev.face === face && prev.seed === seed && prev.biome === biome && !this.faces[prev.face].record) return;
+    if (prev && !this.faces[prev.face].record) { const old = this.faces[prev.face]; this.clearMiniature(old); this.uncharted(old); old.riseStart = null; old.surfaced = 1; }
+    this.preview = null;
+    if (face === null || this.faces[face].record) return;
+    const fv = this.faces[face];
+    this.preview = { face, seed, biome };
+    this.buildMiniature(fv, { seed, biome, landfill: [], level: PREVIEW_LEVEL, state: null });
+    if (this.opts.reducedMotion()) { fv.surfaced = 1; fv.riseStart = null; } else { fv.surfaced = 0; fv.riseStart = performance.now(); }
+  }
+
+  /** Each face's terminator shade and hover lift this frame, for probes. */
+  get faceLight(): { face: number; shade: number; lift: number }[] { return this.faces.map(f => ({ face: f.face.index, shade: f.shade, lift: f.lift })); }
+
+  /** The stage's star count, for probes. */
+  get starCount(): number { return this.stars.thinInstanceCount; }
+
+  /** The seed preview, for probes. */
+  get previewing(): { face: number; seed: number; biome: BiomeId } | null { return this.preview ? { ...this.preview } : null; }
+
+  private clearMiniature(fv: FaceView): void {
     fv.terrain?.dispose(); fv.terrain = null;
     fv.terrainMat?.dispose(); fv.terrainMat = null;
     for (const r of fv.roofs) r.dispose(false, true); // each roof mesh owns its cloned material
     fv.roofs = [];
-    const level = record ? record.state.tide.level : 0;
+  }
+
+  /** An empty sea: the misted wash at mean sea level, in Tidewater's water. */
+  private uncharted(fv: FaceView): void {
+    fv.water.position.y = 0;
+    for (let row = 0; row < HEIGHT_TEX; row++) for (let col = 0; col < HEIGHT_TEX; col++) encodeHeightInto(fv.hdata, HEIGHT_TEX, row, col, -1.5);
+    fv.heightTex.update(fv.hdata);
+    fv.fog = FOG_UNCHARTED;
+    applyWaterLook(fv.waterMat, TIDEWATER_LOOK);
+    fv.waterMat.setFloat("caustics", 0);
+  }
+
+  /** A miniature of an island on a face: its heightmap, its ground, its water level and look, and (for a town) its roofs. */
+  private buildMiniature(fv: FaceView, o: { seed: number; biome: BiomeId; landfill: number[]; level: number; state: SimState | null }): void {
+    const index = fv.face.index;
+    const level = o.level;
     fv.water.position.y = level;
-    if (!record) {
-      for (let row = 0; row < HEIGHT_TEX; row++) for (let col = 0; col < HEIGHT_TEX; col++) encodeHeightInto(fv.hdata, HEIGHT_TEX, row, col, -1.5);
-      fv.heightTex.update(fv.hdata);
-      fv.fog = FOG_UNCHARTED;
-      fv.waterMat.setFloat("caustics", 0);
-      return;
-    }
-    const isl = island(record.state.world.seed, record.state.world.biome);
-    const filled = new Set(record.state.landfill);
-    const landfillHeight = tidesFor(biomeOf(record.state.world.biome).tide).landfillHeight;
+    const isl = island(o.seed, o.biome);
+    const filled = new Set(o.landfill);
+    const tides = tidesFor(biomeOf(o.biome).tide);
+    const landfillHeight = tides.landfillHeight;
     const height: HeightFn = (x, z) => {
       const i = Math.floor(x), j = Math.floor(z);
       const h = isl.height(x, z);
@@ -390,7 +615,7 @@ export class World {
     // same way) and nothing pokes out of the solid. Flat-shaded. CreateGround's row 0 is z = +extent.
     const ext = FACE_CIRCUMRADIUS + 1;
     const n = Math.round(ext * MINI_CELLS / (SIZE / 2));
-    const heights = miniatureHeights(isl.height, record.state.landfill, n, ext, landfillHeight);
+    const heights = miniatureHeights(isl.height, o.landfill, n, ext, landfillHeight);
     const terrain = MeshBuilder.CreateGround(`mini${index}`, { width: 2 * ext, height: 2 * ext, subdivisions: n }, this.scene);
     const pos = terrain.getVerticesData(VertexBuffer.PositionKind)!;
     const half = SIZE / 2, clampHalf = (v: number) => Math.max(-half, Math.min(half, v));
@@ -407,16 +632,19 @@ export class World {
     terrain.parent = fv.land;
     terrain.isPickable = false;
     const terrainMat = new ShaderMaterial(`miniMat`, this.scene, { vertexSource: terrainVS, fragmentSource: terrainFS }, { attributes: ["position", "normal"], uniforms: TERRAIN_UNIFORMS, samplers: TERRAIN_SAMPLERS });
-    const look = lookFor(record.state), tideScale = tidesFor(biomeOf(record.state.world.biome).tide);
+    const look = lookOf(o.biome);
     terrainMat.setTexture("heightTex", fv.heightTex);
-    applyTerrainLook(terrainMat, look, tideScale.scale);
-    applyWaterLook(fv.waterMat, look, tideScale.scale);
+    applyTerrainLook(terrainMat, look, tides.scale);
+    applyWaterLook(fv.waterMat, look, tides.scale);
     terrainMat.setFloat("clipY", -999).setMatrix("frame", Matrix.Identity()).setFloat("fogNear", FOG_WORLD[0]).setFloat("fogFar", FOG_WORLD[1]);
     terrainMat.setFloat("waterLevel", level).setFloat("wetLevel", level + 0.1);
+    // The coast, exaggerated: lift the bands so sand runs SAND_RISE above the water line at any tide, then grass, then rock.
+    terrainMat.setFloat("coastLift", Math.max(0, level + SAND_RISE - 0.55 * tides.scale));
     terrain.material = terrainMat;
     fv.terrain = terrain; fv.terrainMat = terrainMat;
     // Roofs from the real buildings: three shape meshes with thin instances and per-instance colours.
-    const roofs = roofPlacements(record.state);
+    if (!o.state) { fv.waterMat.setFloat("caustics", 1); return; }
+    const roofs = roofPlacements(o.state);
     const byShape: Record<string, { m: number[]; c: number[] }> = { pyramid: { m: [], c: [] }, gable: { m: [], c: [] }, hipped: { m: [], c: [] } };
     const s = new Vector3(), q = Quaternion.Identity();
     for (const r of roofs) {
@@ -562,6 +790,7 @@ export class World {
   }
 
   private applyPose(p: Pose): void {
+    this.flightPose = { position: p.position.clone(), target: p.target.clone(), up: p.up.clone() };
     this.flight.upVector = p.up.clone();
     this.flight.position = p.position.clone();
     this.flight.setTarget(p.target);
@@ -581,7 +810,7 @@ export class World {
     return new Promise(resolve => {
       const done = () => { this.applyPose(to); this.phase = "away"; resolve(); };
       if (seconds <= 0 || this.opts.reducedMotion()) { done(); return; }
-      this.flightAnim = { from, to, start: performance.now(), seconds, done };
+      this.flightAnim = { from, to, start: performance.now(), seconds, aimFirst: true, far: Vector3.Distance(from.position, to.target), near: Vector3.Distance(to.position, to.target), done };
     });
   }
 
@@ -607,8 +836,51 @@ export class World {
         resolve();
       };
       if (seconds <= 0 || this.opts.reducedMotion()) { done(); return; }
-      this.flightAnim = { from, to, start: performance.now(), seconds, done };
+      this.flightAnim = { from, to, start: performance.now(), seconds, aimFirst: false, far: Vector3.Distance(to.position, from.target), near: Vector3.Distance(from.position, from.target), done };
     });
+  }
+
+  /** Whether a flight is running. */
+  get flying(): boolean { return this.flightAnim !== null; }
+
+  /**
+   * Advance the running flight to now. The position runs along the straight line between the poses, paced so the
+   * distance to the town changes by the same factor in equal times (eased in and out): a zoom that reads evenly, fast
+   * through the sky and slow over the island, where the hand-over dissolves the scenes. The aim turns on its own over
+   * the first (dive) or last (return) AIM_SHARE of the flight. render() calls it; the hand-over calls it on frames
+   * the World is not drawn.
+   */
+  stepFlight(): void {
+    const a = this.flightAnim;
+    if (!a) return;
+    const t = this.flightHold !== null ? this.flightHold * a.seconds : (performance.now() - a.start) / 1000;
+    const u = t / a.seconds;
+    const s = smooth(0, 1, u);
+    const [d0, d1] = a.aimFirst ? [a.far, a.near] : [a.near, a.far];
+    const k = Math.abs(d0 - d1) < 1e-6 ? s : (d0 - d0 * Math.pow(d1 / d0, s)) / (d0 - d1);
+    const ka = a.aimFirst ? inOutCubic(u / AIM_SHARE) : inOutCubic((u - (1 - AIM_SHARE)) / AIM_SHARE);
+    this.applyPose({ position: Vector3.Lerp(a.from.position, a.to.position, k), target: Vector3.Lerp(a.from.target, a.to.target, ka), up: Vector3.Lerp(a.from.up, a.to.up, ka).normalize() });
+    if (u >= 1 && this.flightHold === null) { this.flightAnim = null; a.done(); }
+  }
+
+  /** Hold the running flight at a fraction of its time (tests and shots); null lets it run on from there. */
+  holdFlight(u: number | null): void {
+    const a = this.flightAnim;
+    if (a && u === null && this.flightHold !== null) a.start = performance.now() - this.flightHold * a.seconds * 1000;
+    this.flightHold = u;
+  }
+
+  /**
+   * The flight camera in a face's own frame (island units): where the island's camera stands to see the same
+   * picture. Measured through the face node as it is now, so it matches what the World draws this frame.
+   */
+  flightInFace(face: number): Pose | null {
+    const p = this.flightPose;
+    if (!p) return null;
+    const node = this.faces[face].node;
+    node.computeWorldMatrix(true);
+    const inv = Matrix.Invert(node.getWorldMatrix());
+    return { position: Vector3.TransformCoordinates(p.position, inv), target: Vector3.TransformCoordinates(p.target, inv), up: Vector3.TransformNormal(p.up, inv).normalize() };
   }
 
   /** Where the World camera is, for probes. */
@@ -671,14 +943,8 @@ export class World {
     }
     const fogT = this.phase === "entering" ? outCubic(this.entrance / RISE_SECONDS) : 1;
     // Flights.
-    if (this.flightAnim) {
-      const a = this.flightAnim;
-      const t = (performance.now() - a.start) / 1000;
-      const k = inOutCubic(t / a.seconds);
-      const pose: Pose = { position: Vector3.Lerp(a.from.position, a.to.position, k), target: Vector3.Lerp(a.from.target, a.to.target, k), up: Vector3.Lerp(a.from.up, a.to.up, k).normalize() };
-      this.applyPose(pose);
-      if (t >= a.seconds) { this.flightAnim = null; a.done(); }
-    } else if (this.scene.activeCamera === this.flight && this.phase !== "away") {
+    if (this.flightAnim) this.stepFlight();
+    else if (this.scene.activeCamera === this.flight && this.phase !== "away") {
       // Watchdog: a flight camera left active with no flight running is a bug elsewhere; the orbit is the safe place.
       this.scene.activeCamera = this.camera;
       this.camera.attachControl(this.canvas, true);
@@ -700,45 +966,57 @@ export class World {
       if (!this.spinNow.equalsWithEpsilon(this.spinGoal, 1e-7)) { Quaternion.SlerpToRef(this.spinNow, this.spinGoal, reduced ? 1 : 1 - Math.exp(-SPIN_EASE * dt), this.spinNow); this.spinNow.normalize(); }
     }
     this.root.rotationQuaternion!.copyFrom(this.spinNow.normalize());
-    const spinMat = this.spinNow.toRotationMatrix(new Matrix());
-    // Hover lifts.
+    // Hover lifts, and a seed preview surfacing.
+    const nowMs = performance.now();
     for (const fv of this.faces) {
+      if (fv.riseStart !== null) { fv.surfaced = outCubic((nowMs - fv.riseStart) / 1000 / PREVIEW_RISE); if (fv.surfaced >= 1) fv.riseStart = null; }
       const rate = fv.liftGoal > fv.lift ? 1 / HOVER_UP : 1 / HOVER_DOWN;
       fv.lift = reduced ? fv.liftGoal : fv.lift + (fv.liftGoal - fv.lift) * Math.min(1, dt * rate * 3);
       fv.node.position = V(fv.face.centre).add(V(fv.face.normal).scale(fv.lift));
       fv.land.position.y = SURFACE_FROM * (1 - fv.surfaced);
     }
-    // Lighting: one sun by the clock; each face shaded by how much it turns toward it.
+    // Lighting. The clock gives the light's colour (and the moon at night); each face is lit by its own sun — the
+    // island's, in the face's frame — so every miniature reads as its island does; the stage light, fixed upper left,
+    // puts a gentle terminator on the faces turned from it. Props (roofs, clouds, the atmosphere) take the stage light.
     const light = this.clockLighting();
     this.lighting = light;
-    this.lights.apply(light);
-    this.sky.setLighting(light);
+    this.lights.apply({ ...light, sunDir: STAGE_SUN });
+    const dim = 1 - 0.45 * light.night;
+    const fog = Color3.FromHexString(ATMOS_COLOR).scale(dim);
+    const fogV = new Vector3(fog.r, fog.g, fog.b);
     const camPos = this.scene.activeCamera!.position;
-    // Clouds thin out as a flight drops through their layer (they orbit 18–30 units above the faces).
-    (this.cloudMesh.material as StandardMaterial).alpha = CLOUD_ALPHA * smooth(CLOUD_FADE_NEAR, CLOUD_FADE_FAR, camPos.length());
+    // Clouds and the atmosphere thin out as a flight drops through them.
+    const camDist = camPos.subtract(this.root.position).length();
+    (this.cloudMesh.material as StandardMaterial).alpha = CLOUD_ALPHA * smooth(CLOUD_FADE_NEAR, CLOUD_FADE_FAR, camDist);
+    const atmos = this.atmosphere.material as StandardMaterial;
+    const rim = ATMOS_RIM * smooth(ATMOS_FADE_NEAR, ATMOS_FADE_FAR, camDist);
+    atmos.opacityFresnelParameters!.leftColor = new Color3(rim, rim, rim);
+    atmos.emissiveColor = Color3.FromHexString(ATMOS_COLOR).scale(dim);
     for (const fv of this.faces) {
-      const nW = Vector3.TransformNormal(V(fv.face.normal), spinMat);
-      const facing = nW.x * light.sunDir.x + nW.y * light.sunDir.y + nW.z * light.sunDir.z;
-      // Faces turned from the sun sit in shade (the shaders' own lambert term already loses the sun on them);
-      // the floor keeps their land readable by day, and the moonlit floor in clockLighting() does the same by night.
-      const day = SHADE_FLOOR + (1 - SHADE_FLOOR) * smooth(-0.3, 0.3, facing);
+      fv.node.computeWorldMatrix(true);
+      const nodeW = fv.node.getWorldMatrix();
+      const nW = Vector3.TransformNormal(Vector3.Up(), nodeW).normalize();
+      const faceSun = Vector3.TransformNormal(light.sunDir, nodeW).normalize();
+      const facing = Vector3.Dot(nW, STAGE_SUN);
+      const shade = TERMINATOR_FLOOR + (1 - TERMINATOR_FLOOR) * smooth(TERMINATOR_FROM, TERMINATOR_TO, facing);
+      fv.shade = shade;
       const boost = 1 + HOVER_SUN * (fv.lift / HOVER_LIFT);
       const fogNear = FOG_ENTRANCE[0] + (fv.fog[0] - FOG_ENTRANCE[0]) * fogT, fogFar = FOG_ENTRANCE[1] + (fv.fog[1] - FOG_ENTRANCE[1]) * fogT;
       const wm = fv.waterMat;
       fv.water.computeWorldMatrix(true);
       wm.setMatrix("frame", Matrix.Invert(fv.water.getWorldMatrix()));
-      wm.setVector3("sunDir", light.sunDir).setVector3("sunColor", light.sunLit.scale(day * boost)).setVector3("skyColor", light.waterSky.scale(day * boost))
-        .setVector3("fogColor", light.fog).setFloat("dusk", light.k).setFloat("time", this.time).setVector3("camPos", camPos)
+      wm.setVector3("sunDir", faceSun).setVector3("sunColor", light.sunLit.scale(shade * boost)).setVector3("skyColor", light.waterSky.scale(shade * boost))
+        .setVector3("fogColor", fogV).setFloat("dusk", light.k).setFloat("time", this.time).setVector3("camPos", camPos)
         .setFloat("waveAmp", fv.swell).setFloat("fogNear", fogNear).setFloat("fogFar", fogFar);
       if (fv.terrain && fv.terrainMat) {
         fv.terrain.computeWorldMatrix(true);
         fv.terrainMat.setMatrix("frame", Matrix.Invert(fv.terrain.getWorldMatrix()));
-        fv.terrainMat.setVector3("sunDir", light.sunDir).setVector3("sunColor", light.sunLit.scale(boost)).setVector3("skyAmb", light.skyAmbient.scale(day))
-          .setVector3("groundAmb", light.groundAmbient.scale(day)).setVector3("fogColor", light.fog).setVector3("camPos", camPos)
+        fv.terrainMat.setVector3("sunDir", faceSun).setVector3("sunColor", light.sunLit.scale(shade * boost)).setVector3("skyAmb", light.skyAmbient.scale(shade))
+          .setVector3("groundAmb", light.groundAmbient.scale(shade)).setVector3("fogColor", fogV).setVector3("camPos", camPos)
           .setFloat("fogNear", fogNear).setFloat("fogFar", fogFar);
       }
     }
-    this.syncClouds();
+    this.syncClouds(dt);
     this.scene.render();
   }
 

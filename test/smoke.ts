@@ -69,22 +69,66 @@ try {
   await page.waitForTimeout(300);
   const surfaced = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { card: api.world.shownCard(), cardText: document.querySelector("#world .world-card")?.textContent?.replace(/\s+/g, " ").trim() ?? "" }; });
   assert(surfaced.card === 1 && /Uncharted sea · Temperate/.test(surfaced.cardText) && /Begin/.test(surfaced.cardText), "after the entrance the pre-lit face's new-sector card is open");
+  const firstPreview = await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; return { preview: api.world.preview(), seed: document.querySelector<HTMLInputElement>("#world .seed")?.value ?? "" }; });
+  console.log("World preview:", JSON.stringify(firstPreview));
+  assert(firstPreview.preview?.face === 1 && firstPreview.preview.ground && String(firstPreview.preview.seed) === firstPreview.seed && firstPreview.preview.biome === "tidewater", "the new-sector card previews its seed's island on the face");
   await page.screenshot({ path: "shots/globe/world-first-launch.png" });
   const dive = await page.evaluate(async () => {
     const api = (window as unknown as { __tidewater: Api }).__tidewater;
     const meta = api.newSector(1, 0, "Smoke");
     const minis = api.world.miniatures().filter(m => m.built);
+    if (api.world.preview() !== null) throw new Error("founding the sea should replace its preview");
     const t0 = performance.now();
+    // The hand-over on every frame: the World's share of the picture, and whether the veil carried it.
+    const shares: [number, number, boolean][] = [];
+    let watching = true;
+    const watch = () => { const h = api.world.handover(); if (h) shares.push([performance.now() - t0, h.worldShare, h.veil]); if (watching) requestAnimationFrame(watch); };
+    requestAnimationFrame(watch);
     const ok = await api.enterSector(1);
-    return { meta: { face: meta.face, name: meta.name, seed: meta.seed, buildings: meta.buildings }, minis, ok, ms: performance.now() - t0, mode: api.mode, active: api.world.active(), pose: api.world.pose(), cam: api.view.camera(), buildings: Object.keys(api.sim.buildings).length, hudShown: getComputedStyle(document.getElementById("hud")!).display !== "none", worldHidden: document.getElementById("world")!.hidden };
+    watching = false;
+    const blended = shares.filter(([, w, veil]) => w > 0 && w < 1 && veil);
+    const handover = { frames: shares.length, blended: blended.length, ms: blended.length ? blended[blended.length - 1][0] - blended[0][0] : 0, first: shares[0]?.[1], last: shares[shares.length - 1]?.[1], after: api.world.handover(), veil: !document.getElementById("veil")!.hidden };
+    return { meta: { face: meta.face, name: meta.name, seed: meta.seed, buildings: meta.buildings }, minis, ok, ms: performance.now() - t0, mode: api.mode, active: api.world.active(), pose: api.world.pose(), cam: api.view.camera(), buildings: Object.keys(api.sim.buildings).length, hudShown: getComputedStyle(document.getElementById("hud")!).display !== "none", worldHidden: document.getElementById("world")!.hidden, handover };
   });
   console.log("World dive:", JSON.stringify(dive));
   assert(dive.meta.face === 1 && dive.meta.name === "Smoke" && dive.meta.seed === 0 && dive.meta.buildings === 1, "newSector wrote a fresh town onto face 1");
   assert(dive.minis.length === 1 && dive.minis[0].face === 1 && dive.minis[0].roofs === 1, "the face's miniature carries the starting hut's roof");
-  assert(dive.ok && dive.mode === "island" && dive.active === 1 && dive.ms >= 1000 && dive.ms < 6000 && dive.pose.phase === "away", "the dive flew for ~1.4 s and landed on the island");
-  assert(Math.abs(dive.cam.dist - 22) < 0.5 && Math.abs(dive.cam.yaw + 0.8) < 0.01 && dive.buildings === 1 && dive.hudShown && dive.worldHidden, "the island is up at the town framing with its HUD");
+  assert(dive.ok && dive.mode === "island" && dive.active === 1 && dive.ms >= 1000 && dive.ms < 6000 && dive.pose.phase === "away", "the dive flew for ~1.8 s and landed on the island");
+  assert(Math.abs(dive.cam.dist - 30) < 0.5 && Math.abs(dive.cam.yaw + 0.8) < 0.01 && dive.buildings === 1 && dive.hudShown && dive.worldHidden, "the island is up at the town framing (Home's distance) with its HUD");
+  assert(dive.handover.first === 1 && dive.handover.last === 0 && dive.handover.blended >= 5 && dive.handover.ms >= 200, `the dive dissolved the World into the island over ${Math.round(dive.handover.ms)} ms (${dive.handover.blended} blended frames): it starts all World and lands all island`);
+  assert(dive.handover.after === null && !dive.handover.veil, "the hand-over is over and its veil hidden once the island is up");
   await page.waitForTimeout(400);
   await page.screenshot({ path: "shots/globe/island-after-dive.png" });
+  // The hand-over held halfway, both ways: the island's own camera stands where the World's flight camera stands,
+  // so the town sits in the same place in both pictures while one dissolves into the other.
+  for (const way of ["return", "dive"] as const) {
+    const held = await page.evaluate(async way => {
+      const api = (window as unknown as { __tidewater: Api; __flight?: Promise<boolean> }).__tidewater;
+      const w = window as unknown as { __flight?: Promise<boolean> };
+      w.__flight = way === "dive" ? api.enterSector(1) : api.returnToWorld();
+      api.world.holdFlight(0);
+      const frame = () => new Promise(res => requestAnimationFrame(() => requestAnimationFrame(res)));
+      let best: { u: number; share: number } | null = null;
+      for (let u = 0.2; u <= 0.8; u += 0.02) {
+        api.world.holdFlight(u);
+        await frame();
+        const share = api.world.handover()?.worldShare ?? -1;
+        if (share > 0 && share < 1 && (!best || Math.abs(share - 0.5) < Math.abs(best.share - 0.5))) best = { u, share };
+      }
+      if (best) { api.world.holdFlight(best.u); await frame(); await frame(); }
+      return { best, veil: api.world.handover()?.veil ?? false };
+    }, way);
+    await page.screenshot({ path: `shots/globe/${way}-handover.png` });
+    const landed = await page.evaluate(async () => {
+      const api = (window as unknown as { __tidewater: Api }).__tidewater;
+      api.world.holdFlight(null);
+      const ok = await (window as unknown as { __flight: Promise<boolean> }).__flight;
+      return { ok, mode: api.mode };
+    });
+    console.log(`World ${way} held:`, JSON.stringify(held), JSON.stringify(landed));
+    assert(held.best !== null && held.best.share > 0.2 && held.best.share < 0.8 && held.veil, `the ${way} holds halfway through its dissolve, the veil up`);
+    assert(landed.ok && landed.mode === (way === "dive" ? "island" : "world"), `the held ${way} runs on and lands when released`);
+  }
   await page.evaluate(() => (window as unknown as { __tidewater: Api }).__tidewater.newTown());
 
   // M2: the starter town, four cycles, positive net money; cutting the market's walkway stops sales.
@@ -1184,6 +1228,38 @@ try {
   assert(back.minis.length === 1 && back.minis[0].face === 1 && back.minis[0].roofs === 2 && back.meta?.buildings === 2 && back.meta?.name === "Smoke", "the miniature shows both roofs and the card counts them");
   await page.waitForTimeout(400);
   await page.screenshot({ path: "shots/globe/world-wide.png" });
+  // Polish two (docs/globe/review.md): the stage behind the globe, the clouds on the atmosphere, the terminator, the
+  // miniature's sand band, the hover lift, a seed preview on another face. Reduced motion holds the globe still.
+  const polish = await page.evaluate(async () => {
+    const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    api.world.setReducedMotion(true);
+    api.world.lookAt(1);
+    api.world.showCard(1);
+    await new Promise(r => setTimeout(r, 300));
+    const coast = await api.world.coast(1);
+    const stage = await api.world.stage();
+    const clouds = api.world.clouds(1);
+    const shades = api.world.faceLight().map(f => f.shade);
+    api.world.hoverFace(2);
+    await new Promise(r => setTimeout(r, 300));
+    const lift = api.world.faceLight()[2].lift;
+    const preview = api.world.preview();
+    const seedField = document.querySelector<HTMLInputElement>("#world .seed")?.value ?? "";
+    return { coast, stage, clouds, shades: { min: Math.min(...shades), max: Math.max(...shades) }, lift, preview, seedField };
+  });
+  console.log("World polish:", JSON.stringify(polish));
+  assert(polish.coast.runs >= 10 && polish.coast.median >= 2, `the miniature's coast has a sand band between the foam and the green, at least 2 px wide: ${polish.coast.runs} runs, median ${polish.coast.median} px`);
+  const [tr, , tb] = polish.stage.top, [sr, , sb] = polish.stage.side;
+  assert(tr < 45 && tb > tr + 25 && sr > tr + 10 && sr / sb > tr / tb && polish.stage.stars > 0, "the stage: deep navy at the top, a warmer indigo at the globe's height, stars");
+  assert(polish.clouds.n >= 15 && polish.clouds.n <= 20 && polish.clouds.radius > 81.3 && polish.clouds.radius < 92, "15–20 clouds riding the atmosphere shell just outside the globe");
+  assert(polish.clouds.over === 0 || (polish.clouds.overAlpha <= 0.25 && polish.clouds.otherAlpha > 0.9), "a cloud over the selected face thins to a fifth");
+  assert(polish.shades.max === 1 && polish.shades.min >= 0.6 && polish.shades.min < 0.8, "a gentle terminator on the faces turned from the stage light");
+  assert(Math.abs(polish.lift - 5) < 0.01, "the hovered face lifts 5 units");
+  assert(polish.preview?.face === 2 && polish.preview.ground && String(polish.preview.seed) === polish.seedField, "an empty face's card previews its seed's island");
+  await page.waitForTimeout(200);
+  await page.screenshot({ path: "shots/globe/world-hover-preview.png" });
+  await page.evaluate(() => { const api = (window as unknown as { __tidewater: Api }).__tidewater; api.world.hoverFace(null); api.world.showCard(1); api.world.setReducedMotion(null); });
+  await page.waitForTimeout(200);
   await page.setViewportSize({ width: 400, height: 800 });
   await page.waitForTimeout(400);
   const narrow = await page.evaluate(() => {
