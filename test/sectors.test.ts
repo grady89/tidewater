@@ -38,7 +38,7 @@ describe("the World's sectors: bands and biomes", () => {
       expect(biomeAllowed(f, "tidewater")).toBe(!BAND_GATING || bandOf(f) === "temperate");
       for (const b of biomesFor(f)) expect(b.charted).toBe(isCharted(b.biome) && (!BAND_GATING || BIOMES_BY_BAND[bandOf(f)].includes(b.biome)));
     }
-    expect(isCharted("fjord")).toBe(true); expect(isCharted("atoll")).toBe(true); expect(isCharted("delta")).toBe(true); expect(isCharted("cinder")).toBe(true);
+    expect(isCharted("fjord")).toBe(true); expect(isCharted("atoll")).toBe(true); expect(isCharted("delta")).toBe(true); expect(isCharted("cinder")).toBe(true); expect(isCharted("dunes")).toBe(true);
     expect(biomeBlurb("fjord")).toMatch(/stockfish/);
     expect(BAND_GATING).toBe(false);
   });

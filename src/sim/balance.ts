@@ -16,7 +16,8 @@ export type BuildingKind =
   | "stockfishRacks" | "whalingStation" | "ironMine" | "iceHouse" | "iceBreakerPier"
   | "divePlatform" | "pearlHouse" | "coconutGrove" | "reefNursery"
   | "ricePaddy" | "crabPots" | "saltPan" | "indigoVats" | "wardenTower" | "crocNet"
-  | "taroTerrace" | "cocoaTerrace" | "glassworks" | "sulfurWorks" | "hotSpring";
+  | "taroTerrace" | "cocoaTerrace" | "glassworks" | "sulfurWorks" | "hotSpring"
+  | "dateGrove" | "coffeeTerrace" | "spongeDivers" | "greatCistern" | "dredger";
 
 /** Service coverage layers; each building that provides one writes its staffed fraction within `radius`. */
 export type ServiceKind = "water" | "leisure" | "night" | "treatment" | "lifeguard" | "firewatch";
@@ -126,6 +127,12 @@ export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
   glassworks: { name: "Glassworks", category: "Production", w: 2, d: 2, cls: "flat", cost: { money: 240 }, workers: 4, residents: 0, upkeep: 2.5, floor: "stilts", network: "leaf", fireRisk: 5, desc: "Glass from the black sand; burns sulfur, or timber when there is none; fire risk" },
   sulfurWorks: { name: "Sulfur works", category: "Production", w: 1, d: 1, cls: "high", material: "vent", cost: { money: 120 }, workers: 2, residents: 0, upkeep: 1, floor: "ground", network: "leaf", desc: "Sulfur from a steam vent" },
   hotSpring: { name: "Hot-spring bathhouse", category: "Leisure", w: 2, d: 1, cls: "flat", material: "spring", cost: { money: 260 }, workers: 2, residents: 0, upkeep: 2, floor: "stilts", network: "leaf", service: { kind: "leisure", radius: 14 }, desc: "The strongest leisure on the World (within 14), on a hot spring; the tourists come for it" },
+  // Dunes (BIOMES.md §3.6)
+  dateGrove: { name: "Date grove", category: "Production", w: 2, d: 2, cls: "high", material: "oasis", cost: { money: 90 }, workers: 2, residents: 0, upkeep: 1, floor: "ground", network: "leaf", desc: "Dates from the palms of an oasis" },
+  coffeeTerrace: { name: "Coffee terrace", category: "Production", w: 2, d: 1, cls: "high", nearMaterial: "oasis", cost: { money: 140 }, workers: 3, residents: 0, upkeep: 1.5, floor: "ground", network: "leaf", desc: "Coffee beside an oasis" },
+  spongeDivers: { name: "Sponge divers' hut", category: "Production", w: 1, d: 1, cls: "edge", material: "lagoon", cost: { money: 70 }, workers: 2, residents: 0, upkeep: 1, floor: 1.0, network: "leaf", desc: "Sponges from the lagoon at each low water" },
+  greatCistern: { name: "Great cistern", category: "Services", w: 3, d: 3, cls: "flat", cost: { money: 300 }, workers: 2, residents: 0, upkeep: 3, floor: "stilts", network: "leaf", service: { kind: "water", radius: 16 }, desc: "Water for homes within 16 (wells here reach 3); holds half through a drought" },
+  dredger: { name: "Dredger", category: "Sea", w: 1, d: 1, cls: "deep", touches: "harbor", cost: { money: 220 }, workers: 2, residents: 0, upkeep: 2, floor: 1.0, network: "leaf", desc: "Beside the harbor: clears the silt a sandstorm leaves" },
   crocNet: { name: "Croc net", category: "Sea", w: 1, d: 1, cls: "flatOrDeep", cost: { money: 20 }, workers: 0, residents: 0, upkeep: 0.1, floor: 1.0, network: "leaf", stopsPredators: true, desc: "Per water cell; crocodiles can't cross" },
   outfall: { name: "Sewage outfall", category: "Services", w: 1, d: 1, cls: "edge", cost: { money: 40 }, workers: 0, residents: 0, upkeep: 0.5, floor: 1.0, network: "leaf", desc: "Dumps the town's waste into the sea; the tide carries it" },
   treatmentPlant: { name: "Treatment plant", category: "Services", w: 2, d: 2, cls: "flatOrHigh", cost: { money: 350 }, workers: 4, residents: 0, upkeep: 3, floor: "ground", network: "leaf", service: { kind: "treatment", radius: 12 }, desc: "Neutralises waste from homes within 12" },
@@ -487,6 +494,25 @@ export const ASH_HAPPY = 0.15;
 export const ASH_TERRACE_FACTOR = 0.5;
 /** New land from a lava flow cools this many cycles before anything may stand on it. */
 export const LAVA_COOL_CYCLES = 3;
+
+// Dunes (BIOMES.md §3.6)
+export const DATES_PER_CYCLE = 5;
+export const COFFEE_PER_CYCLE = 2.5;
+/** Sponges a fully crewed divers' hut brings up each low water. */
+export const SPONGES_PER_SHIFT = 1.5;
+/** A well's reach on the Dunes (the great cistern is the water building); an oasis waters this far around it. */
+export const WELL_RADIUS_DUNES = 3;
+export const OASIS_RADIUS = 3;
+/** Drought every DROUGHT_EVERY cycles from DROUGHT_FIRST: wells dry, the great cistern holds this share; homes without water lose DROUGHT_HAPPY. */
+export const DROUGHT_EVERY = 10;
+export const DROUGHT_FIRST = 10;
+export const DROUGHT_CISTERN = 0.5;
+export const DROUGHT_HAPPY = 0.3;
+/** A sandstorm silts the harbours: their boats bring in SILT_FACTOR of the catch until dredged, or SILT_CYCLES of tides scour it. */
+export const SILT_CYCLES = 4;
+export const SILT_FACTOR = 0.5;
+/** Tourists spend this much more the cycle of a night market. */
+export const NIGHT_MARKET_TOURISM = 2;
 
 // Sea lanes (BIOMES.md §4; sim/lanes.ts, behind LANES_ENABLED)
 export const CARGO_SHIPS_PER_HARBOR = 1;

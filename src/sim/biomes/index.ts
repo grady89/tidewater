@@ -9,3 +9,4 @@ import "./fjord";
 import "./atoll";
 import "./delta";
 import "./cinder";
+import "./dunes";

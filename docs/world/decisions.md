@@ -79,3 +79,29 @@ wins and is noted). Numbered as they came up; the code cites them.
     cell it crosses becomes landfill that stays lava (unbuildable, glowing) for three cycles (`state.newLand`,
     `Grid.coolNewLand`), then opens. Ash falls the next cycle: every home −0.15, the terraces make half. The wave
     for the neighbours goes into the sea's outbox (`state.outbox`) for the World's event bus (Stage 4).
+18. **The Cinder's view:** the lava glow is one additive term in the terrain shader (`glowMat`, `glowColor`,
+    `glowAmount`: new uniforms, the study's colour math untouched), 0.55 by day, up to full with the lanterns. The
+    material code is now read from the nearest texel of the height texture: bilinear filtering blended two codes
+    into a third (a plain/fertile border read as lava and glowed; every coast had faint seams of a wrong tint). The
+    tremors shiver the view by `camera.targetScreenOffset` (the target never moves; off with reduced motion).
+19. **The Dunes' shape:** along z, a mainland of dry sand and dune crests (high, above the tide) at the back, a
+    band of tidal flats (the town's ground), a lagoon 0.75 deep, three sandbars (dune crests, flats down their
+    flanks and in the troughs), then the sea; the headland (the only rock above 2) on the mainland's east end.
+    The oases are low plates at 0.72 on the mainland (high class, green): the draft's hollows filled and drained
+    with the sea's tide, which no oasis does. They are the only fresh water: coverage radius 3 from their cells
+    (the ground-coverage hook the Delta's river uses). Date palms stand only round them.
+20. **The Dunes' kinds:** date grove 2×2 on an oasis (5 dates); coffee terrace 2×1 beside one (2.5 coffee); sponge
+    divers' hut 1×1 on the lagoon's edge (1.5 sponges each low water); great cistern 3×3 on the flats, water
+    radius 16, 300$ (wells here reach 3: `serviceRadius`); the salt pan from the Delta (4 salt, no storm penalty —
+    a sandstorm brings no rain). The dredger is 1×1 on a deep cell touching the harbor (`touches`), 220$ and no
+    planks (the Dunes make none). BIOMES.md's "the harbor capacity halves" is read as the catch: silted, the piers,
+    docks and harbor bring in half (`harbourFactor`), the same as half the boats working.
+21. **The Dunes' weather:** the sandstorm is the storm variant (no rain, fire risk ×2, fog 0.75 for the view); at
+    its end the harbour silts for 4 cycles unless a staffed dredger clears it at the next settlement. The drought
+    comes every 10th cycle from 10: wells give nothing, the great cistern half ("cisterns drain"), and a home with
+    no water coverage loses 0.3 happiness that cycle. The night market is decided at the settlement before a
+    night (the settlements fall at dawn and dusk): a tavern and a market square in business and no storm → that
+    night's tourist spending (collected at the dawn settlement) is doubled.
+22. **Timberless coasts and the harbor:** the Atoll, the Delta, the Cinder and the Dunes make no planks, and the
+    harbor costs 60. Until Stage 4 lanes bring planks the company's visit waits on the old plank order (which needs
+    the harbor it pays for); Stage 5 decides.

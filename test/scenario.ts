@@ -478,7 +478,7 @@ export function biomeTown(state: SimState, grid: Grid, grant = 3000, town: Retur
   state.resources.money += grant; state.resources.planks += 100;
   growStreet(state, grid, 8);
   const extras: Partial<Record<BuildingKind, Building>> = {};
-  const flats: BuildingKind[] = ["stockfishRacks", "iceHouse", "coconutGrove", "pearlHouse", "toolworks", "ricePaddy", "saltPan", "indigoVats", "wardenTower", "glassworks"];
+  const flats: BuildingKind[] = ["stockfishRacks", "iceHouse", "coconutGrove", "pearlHouse", "toolworks", "ricePaddy", "saltPan", "indigoVats", "wardenTower", "glassworks", "greatCistern"];
   for (const kind of flats) {
     if (!grid.inCatalog(kind)) continue;
     let b = placeByWalkway(state, grid, kind, 1)[0];
@@ -495,13 +495,13 @@ export function biomeTown(state: SimState, grid: Grid, grant = 3000, town: Retur
     if (station) { extras.whalingStation = station; bridgeTo(state, grid, station); }
   }
   for (const kind of ["divePlatform", "reefNursery"] as const) if (grid.inCatalog(kind)) { const b = placeNear(state, grid, kind, town.pier.cells[0]); if (b) extras[kind] = b; }
-  // Kinds bound to a material up the slope (the Cinder's terraces, a vent, the spring), joined from the nearest street.
-  for (const kind of ["taroTerrace", "cocoaTerrace", "sulfurWorks", "hotSpring"] as const) if (grid.inCatalog(kind)) {
+  // Kinds bound to a material up the slope (the Cinder's terraces, a vent, the spring; the Dunes' oases), joined from the nearest street.
+  for (const kind of ["taroTerrace", "cocoaTerrace", "sulfurWorks", "hotSpring", "dateGrove", "coffeeTerrace"] as const) if (grid.inCatalog(kind)) {
     const b = placeJoined(state, grid, kind, town.huts[0].cells[0]);
     if (b) extras[kind] = b;
   }
-  // Channel-edge kinds by the pier (the Delta's crab pots), joined to the street if the pier's own deck does not reach them.
-  for (const kind of ["crabPots"] as const) if (grid.inCatalog(kind)) {
+  // Channel-edge kinds by the pier (the Delta's crab pots, the Dunes' sponge divers), joined to the street if the pier's own deck does not reach them.
+  for (const kind of ["crabPots", "spongeDivers"] as const) if (grid.inCatalog(kind)) {
     const b = placeEdge(state, grid, kind, town.pier.cells[0], 2);
     if (b) { extras[kind] = b; if (!b.cells.some(c => grid.neighbors(c).some(n => isLink(grid.buildingAt(n))))) joinByLine(state, grid, town.pier.cells[0], b.cells[0]); }
   }
