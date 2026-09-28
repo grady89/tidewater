@@ -2,7 +2,7 @@
 // low decks, by which tides will flood it), click places (and pays), clicking an existing building inspects it,
 // right-click removes. Placement writes to the sim through the Grid; meshes appear when the view syncs.
 import { ArcRotateCamera, Color3, Matrix, Mesh, MeshBuilder, Quaternion, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
-import { BuildingKind, BUILDINGS, PlacementClass, ROTATABLE_CLASSES } from "../sim/balance";
+import { BuildingKind, BUILDINGS, PlacementClass, ROTATABLE_CLASSES, STREET_STEP_MAX } from "../sim/balance";
 import { autoStilts, boatPurchaseBlocker, buyBoat, canAfford, placeCost, removeBuilding, tryPlace } from "../sim/economy";
 import { BOAT_COST, LANDFILL_COST, LANTERN_COST, LIFT_MAX, PLANT_COST } from "../sim/balance";
 import { CLEARANCE } from "../config";
@@ -263,7 +263,7 @@ export class Placement {
     if (cells.some(c => this.grid.buildingAt(c))) return no("Occupied");
     if (this.grid.treeOn(cells)) return no("A tree stands here: clear it (Land tab) or go round");
     if (!this.grid.slopeOk(kind, cells)) return no("Too steep to walk: a path takes gentler ground");
-    if (!this.grid.joinStepOk(kind, cells)) return no("Too steep a step up from the street: a path climbs at most 0.7 m a cell, a stair 1 m");
+    if (!this.grid.joinStepOk(kind, cells)) return no(`Too big a step to the street beside it: a path climbs at most ${BUILDINGS.path.maxRise} m a cell, a stair ${STREET_STEP_MAX} m`);
     if (this.grid.onIsle(cells) && !this.grid.isleOpen()) return no("Across the water: a harbor's ferry opens the isle");
     if (def.needsWalkway && !this.grid.touchesWalkway(cells)) return no("Must touch a walkway on the flats");
     if (def.needsLink && !this.grid.touchesLink(cells)) return no("Must touch a pier or a raised walkway (they bridge deep water)");

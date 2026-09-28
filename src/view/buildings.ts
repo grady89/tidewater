@@ -5,7 +5,7 @@
 // sphere that is lit while the home is reached. View only: nothing here changes a number in the sim.
 import { Axis, Color3, Matrix, Mesh, MeshBuilder, Scene, Space, StandardMaterial, Vector3, VertexBuffer } from "@babylonjs/core";
 import { STILT_SINK } from "../config";
-import { BUILDINGS, mayTurn } from "../sim/balance";
+import { BUILDINGS, mayTurn, STREET_STEP_MAX } from "../sim/balance";
 import { cellCenter, DIRS, Grid } from "../sim/grid";
 import { ground } from "./ground";
 import { roofFor, roofShape, setRoofPalette } from "./roofs";
@@ -389,7 +389,7 @@ export function deckJoins(b: Building, grid: Grid): Join[] {
     const { x, z } = cellCenter(c);
     const nh = n.kind === "path" ? ground(x + d.i * 0.5, z + d.j * 0.5) + PATH_LIFT : n.floorY;
     const dh = nh - b.floorY;
-    if (dh > 0.1 && dh <= 1.0) return { side: d, kind: "step" as const, dh };
+    if (dh > 0.1 && dh <= STREET_STEP_MAX + 1e-6) return { side: d, kind: "step" as const, dh };
     return { side: d, kind: "flush" as const, dh: 0 };
   });
 }
@@ -420,7 +420,7 @@ function streetDeck(scene: Scene, parts: Mesh[], b: Building, grid: Grid, x: num
       // A solid stair against the higher deck: each tread is a block from this deck up to its own height and
       // out to the shared edge, so the flight reads as one wedge whose top tread meets the neighbour's floor.
       const n = Math.max(2, Math.ceil(j.dh / 0.13));
-      const depth = Math.min(0.45, 0.15 * n);
+      const depth = Math.min(0.9, 0.15 * n); // a tall flight runs most of the way across the cell
       for (let k = 1; k <= n; k++) {
         const front = 0.5 - depth * (n - k + 1) / n;
         const len = 0.5 - front, mid = (front + 0.5) / 2;
@@ -502,7 +502,7 @@ function path(scene: Scene, b: Building, grid: Grid): BuildingMeshes {
     const base = ground(x + ax * 0.5, z + az * 0.5) + LIFT;
     const top = b.floorY + j.dh;
     const n = Math.max(2, Math.ceil((top - base) / 0.13));
-    const depth = Math.min(0.45, 0.15 * n);
+    const depth = Math.min(0.9, 0.15 * n); // a tall flight runs most of the way across the cell
     for (let k = 1; k <= n; k++) {
       const front = 0.5 - depth * (n - k + 1) / n;
       const len = 0.5 - front, mid = (front + 0.5) / 2;

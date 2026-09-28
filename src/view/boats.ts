@@ -224,6 +224,14 @@ export class Boats {
         { x: cx - 0.35, z: cz + d / 2 + 0.5, yaw: 0 }, { x: cx + 0.35, z: cz - d / 2 - 0.5, yaw: 0 },
       );
     }
+    // A moored boat turns so its outboard side (the outrigger's float sits on local +z) faces away from the deck:
+    // the hull's bow is +x, so a hull along x takes yaw 0 or π and one along z takes ±π/2, whichever points out.
+    const centre = h.kind === "pier" ? (() => { const a = cellCenter(h.cells[0]), s = cellCenter(h.cells[h.cells.length - 1]); return { x: (a.x + s.x) / 2, z: (a.z + s.z) / 2 }; })() : (() => { const is = h.cells.map(c => c.i), js = h.cells.map(c => c.j); return { x: (Math.min(...is) + Math.max(...is) + 1) / 2, z: (Math.min(...js) + Math.max(...js) + 1) / 2 }; })();
+    for (const m of candidates) {
+      const ox = m.x - centre.x, oz = m.z - centre.z;
+      const hullAlongX = Math.abs(Math.cos(m.yaw)) > 0.5;
+      m.yaw = hullAlongX ? (oz >= 0 ? 0 : Math.PI) : (ox >= 0 ? Math.PI / 2 : -Math.PI / 2);
+    }
     const free = candidates.filter(m => !this.grid.buildingAt(worldToCell(m.x, m.z)));
     const pool = free.length ? free : candidates;
     const out: { x: number; z: number; yaw: number }[] = [];
