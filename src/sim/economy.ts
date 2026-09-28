@@ -8,8 +8,7 @@ import {
   POLLUTION_HAPPY_SCALE, FOOD_PRICE, PURCHASABLE_BOATS, SAWMILL_RATE, SHIPYARD_BOAT_COST,
   SHIPYARD_CYCLES, SMOKEHOUSE_RATE, SPRING_LOW_BONUS, TAX_PER_RESIDENT, TIMBER_PER_TREE, TOOLWORKS_BONUS, TOOLWORKS_IRON_PER_CYCLE, TOOLWORKS_RADIUS, WAREHOUSE_CAP,
   COCONUT_PER_TREE, COCONUT_RADIUS, PEARL_RADIUS, PEARLS_PER_SHIFT, ICE_HOUSE_CAP_FACTOR, IRON_PER_CYCLE, SALT_PER_STOCKFISH, STOCKFISH_RATE, STOCKFISH_UNSALTED, WHALE_MEAT_PER_CYCLE, WHALE_OIL_PER_CYCLE,
-  WASTE_BACKLOG_PENALTY_MAX, WASTE_BACKLOG_PENALTY_PER_UNIT,
-} from "./balance";
+  WASTE_BACKLOG_PENALTY_MAX, WASTE_BACKLOG_PENALTY_PER_UNIT, mayTurn } from "./balance";
 import { at } from "./fields";
 import { active, damageNear, fireSources, repairDamage, rollIgnitions } from "./fire";
 import { biomeFor } from "./biomes";
@@ -66,7 +65,7 @@ export function tryPlace(state: SimState, grid: Grid, kind: BuildingKind, anchor
   if (!canAfford(state, cost)) return null;
   pay(state, cost);
   const firstHarbor = kind === "harbor" && !grid.isleOpen();
-  const b = grid.place(kind, cells, autoStilts(kind) ? lift : 0, rot ?? grid.facing(cells));
+  const b = grid.place(kind, cells, autoStilts(kind) ? lift : 0, rot ?? (mayTurn(kind) ? grid.facing(cells) : 0));
   if (firstHarbor) notify(state, "The ferry runs: the isle across the water is open to build on");
   return b;
 }

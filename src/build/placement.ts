@@ -2,7 +2,7 @@
 // low decks, by which tides will flood it), click places (and pays), clicking an existing building inspects it,
 // right-click removes. Placement writes to the sim through the Grid; meshes appear when the view syncs.
 import { ArcRotateCamera, Color3, Matrix, Mesh, MeshBuilder, Quaternion, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
-import { BuildingKind, BUILDINGS, PlacementClass } from "../sim/balance";
+import { BuildingKind, BUILDINGS, PlacementClass, ROTATABLE_CLASSES } from "../sim/balance";
 import { autoStilts, boatPurchaseBlocker, buyBoat, canAfford, placeCost, removeBuilding, tryPlace } from "../sim/economy";
 import { BOAT_COST, LANDFILL_COST, LANTERN_COST, LIFT_MAX, PLANT_COST } from "../sim/balance";
 import { CLEARANCE } from "../config";
@@ -25,7 +25,7 @@ const CLICK_SLOP_PX = 5;
 /** Per-cell pieces that are laid in runs: drag from one cell to another and the whole line goes down. */
 const LINE_TOOLS: ReadonlySet<Tool> = new Set<Tool>(["walkway", "raisedWalkway", "path", "breakwater", "sharkNet", "seaWall"]);
 /** Buildings on land turn with R (streets, and everything in the water, keep their one orientation). */
-const ROTATABLE: ReadonlySet<PlacementClass> = new Set<PlacementClass>(["flat", "high", "flatOrHigh", "shore", "beach"]);
+const ROTATABLE = ROTATABLE_CLASSES;
 /** Where the door is for each quarter turn: −z, −x, +z, +x. */
 const DOOR_SIDE: readonly Cell[] = [{ i: 0, j: -1 }, { i: -1, j: 0 }, { i: 0, j: 1 }, { i: 1, j: 0 }];
 
@@ -109,8 +109,10 @@ export class Placement {
     };
     this.ghost.material = this.mats.ok;
     const lineGhost = (name: string, mat: StandardMaterial) => {
-      const m = MeshBuilder.CreateBox(name, { size: 1 }, scene);
-      m.scaling.y = 0.06; m.isPickable = false; m.material = mat; m.setEnabled(false);
+      // The thickness is in the geometry, not the scaling: thin instances sit in the mesh's own frame, and a
+      // 0.06 y-scale would flatten every instance's height onto the sea (the run's ghost was buried for a while).
+      const m = MeshBuilder.CreateBox(name, { width: 1, height: 0.06, depth: 1 }, scene);
+      m.isPickable = false; m.material = mat; m.setEnabled(false);
       return m;
     };
     this.lineGhosts = { ok: lineGhost("ghostLineOk", this.mats.ok), bad: lineGhost("ghostLineBad", this.mats.bad) };
@@ -387,7 +389,7 @@ export class Placement {
     for (const c of this.linePath) {
       const before = this.grid.state.resources.money;
       const k = this.lineKindAt(c) ?? kind;
-      const b = tryPlace(this.grid.state, this.grid, k, c, this.toolLift);
+      const b = tryPlace(this.grid.state, this.grid, k, c, this.toolLift, 0);
       if (b) this.onPlace(k, b, before - this.grid.state.resources.money);
     }
     this.linePath = [];
@@ -401,9 +403,11 @@ export class Placement {
     this.line = { count: ok.filter(Boolean).length, cost };
     const okM: number[] = [], badM: number[] = [];
     cells.forEach((c, k) => {
-      // A ground piece's ghost rides the rendered ground, which on a slope sits above the cell's own height.
-      const y = ok[k] ? Math.max(this.grid.floorFor(this.lineKindAt(c) ?? (this.tool as BuildingKind), [c], this.toolLift), groundHeight(c.i + 0.5, c.j + 0.5) + 0.05) : this.pickY();
-      Matrix.Compose(new Vector3(0.96, 1, 0.96), Quaternion.Identity(), new Vector3(c.i + 0.5, y, c.j + 0.5)).copyToArray(ok[k] ? okM : badM, (ok[k] ? okM : badM).length);
+      // A ground piece's ghost stands on the rendered ground as a low block: a slab sinks into the slope.
+      const kindAt = this.lineKindAt(c) ?? (this.tool as BuildingKind);
+      const onGround = ok[k] && BUILDINGS[kindAt].floor === "terrain";
+      const y = !ok[k] ? this.pickY() : onGround ? groundHeight(c.i + 0.5, c.j + 0.5) + 0.14 : this.grid.floorFor(kindAt, [c], this.toolLift);
+      Matrix.Compose(new Vector3(0.96, onGround ? 4 : 1, 0.96), Quaternion.Identity(), new Vector3(c.i + 0.5, y, c.j + 0.5)).copyToArray(ok[k] ? okM : badM, (ok[k] ? okM : badM).length);
     });
     for (const [mesh, m] of [[this.lineGhosts.ok, okM], [this.lineGhosts.bad, badM]] as [Mesh, number[]][]) {
       if (!m.length) { mesh.setEnabled(false); continue; }
@@ -471,8 +475,9 @@ export class Placement {
     this.fate = fate;
     const is = cells.map(c => c.i), js = cells.map(c => c.j);
     const minI = Math.min(...is), maxI = Math.max(...is), minJ = Math.min(...js), maxJ = Math.max(...js);
-    const onGround = isBuildingTool(this.tool) && BUILDINGS[this.tool].floor === "ground";
-    this.ghost.position.set((minI + maxI + 1) / 2, onGround ? Math.max(y, groundHeight((minI + maxI + 1) / 2, (minJ + maxJ + 1) / 2) + 0.05) : y, (minJ + maxJ + 1) / 2);
+    const onGround = isBuildingTool(this.tool) && BUILDINGS[this.tool].floor === "terrain";
+    this.ghost.scaling.y = onGround ? 0.24 : 0.06;
+    this.ghost.position.set((minI + maxI + 1) / 2, onGround ? groundHeight((minI + maxI + 1) / 2, (minJ + maxJ + 1) / 2) + 0.14 : y, (minJ + maxJ + 1) / 2);
     this.ghost.scaling.x = maxI - minI + 0.96;
     this.ghost.scaling.z = maxJ - minJ + 0.96;
     this.ghost.material = blocker ? this.mats.bad : fate === "safe" ? this.mats.ok : this.mats[fate];
