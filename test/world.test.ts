@@ -102,9 +102,9 @@ describe("second island (backlog 6)", () => {
     expect(toHarbor).toBeGreaterThan(0);
     expect(pierToHome).toBeGreaterThan(0);
     expect(at(field, isleHome)).toBe(toHarbor + FERRY_COST + pierToHome);
-    // Mainland: 6 residents, 10 jobs (crew 4, market 3, smokehouse 3). The isle's 6 residents take the 4 left over.
+    // Mainland: 6 residents, 8 jobs (crew 4, market 1, smokehouse 3). The isle's 6 residents take the 2 left over.
     assignWorkers(state, grid);
-    expect(crossCommuters(state, grid)).toBe(4);
+    expect(crossCommuters(state, grid)).toBe(2);
     expect(state.assignments.filter(a => grid.onIsle(state.buildings[a.home].cells)).every(a => !grid.onIsle(state.buildings[a.work].cells))).toBe(true);
     expect(t.huts.every(h => employed(state, h) === h.residents)).toBe(true);
     // The other way: boats at the isle pier, empty isle huts, two more mainland houses — mainland spare hands crew them.

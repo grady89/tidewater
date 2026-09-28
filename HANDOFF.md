@@ -159,6 +159,9 @@ left open), ARCHITECTURE.md "Biomes" (where each piece lives), NOTES.md "Session
   `npm run quality` measures each coast at each preset.
 
 Known-rough:
+- The first blind playtest (NOTES.md Session E) fixed the dragged run, the market's staffing and the first-peak
+  message; the tester's other notes — small click targets on the gold ring, systems whose links go unexplained
+  (homes → workers → market → income) — are still open beyond the pier snap and the step-3 hint.
 - The Fjord's ridges are smooth slabs under the snow cap; the shaper's noise (±1.3) is small against its
   profile. More noise on the crests, or a second ridge line, would break the silhouette.
 - The whaling station's berth shows an ordinary fishing boat; the ice-breaker pier is the pier plus a wedge and

@@ -14,6 +14,8 @@ export interface Step {
   tab?: Category;
   tool?: Tool;
   done(state: SimState): boolean;
+  /** Why the step is still open, when the player has plainly tried (shown under the text). */
+  why?(state: SimState): string | null;
 }
 
 const has = (state: SimState, kind: string) => Object.values(state.buildings).some(b => b.kind === kind);
@@ -23,9 +25,10 @@ const boats = (state: SimState) => Object.values(state.buildings).reduce((n, b) 
 export const STEPS: Step[] = [
   { title: "Build a pier", text: "Open the Sea tab, pick Pier and click the gold ring by your hut. Piers stand in deep water against the shore; boats fish from them.", tab: "Sea", tool: "pier", done: s => has(s, "pier") },
   { title: "Buy a boat", text: "Sea tab → Boat, then click the pier. Boats sail at high water and bring back fish.", tab: "Sea", tool: "boat", done: s => boats(s) > 0 },
-  { title: "Lay a street", text: "Streets → Walkway, then drag from the pier to your hut. Walkways size their own stilts, so they never flood at an ordinary tide; low ground just costs more. An amber ghost means a spring tide will reach it — a raised walkway there stays dry.", tab: "Streets", tool: "walkway", done: s => Object.values(s.buildings).some(b => b.kind === "hut" && b.reached) },
+  { title: "Lay a street", text: "Streets → Walkway, then drag from the pier to your hut. Walkways size their own stilts, so they never flood at an ordinary tide; low ground just costs more. An amber ghost means a spring tide will reach it — a raised walkway there stays dry.", tab: "Streets", tool: "walkway", done: s => Object.values(s.buildings).some(b => b.kind === "hut" && b.reached),
+    why: s => count(s, "walkway") + count(s, "raisedWalkway") + count(s, "path") === 0 ? null : "Your street doesn't reach the hut yet: it has to run from the pier without a gap and touch a side of the hut. Drag again from the last plank to the hut." },
   { title: "Sell the catch", text: "Production → Fish market, on the street. It sells fish at every high-tide peak; that is your income.", tab: "Production", tool: "market", done: s => has(s, "market") },
-  { title: "Make room", text: "Homes → Hut, beside the street. Residents move in while there is food, work and a free bed.", tab: "Homes", tool: "hut", done: s => count(s, "hut") + count(s, "house") >= 2 },
+  { title: "Make room", text: "Homes → Hut, beside the street. Residents arrive at each high-tide peak while a home on the street has a free bed, there is fish in store and the town is content.", tab: "Homes", tool: "hut", done: s => count(s, "hut") + count(s, "house") >= 2 },
   { title: "Watch a tide", text: "Boats sail at high water; the ledger settles at the peak. Next: a well and a sewage outfall (Services) keep people happy.", done: s => s.tide.cycle >= 3 && population(s) >= 4 },
 ];
 
@@ -95,7 +98,7 @@ export class Tutorial {
     const stuck = Tutorial.stuck(state);
     let step = "", title = "", text = "";
     if (stuck) { step = "Stuck"; title = "Nothing can earn"; text = stuck; }
-    else if (this.step < STEPS.length) { const s = STEPS[this.step]; step = `Step ${this.step + 1} of ${STEPS.length}`; title = s.title; text = s.text; }
+    else if (this.step < STEPS.length) { const s = STEPS[this.step]; step = `Step ${this.step + 1} of ${STEPS.length}`; title = s.title; text = s.text; const why = s.why?.(state); if (why) text += ` — ${why}`; }
     else text = this.hint(state);
     if (this.stepEl.textContent !== step) this.stepEl.textContent = step;
     if (this.titleEl.textContent !== title) this.titleEl.textContent = title;
