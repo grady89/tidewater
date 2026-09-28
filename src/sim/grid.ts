@@ -272,23 +272,29 @@ export class Grid {
     return Math.abs(this.surfaceOf(kindA, a) - this.surfaceOf(kindB, b)) <= limit;
   }
 
-  /** Whether a path on these cells can be stepped onto from some street it touches (when it touches any): no path climbs a bank in one stride. */
+  /**
+   * Whether every street piece these cells touch can be stepped to from them: path to path within the rise, deck
+   * to path within a stair, either way up. Decks beside decks are left to their own snap and steps. The network
+   * joins whatever touches, so the eye must see the join.
+   */
   joinStepOk(kind: BuildingKind, cells: Cell[]): boolean {
-    const max = BUILDINGS[kind].maxRise;
-    if (max === undefined) return true;
-    let touches = 0;
+    const rise = BUILDINGS[kind].maxRise;
+    const own = new Set(cells.map(c => cellIndex(c.i, c.j)));
     for (const c of cells) {
-      const h = this.heightAt(c);
+      const mine = rise !== undefined ? this.heightAt(c) : this.floorFor(kind, cells, 0);
       for (const d of DIRS) {
         const n = { i: c.i + d.i, j: c.j + d.j };
-        const s = inBounds(n.i, n.j) ? this.buildingAt(n) : null;
+        if (!inBounds(n.i, n.j) || own.has(cellIndex(n.i, n.j))) continue;
+        const s = this.buildingAt(n);
         if (!s || BUILDINGS[s.kind].network === "leaf") continue;
-        touches++;
-        const sh = s.kind === "path" ? this.heightAt(n) : s.floorY;
-        if (Math.abs(sh - h) <= (s.kind === "path" ? max : STREET_STEP_MAX)) return true;
+        const sPath = BUILDINGS[s.kind].maxRise !== undefined;
+        if (rise === undefined && !sPath) continue;
+        const theirs = sPath ? this.heightAt(n) : s.floorY;
+        const limit = rise !== undefined && sPath ? Math.min(rise, BUILDINGS[s.kind].maxRise!) : STREET_STEP_MAX;
+        if (Math.abs(theirs - mine) > limit) return false;
       }
     }
-    return touches === 0;
+    return true;
   }
 
   canPlace(kind: BuildingKind, cells: Cell[]): boolean {

@@ -435,5 +435,5 @@ export function mayTurn(kind: BuildingKind): boolean {
 }
 /** The steepest ground a path may take (BUILDINGS.path.maxRise): 0.7 m of rise per cell, a hard climb, no scramble. */
 export const PATH_MAX_RISE = 0.7;
-/** The tallest stair a deck builds up to a path, or a path up to a deck: a street joins across a step this high at most. */
-export const STREET_STEP_MAX = 1.0;
+/** The tallest stair between a deck and a path (either way up): adjacent street pieces further apart than this cannot be laid. */
+export const STREET_STEP_MAX = 1.5;

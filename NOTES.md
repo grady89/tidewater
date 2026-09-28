@@ -1057,6 +1057,14 @@ Grady's third pass (paths on the hill):
 - **The deck met the path in mid-air.** A deck's stair aimed at the path cell's nominal floor (its centre); the
   path's surface at the shared edge is the ground there. `deckJoins` reads the ground at the edge for a path
   neighbour, and a deck builds a stair up to 1 m (was 0.8).
+- **A deck a metre and a half above a path, and no stair.** Stairs stopped at 1 m and adjacency did not care, so a
+  walkway laid up to a path far below joined it in the network and floated over it on screen. `STREET_STEP_MAX`
+  is 1.5 m, a stair is drawn up to it (a tall flight runs 0.9 of the cell), and `joinStepOk` is strict both
+  ways: every street piece a new deck or path touches must be within a stair (deck to path) or the rise (path to
+  path), or the piece cannot be laid — what the network joins, the eye sees joined.
+- **The outrigger's float sat inside the pier.** Moorings used one yaw per berth, and the Atoll's float lives on
+  the hull's local +z, so on one side of every pier (and one side of every dock) it pointed into the deck. A moored
+  boat now turns so its outboard side faces away from the harbour's centre (`Boats.moorings`).
 - **The path started a cell away from the walkway.** A drag begun on the flats beside a walkway (where a path
   cannot go) now leaves from that walkway (`Placement.streetBeside`), so the two join.
 - The achievement toast sat on the walkthrough; it now rises above the speed bar.
