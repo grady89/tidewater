@@ -2,7 +2,7 @@
 // blind tester's case — a street dragged from the pier to the hut on a generated island arrives connected.
 import { describe, expect, it } from "vitest";
 import { linePath, MAX_LINE, routePath } from "../src/build/line";
-import { BUILDINGS } from "../src/sim/balance";
+import { BUILDINGS, mayTurn } from "../src/sim/balance";
 import { tryPlace } from "../src/sim/economy";
 import { Grid } from "../src/sim/grid";
 import { updateNetwork } from "../src/sim/network";
@@ -62,6 +62,17 @@ describe("the dragged run", () => {
     const route = routePath({ i: 0, j: 0 }, { i: 6, j: 0 }, c => !blocked(c) && c.j >= 0 && c.j <= 2, MAX_LINE, { cost: c => (c.j === 0 ? 10 : 1) })!;
     expect(route[route.length - 1]).toEqual({ i: 6, j: 0 });
     expect(route.filter(c => c.j === 0).length).toBe(1); // only the goal sits on the dear row
+  });
+  it("never turns a street piece, whatever it stands beside (a turned walkway wears its rails across the walk)", () => {
+    const { state, grid } = newGame(1, 7);
+    const hut = Object.values(state.buildings).find(b => b.kind === "hut")!;
+    const pier = tryPlace(state, grid, "pier", suggestPier(grid)!)!;
+    state.resources.money += 2000;
+    const route = routePath(pier.cells[1], hut.cells[0], fitsOn(grid), MAX_LINE, { startCells: pier.cells, goalCells: hut.cells })!;
+    const laid = route.map(c => tryPlace(state, grid, "walkway", c)!);
+    expect(laid.every(b => b && b.rot === 0)).toBe(true);
+    expect(mayTurn("walkway") || mayTurn("path") || mayTurn("breakwater")).toBe(false);
+    expect(mayTurn("hut") && mayTurn("market")).toBe(true);
   });
   for (const seed of [0, 7, 11, 23]) it(`connects the hut to the pier on island ${seed}`, () => {
     const { state, grid } = newGame(1, seed);

@@ -423,3 +423,11 @@ export const CARGO_HOLD = 20;
 /** Non-food goods keep this fraction of their cap before any sails; an island wants a good it cannot make up to this fraction of its cap. */
 export const LANE_RESERVE_FRACTION = 0.3;
 export const LANE_WANT_FRACTION = 0.5;
+
+/** Classes whose pieces turn to face the street (R in the ghost); streets and everything in the water don't. */
+export const ROTATABLE_CLASSES: ReadonlySet<PlacementClass> = new Set<PlacementClass>(["flat", "high", "flatOrHigh", "shore", "beach"]);
+/** One-cell runs laid by a drag: never turned — a turned walkway wears its rails across the walk. */
+export const LINE_KINDS: ReadonlySet<BuildingKind> = new Set<BuildingKind>(["walkway", "raisedWalkway", "path", "breakwater", "sharkNet", "seaWall"]);
+export function mayTurn(kind: BuildingKind): boolean {
+  return ROTATABLE_CLASSES.has(BUILDINGS[kind].cls) && !LINE_KINDS.has(kind);
+}

@@ -1031,8 +1031,18 @@ Grady's own pass (2026-09-28, by mouse) found what the scripted tester could not
   lies two metres below the deck, so a drag begun on the pier began three cells past it (both blind rounds
   and Grady saw the gap). `pickCell` now takes the deck plane wherever the ground under the hit is below the
   tide.
-- **A path's ghost was buried.** Ground pieces' ghosts (the dragged run's cells and the single ghost) now sit on
-  the rendered ground (`view/ground`), which on a slope stands above the cell's own height.
+- **The rails across the walk.** `tryPlace` gave every piece a facing (`grid.facing`) when none was passed, and
+  the dragged run passed none — so a walkway laid beside a street to its west turned a quarter, and its rails
+  (built for its real joins) came round across the walk; a leg laid along j happened to face 0. `mayTurn(kind)`
+  (balance.ts: rotatable classes minus `LINE_KINDS`) gates the facing in `tryPlace` and the turn in the view, so
+  older saves with turned walkways draw straight too.
+- **A path's ghost was buried.** A path's floor is "terrain" (not "ground", which the first fix looked for), and a
+  6 cm slab on a slope is inside the hill either way. Ground pieces' ghosts — the run's cells and the single
+  ghost — now stand on the rendered ground (`view/ground`) as low blocks a quarter of a metre tall.
+  The deeper cause: the run's ghost cells are thin instances of a box whose *mesh* y-scale was 0.06, and thin
+  instances live in the mesh's own frame, so every instance's height was multiplied by 0.06 — the run's ghost
+  had always sat near sea level, plausible on the low flats and buried anywhere higher. The thickness is now
+  in the box's geometry.
 - The achievement toast sat on the walkthrough; it now rises above the speed bar.
 - "Backwards stairs": the treads are built by the lower deck and climb toward the shared edge, which the code and
   a side view confirm; the stairs Grady saw were on the staircase-laid cells. If one still reads backwards after

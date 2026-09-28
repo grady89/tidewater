@@ -5,7 +5,7 @@
 // sphere that is lit while the home is reached. View only: nothing here changes a number in the sim.
 import { Axis, Color3, Matrix, Mesh, MeshBuilder, Scene, Space, StandardMaterial, Vector3, VertexBuffer } from "@babylonjs/core";
 import { STILT_SINK } from "../config";
-import { BUILDINGS } from "../sim/balance";
+import { BUILDINGS, mayTurn } from "../sim/balance";
 import { cellCenter, DIRS, Grid } from "../sim/grid";
 import { ground } from "./ground";
 import { roofFor, roofShape, setRoofPalette } from "./roofs";
@@ -1328,7 +1328,7 @@ function reefNursery(scene: Scene, b: Building): BuildingMeshes {
 
 export function createBuildingMeshes(scene: Scene, b: Building, grid: Grid): BuildingMeshes {
   const m = buildMeshes(scene, b, grid);
-  if (b.rot && !CELL_ORIENTED.has(b.kind)) turn(m, b);
+  if (b.rot && !CELL_ORIENTED.has(b.kind) && mayTurn(b.kind)) turn(m, b); // older saves hold turned walkways
   return applyUnreached(b, applyDamage(scene, b, m));
 }
 
