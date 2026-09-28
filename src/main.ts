@@ -321,6 +321,7 @@ async function enterSector(face: number, opts: { instant?: boolean } = {}): Prom
     activeFace = face;
     writeActive(store, face);
     adopt(rec.state);
+    if (rec.state.tide.cycle === 0) tutorial.reset(); // a fresh sea gets the walkthrough, whatever an earlier town did
     const framing = townFraming();
     const instant = !!opts.instant || reducedMotion();
     worldRoot.classList.add("fading");

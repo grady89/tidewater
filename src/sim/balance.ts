@@ -135,6 +135,8 @@ export const ISLAND_MAX_REROLLS = 32;
 export const LOAN_AMOUNT = 300;
 export const LOAN_INTEREST = 0.2;
 export const LOAN_REPAY_CYCLES = 15;
+/** Settlements before the first instalment: time to get the money earning. */
+export const LOAN_GRACE_CYCLES = 3;
 
 // Land tools
 /** Landfill raises a flat cell to this height: dry at every tide, still below the hill. */

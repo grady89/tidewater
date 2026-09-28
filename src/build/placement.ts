@@ -126,6 +126,7 @@ export class Placement {
     canvas.addEventListener("pointerleave", () => { this.hover = null; this.ghost.setEnabled(false); this.ghostStilts.setEnabled(false); this.ghostDoor.setEnabled(false); });
     canvas.addEventListener("pointerdown", e => {
       if (!this.enabled) return;
+      this.refresh(); // pick where the press lands, not where the pointer last moved
       this.down = { x: e.clientX, y: e.clientY, button: e.button };
       if (e.button === 0 && this.dragsLine && this.hover) this.lineStart = this.hover;
     });
@@ -138,7 +139,8 @@ export class Placement {
       const moved = Math.hypot(e.clientX - d.x, e.clientY - d.y) > CLICK_SLOP_PX;
       if (e.button === 0 && start && this.linePath.length > 1) { this.placeLine(); return; }
       this.linePath = [];
-      if (moved) { this.refresh(); return; }
+      this.refresh();
+      if (moved) return;
       if (e.button === 0) this.click();
       else if (e.button === 2) this.remove();
     });
@@ -251,7 +253,7 @@ export class Placement {
     // Placeable. Caution when nothing it touches is on the network: it would stand idle until a street reaches it.
     let warn: string | null = null;
     if (def.network !== "root" && !cells.some(c => this.grid.neighbors(c).some(n => { const b = this.grid.buildingAt(n); return !!b && (b.reached || BUILDINGS[b.kind].network === "root"); }))) {
-      warn = def.network === "link" ? "Not joined to the town yet: streets need a pier at one end" : "No street touches it: nobody can reach it";
+      warn = def.network === "link" ? "Not joined to the town yet: a street starts at a pier, dock or harbor and runs to here without a gap" : "No street touches it: nobody can reach it";
     }
     return { cells, blocker: null, warn, fate: floodFate(y, this.grid.tides), y, stilt, cost, rot };
   }
@@ -270,11 +272,26 @@ export class Placement {
     this.ghostDoor.setEnabled(true);
   }
 
-  /** Whether one cell of the current line tool can be laid at `c` (class, occupancy, the isle's ferry). */
-  private lineFits(c: Cell): boolean {
-    const kind = this.tool as BuildingKind;
+  private fitsKind(kind: BuildingKind, c: Cell): boolean {
     const cells = this.grid.footprint(kind, c);
     return !!cells && this.grid.classOk(BUILDINGS[kind].cls, cells) && !this.grid.buildingAt(c) && (!this.grid.onIsle(cells) || this.grid.isleOpen());
+  }
+
+  /**
+   * What the current line tool lays at `c`: the tool's own kind where it fits; for the two streets, the other
+   * one where only it fits (a walkway run climbs onto the dry hill as a path, a path run drops onto the flats as
+   * a walkway — one drag, one street). Null where nothing fits.
+   */
+  private lineKindAt(c: Cell): BuildingKind | null {
+    const kind = this.tool as BuildingKind;
+    if (this.fitsKind(kind, c)) return kind;
+    const other = kind === "walkway" ? "path" : kind === "path" ? "walkway" : null;
+    return other && this.fitsKind(other, c) ? other : null;
+  }
+
+  /** Whether one cell of the current line tool can be laid at `c` (class, occupancy, the isle's ferry). */
+  private lineFits(c: Cell): boolean {
+    return this.lineKindAt(c) !== null;
   }
 
   /** The nearest cell within `r` of `c` where `kind` can stand, `c` itself first (a pier click lands beside the spot). */
@@ -296,10 +313,11 @@ export class Placement {
     const kind = this.tool as BuildingKind;
     let cost = 0;
     const ok = this.linePath.map(c => {
-      const fits = this.lineFits(c);
+      const k = this.lineKindAt(c) ?? kind;
+      const fits = k !== kind || this.fitsKind(kind, c);
       // Each cell prices its own stilts (the run is laid in order, so later cells may snap to earlier ones; the
       // preview prices each against the ground alone, which is the floor of what it will cost).
-      if (fits) { const cells = this.grid.footprint(kind, c)!; cost += placeCost(kind, this.grid.stiltLength(kind, cells, this.grid.floorFor(kind, cells, this.toolLift))).money; }
+      if (fits) { const cells = this.grid.footprint(k, c)!; cost += placeCost(k, this.grid.stiltLength(k, cells, this.grid.floorFor(k, cells, this.toolLift))).money; }
       return fits;
     });
     return { cells: this.linePath, ok, cost };
@@ -310,8 +328,9 @@ export class Placement {
     const kind = this.tool as BuildingKind;
     for (const c of this.linePath) {
       const before = this.grid.state.resources.money;
-      const b = tryPlace(this.grid.state, this.grid, kind, c, this.toolLift);
-      if (b) this.onPlace(kind, b, before - this.grid.state.resources.money);
+      const k = this.lineKindAt(c) ?? kind;
+      const b = tryPlace(this.grid.state, this.grid, k, c, this.toolLift);
+      if (b) this.onPlace(k, b, before - this.grid.state.resources.money);
     }
     this.linePath = [];
     this.line = null;
@@ -324,7 +343,7 @@ export class Placement {
     this.line = { count: ok.filter(Boolean).length, cost };
     const okM: number[] = [], badM: number[] = [];
     cells.forEach((c, k) => {
-      const y = ok[k] ? this.grid.floorFor(this.tool as BuildingKind, [c], this.toolLift) : this.pickY();
+      const y = ok[k] ? this.grid.floorFor(this.lineKindAt(c) ?? (this.tool as BuildingKind), [c], this.toolLift) : this.pickY();
       Matrix.Compose(new Vector3(0.96, 1, 0.96), Quaternion.Identity(), new Vector3(c.i + 0.5, y, c.j + 0.5)).copyToArray(ok[k] ? okM : badM, (ok[k] ? okM : badM).length);
     });
     for (const [mesh, m] of [[this.lineGhosts.ok, okM], [this.lineGhosts.bad, badM]] as [Mesh, number[]][]) {
@@ -379,8 +398,10 @@ export class Placement {
     this.lineGhosts.ok.setEnabled(false); this.lineGhosts.bad.setEnabled(false);
     this.line = null;
     if (!this.hover) { this.ghost.setEnabled(false); this.ghostStilts.setEnabled(false); this.ghostDoor.setEnabled(false); this.blocker = null; this.warn = null; return; }
-    // A pier's spot is one exact edge cell: a click that lands a cell off takes the nearest spot that works.
-    if (this.tool === "pier") { const fp = this.grid.footprint("pier", this.hover); if (!fp || !this.grid.canPlace("pier", fp)) { const snapped = this.snapTo("pier", this.hover, 1); if (snapped) this.hover = snapped; } }
+    // An edge piece's spot (pier, outfall, shipyard) is one exact cell: a click that lands a cell off takes the
+    // nearest spot that works.
+    const edgeKind = (this.tool as string) in BUILDINGS && BUILDINGS[this.tool as BuildingKind].cls === "edge" ? (this.tool as BuildingKind) : null;
+    if (edgeKind) { const fp = this.grid.footprint(edgeKind, this.hover); if (!fp || !this.grid.canPlace(edgeKind, fp)) { const snapped = this.snapTo(edgeKind, this.hover, 1); if (snapped) this.hover = snapped; } }
     const { cells, blocker, warn, fate, y, stilt, cost, rot } = this.evaluate(this.hover);
     this.stilt = stilt;
     this.cost = cost;
