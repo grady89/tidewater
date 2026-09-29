@@ -64,6 +64,8 @@ export interface Building {
   fire: number;
   /** Burnt, storm-struck or wave-struck: produces nothing until repaired. */
   damaged: boolean;
+  /** While damaged: the repair the town's free hands have done so far, in dollars' worth (sim/fire.ts mendByHand). */
+  mend?: number;
 }
 
 export interface Swimmers { k: number; n: number }
@@ -147,6 +149,10 @@ export interface TsunamiState {
   /** Buildings already struck by this wave. */
   struck: number[];
   count: number;
+  /** How far along its axis this wave damages (the first a town sees spends itself on the seafront); absent: all the way. */
+  reach?: number;
+  /** Buildings this wave has damaged. */
+  hit?: number;
 }
 
 export interface TradeState {
@@ -213,7 +219,7 @@ export interface SimState {
   /** A storm crossing the World that reaches this sea next: the cycle, and where it comes from. */
   stormComing: { at: number; from: string } | null;
   /** The outstanding loan: what is still owed, the instalment per settlement, how many loans ever taken. */
-  loan: { owed: number; perCycle: number; taken: number; /** The cycle the instalments start (absent in older saves: at once). */ holdUntil?: number };
+  loan: { owed: number; perCycle: number; taken: number; /** The cycle the instalments start (absent in older saves: at once). */ holdUntil?: number; /** The tide the company last left a boat on credit. */ boatCreditAt?: number };
   fields: Fields;
   /** Pollution sources for the current cycle: per-tick rates at cells (rebuilt at every settlement). */
   emitters: Emitter[];

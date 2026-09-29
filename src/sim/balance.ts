@@ -174,6 +174,8 @@ export const LOAN_INTEREST = 0.2;
 export const LOAN_REPAY_CYCLES = 15;
 /** Settlements before the first instalment: time to get the money earning. */
 export const LOAN_GRACE_CYCLES = 3;
+/** A town with no boat and no money for one gets one from the company on credit (its price added to the loan), at most once in this many tides. */
+export const BOAT_CREDIT_EVERY = 10;
 
 // Land tools
 /** Landfill raises a flat cell to this height: dry at every tide, still below the hill. */
@@ -211,6 +213,11 @@ export const STORM_WAVE_AMP = 3;
 export const TSUNAMI_FIRST_CYCLE = 20;
 export const TSUNAMI_CHANCE = 0.05;
 export const TSUNAMI_COOLDOWN = 12;
+/** No wave comes to a town smaller than this: a hamlet has nothing to lose it could rebuild from. */
+export const TSUNAMI_MIN_POPULATION = 30;
+/** The first wave a town sees spends itself on the seafront: it damages only what stands within this many cells of the
+ *  first building it meets (along its axis). Later waves go as far as the water does. */
+export const FIRST_WAVE_REACH = 3;
 export const DRAWDOWN_SECONDS = 20;
 export const DRAWDOWN_LEVEL = -1.2;
 /** The wave takes every unshielded deck that isn't at least WAVE_MARGIN above the safe building height. */
@@ -246,6 +253,9 @@ export const FIRE_SAVE_COVERAGE = 0.5;
 // Repair (shared with storms and the tsunami)
 export const REPAIR_FRACTION = 0.5;
 export const REPAIR_TIMBER_PER_100 = 5;
+/** What a free hand mends in a tide, in dollars' worth of repair: the healthy residents with no working job (a
+ *  damaged workplace's crew among them) rebuild for nothing, slowly, and the purse only makes it faster. */
+export const MEND_PER_HAND = 4;
 
 // Trade and tourism
 export const TRADE_EVERY = 3;

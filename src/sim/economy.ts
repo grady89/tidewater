@@ -2,7 +2,7 @@
 // phase and land on leaving it; low-water producers (oyster beds, clam camps) work the low phase the same way.
 // Boats at a deep dock work both. Land production (wood, planks, smoking, boat building) settles once a cycle.
 import {
-  BOAT_BASE_FISH, BOAT_COST, BUILDINGS, BuildingKind, CAP_BASE, CLAM_PER_CELL, CLAM_RADIUS, Cost, FOOD_PER_CYCLE,
+  BOAT_BASE_FISH, BOAT_COST, BOAT_CREDIT_EVERY, BOAT_CREW, BUILDINGS, BuildingKind, LOAN_GRACE_CYCLES, CAP_BASE, CLAM_PER_CELL, CLAM_RADIUS, Cost, FOOD_PER_CYCLE,
   FOOD_RESERVE_CYCLES, GoodKind, HAPPY, IMMIGRANTS_PER_CYCLE, IMMIGRATION_HAPPINESS, LEVEL_UP_CYCLES, LEVEL_UP_HAPPINESS,
   LUMBER_TREES_PER_CYCLE, MARKET_SELL_PER_CYCLE, MAX_LEVEL, NET_LOFT_BONUS, NET_LOFT_RADIUS, OYSTER_YIELD,
   POLLUTION_HAPPY_SCALE, FOOD_PRICE, PURCHASABLE_BOATS, SAWMILL_RATE, SHIPYARD_BOAT_COST,
@@ -10,14 +10,14 @@ import {
   COCONUT_PER_TREE, COCONUT_RADIUS, PEARL_RADIUS, PEARLS_PER_SHIFT, ICE_HOUSE_CAP_FACTOR, IRON_PER_CYCLE, SALT_PER_STOCKFISH, STOCKFISH_RATE, STOCKFISH_UNSALTED, WHALE_MEAT_PER_CYCLE, WHALE_OIL_PER_CYCLE,
   mayTurn } from "./balance";
 import { at } from "./fields";
-import { active, damageNear, fireSources, repairDamage, rollIgnitions } from "./fire";
+import { active, damageNear, fireSources, mendByHand, repairDamage, rollIgnitions } from "./fire";
 import { biomeFor, BiomeId, costOf } from "./biomes";
 import { whaleSeason } from "./biomes/fjord";
 import { consumeLuxury, eat, favouriteInStock, foodsInStock, foodTotal, levelAllowed } from "./food";
 import { goodsOfRole } from "./goods";
 import { CARGO_SHIP_COST, CARGO_SHIP_IRON, CARGO_SHIPS_MAX, REMOVE_REFUND, STILT_COST_PER_UNIT } from "./balance";
 import { LANES_ENABLED } from "../config";
-import { repayLoan } from "./loan";
+import { loanInstalment, repayLoan } from "./loan";
 import { Grid } from "./grid";
 import { moveMoney } from "./money";
 import { updateNetwork } from "./network";
@@ -84,6 +84,25 @@ export function removeBuilding(state: SimState, grid: Grid, b: Building): number
   updateNetwork(state, grid, state.tide.level);
   moveMoney(state, refund, "refund");
   return refund;
+}
+
+/**
+ * Settlement: a town with no boat at all and not the money for one — the sea took them, or it never had them — gets one
+ * from the company on credit, at most once every BOAT_CREDIT_EVERY tides: it is tied up at the landing with the most
+ * berths the street reaches, and its price is added to the loan, repaid out of what the town earns (never the purse).
+ */
+export function creditBoat(state: SimState): boolean {
+  if (totalBoats(state) > 0 || state.resources.money >= BOAT_COST || population(state) < BOAT_CREW) return false;
+  if (state.tide.cycle < (state.loan.boatCreditAt ?? -Infinity) + BOAT_CREDIT_EVERY) return false;
+  const at = buildingList(state).filter(b => BUILDINGS[b.kind].network === "root" && isHarbour(b) && freeSlots(b) > 0 && b.reached && !b.cut && !b.damaged)
+    .sort((x, y) => (BUILDINGS[y.kind].slots ?? 0) - (BUILDINGS[x.kind].slots ?? 0) || x.id - y.id)[0];
+  if (!at) return false;
+  at.boats++;
+  if (state.loan.owed <= 0) { state.loan.perCycle = loanInstalment(); state.loan.holdUntil = state.tide.cycle + LOAN_GRACE_CYCLES; }
+  state.loan.owed += BOAT_COST;
+  state.loan.boatCreditAt = state.tide.cycle;
+  notify(state, `With no boat left, the company tied one up at the ${BUILDINGS[at.kind].name.toLowerCase()} on credit: ${BOAT_COST}$ added to what the town owes, paid out of its earnings`);
+  return true;
 }
 
 export function totalBoats(state: SimState): number {
@@ -326,6 +345,7 @@ export function settleCycle(state: SimState, grid: Grid, opts: { quiet?: boolean
   const stats = { cycle: state.tide.cycle, fishCaught: state.landed, fishSold: 0, shellfishSold: 0, income: 0, expenses: 0, immigrants: 0, tourism: 0, trade: 0 };
   const buildings = buildingList(state).sort((a, b) => a.id - b.id);
 
+  creditBoat(state); // before the jobs, so its crew is hired this settlement
   assignWorkers(state, grid);
   rebuildCoverage(state, grid);
 
@@ -386,6 +406,7 @@ export function settleCycle(state: SimState, grid: Grid, opts: { quiet?: boolean
   state.sharkEmitters = sharkSources(state);
   state.fireEmitters = fireSources(state);
   if (!opts.quiet) rollIgnitions(state);
+  mendByHand(state);
   repairDamage(state);
   healInjuries(state);
 

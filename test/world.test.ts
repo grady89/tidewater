@@ -159,6 +159,7 @@ describe("QA regressions (Session B)", () => {
     expect(state.assignments.filter(a => a.work === t.pier.id).reduce((n, a) => n + a.n, 0)).toBe(t.pier.workers);
     // The wave: every boat goes, and with them every crew assignment.
     state.tsunami.stage = null;
+    state.tsunami.count = 1; // a later wave, which reaches the whole town (the first spends itself on the seafront)
     startTsunami(state, grid);
     while (state.tsunami.stage) tick(state, grid);
     expect(t.pier.boats).toBe(0);

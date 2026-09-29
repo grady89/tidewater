@@ -56,6 +56,7 @@ export function upgradeBuilding(state: SimState, b: Building): boolean {
 
 /** Money per cycle to keep the building: the catalog's upkeep, plus UPGRADE_UPKEEP_STEP of it per level above the first. */
 export function upkeepOf(b: Building): number {
+  if (b.damaged) return 0; // a broken building runs nothing, so it costs nothing to run
   const base = BUILDINGS[b.kind].upkeep;
   return UPGRADES[b.kind] ? base * (1 + UPGRADE_UPKEEP_STEP * (b.level - 1)) : base;
 }

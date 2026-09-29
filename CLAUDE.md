@@ -111,6 +111,9 @@ Infrastructure
 
 Production
 - Fishing boat (unit), 80$ (first two purchasable; then shipyard only: 30 planks + 40$). 2 crew. Trip = one high-water phase.
+  A town with no boat at all and not the money for one (the sea took them) gets one from the company on credit at a
+  settlement — its price added to the loan, repaid out of earnings, never the purse — at most once every
+  `BOAT_CREDIT_EVERY` (10) tides.
   Yield = `BOAT_BASE_FISH` × fish density at ground × crew fraction × net loft bonus.
 - Oyster bed (flat, 1×1, must be under water at high tide and exposed at low: terrain 0.0..0.45), 30$. 2 workers. Produces
   shellfish each low water. Dies if pollution at cell > `OYSTER_POLLUTION_KILL` for 2 cycles.
@@ -226,14 +229,21 @@ Leisure & tourism
   of being lost (unless lighthouse). Lasts one cycle. Fire risk zero during storm.
 - **Spring high flooding**: standard walkways on terrain < `SPRING_FLOOD_TERRAIN` are cut for the spring peak (network
   breaks; workers can't reach); nothing else floods, ever, at any tide; no damage.
-- **Tsunami** (after cycle 20, chance `TSUNAMI_CHANCE` per cycle, min `TSUNAMI_COOLDOWN` cycles apart): the roll that comes
-  up books the wave for the *next* settlement and says "the sea is uneasy" — one tide of warning. Then 20 s foreshadow
+- **Tsunami** (after cycle 20, only to a town of `TSUNAMI_MIN_POPULATION` (30) or more, chance `TSUNAMI_CHANCE` per cycle,
+  min `TSUNAMI_COOLDOWN` cycles apart): the roll that comes up books the wave for the *next* settlement and says "the
+  sea is uneasy" — one tide of warning, which says what comes through (decks lifted over the wave's height, anything
+  behind a sea wall or breakwater, boats in a breakwater's lee). The first wave a town sees spends itself on the
+  seafront: it damages only what stands within `FIRST_WAVE_REACH` (3) cells of the first building it meets along its
+  axis (boats included); later waves go all the way. After a wave the feed says how many it damaged and how they mend. Then 20 s foreshadow
   where the tide plunges to −1.2 (flats dry far out, boats heel over on the mud, "the sea is pulling back"), then a wave
   uniform sweeps across the water plane from the deep side; on impact every building on a cell whose floor is below
   `WAVE_HEIGHT` (= SPRING_HI + CLEARANCE + `WAVE_MARGIN`, 1.4 — i.e. anything not lifted `WAVE_MARGIN` above the safe
   building height) and not shielded by a sea wall or breakwater (ray from the deep side along the wave axis) is damaged.
   Boats outside shelter are lost.
-- **Damaged** buildings stop producing; repair costs `REPAIR_FRACTION` of build cost in money + timber, paid automatically
+- **Damaged** buildings stop producing and pay no upkeep. The town's free hands — healthy residents with no working
+  job, a damaged workplace's crew among them — mend for nothing, `MEND_PER_HAND` (4$) worth each a tide
+  (`Building.mend`), in the order below, before the purse pays for what is left; so a wrecked town rebuilds itself,
+  slowly, and money only makes it faster. A repair costs `REPAIR_FRACTION` of build cost in money + timber, paid automatically
   at the peaks when affordable, otherwise they sit damaged (darker tint, tilted roof, an amber pin overhead). Timber the
   store is short of is bought at the company's price (four coasts grow none), so a repair is only ever waiting for money.
   Damaged walkways and paths are rebuilt first, for their base price and no timber; then the landings and the staffed

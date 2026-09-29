@@ -1,12 +1,12 @@
 // Click a building: what it is, who works there, what it made, and why it might be idle. Read-only over the sim.
-import { BUILDINGS, LEVEL_FOODS, MAX_LEVEL, ORDER_SIZE, UPGRADES } from "../sim/balance";
+import { BUILDINGS, LEVEL_FOODS, MAX_LEVEL, MEND_PER_HAND, ORDER_SIZE, UPGRADES } from "../sim/balance";
 import { districtOf } from "../sim/districts";
 import { foodsInStock, foreignLuxuriesInStock } from "../sim/food";
 import { GoodId, GOODS, isGood } from "../sim/goods";
 import { companyCarries, companySells, onOrder, tradeInterval } from "../sim/trade";
 import { cellIndex, Grid } from "../sim/grid";
 import { at } from "../sim/fields";
-import { earns, isStreet, mendCost, repairBlocker, repairCost } from "../sim/fire";
+import { earns, freeHands, isStreet, mendCost, mendOrder, repairBlocker, repairLeft, repairWork } from "../sim/fire";
 import { netFlow, sewerMap } from "../sim/sewers";
 import { liveShares, serviceRadius, servesPeople, serviceWhy } from "../sim/services";
 import { Building, SimState } from "../sim/state";
@@ -67,12 +67,22 @@ export class InfoPanel {
   get selectedId(): number | null { return this.selected; }
 
   /** What a damaged building's repair is waiting for (sim/fire.ts repairDamage). */
-  static damagedStatus(b: Building, state: SimState): string {
-    const does = BUILDINGS[b.kind].residents > 0 ? "" : " and does nothing";
-    if (isStreet(b)) return `Damaged: nobody can cross it. It is rebuilt at a high-tide peak once the purse holds ${BUILDINGS[b.kind].cost.money}$, or Repair now`;
-    if (!earns(b) && Object.values(state.buildings).some(o => o.damaged && earns(o))) return `Damaged${does}. At the peaks the purse mends the piers and workplaces first, then this — or Repair now`;
-    const c = repairCost(state, b);
-    return `Damaged${does}. It is mended at a high-tide peak once the purse holds ${c.money}$${c.bought ? ` (${c.bought} timber bought in)` : ""}, or Repair now`;
+  static damagedStatus(b: Building, _state: SimState): string {
+    const pct = Math.round((1 - repairLeft(b)) * 100);
+    const does = isStreet(b) ? ": nobody can cross it" : BUILDINGS[b.kind].residents > 0 ? "" : ": does nothing until mended";
+    return `Damaged${does}${pct > 0 ? ` · ${pct}% mended` : ""}`;
+  }
+
+  /** How a damaged building gets mended: the free hands (for nothing, a little each tide), the purse at the peaks, or now. */
+  private mendText(state: SimState, b: Building): string {
+    const hands = freeHands(state), order = mendOrder(state), at = order.indexOf(b);
+    let work = 0;
+    for (const x of order.slice(0, at + 1)) work += repairWork(x) - (x.mend ?? 0);
+    const byHand = hands === 0 ? "no free hands: everyone is at work"
+      : `${hands} free hand${hands > 1 ? "s" : ""} mend it for nothing in about ${Math.max(1, Math.ceil(work / (hands * MEND_PER_HAND)))} tide${Math.ceil(work / (hands * MEND_PER_HAND)) > 1 ? "s" : ""}${at > 0 ? ` (${at} ahead of it)` : ""}`;
+    const waits = !isStreet(b) && !earns(b) && order.some(o => earns(o));
+    const c = mendCost(state, b);
+    return `${byHand} · the purse finishes it at a high tide once it holds ${c.money}$${waits ? ", after the piers and workplaces" : ""} · or Repair now`;
   }
 
   /** How the status reads at a glance: working, held up, or broken. */
@@ -164,7 +174,8 @@ export class InfoPanel {
     if (def.workers > 0 || (def.slots ?? 0) > 0 || b.kind === "oysterBed") rows.push(["Last cycle", b.output.toFixed(1)]);
     if (b.lantern) rows.push(["Lantern", "lit at dusk"]);
     if (def.floor === "stilts" || def.floor === "street") rows.push(["Stilts", `${Math.max(0, b.floorY - this.grid.groundUnder(b.cells)).toFixed(1)} m`]);
-    rows.push(["Upkeep", `${+upkeepOf(b).toFixed(2)}$ / cycle`]);
+    if (b.damaged) rows.push(["Mending", this.mendText(state, b)]);
+    rows.push(["Upkeep", b.damaged ? "none while damaged" : `${+upkeepOf(b).toFixed(2)}$ / cycle`]);
     const d = districtOf(this.grid, b);
     const district = d
       ? `<div class="district"><h3>${d.name}</h3><span>${d.buildings} buildings · ${d.residents} / ${d.capacity} residents · ${d.workers} / ${d.jobs} jobs${d.boats ? ` · ${d.boats} boats` : ""}${d.residents ? ` · ${Math.round(d.happiness * 100)}% happy` : ""}</span></div>`

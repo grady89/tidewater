@@ -6,13 +6,13 @@
 import { SIZE } from "../config";
 import {
   BUILDINGS, DRAWDOWN_LEVEL, DRAWDOWN_SECONDS, SHELTER_RADIUS, SHIELD_RANGE, STORM_CHANCE, STORM_FIRST_CYCLE, STORM_LOSS_FIRST_CYCLE,
-  STORM_LOSS_CHANCE, TSUNAMI_CHANCE, TSUNAMI_COOLDOWN, TSUNAMI_FIRST_CYCLE, WAVE_SETTLE_SECONDS,
+  STORM_LOSS_CHANCE, TSUNAMI_CHANCE, TSUNAMI_COOLDOWN, TSUNAMI_FIRST_CYCLE, TSUNAMI_MIN_POPULATION, FIRST_WAVE_REACH, WAVE_SETTLE_SECONDS,
   WAVE_SPEED,
 } from "./balance";
 import { biomeFor } from "./biomes";
 import { cellIndex, Grid, HALF, inBounds } from "./grid";
 import { rand } from "./rng";
-import { Building, buildingList, Cell, notify, SimState } from "./state";
+import { Building, buildingList, Cell, notify, population, SimState } from "./state";
 import { levelAt } from "./tide";
 import { hasLighthouse } from "./trade";
 import { trimCrew } from "./workers";
@@ -97,7 +97,8 @@ export function startStorm(state: SimState, grid: Grid): void {
 // ---------- tsunami ----------
 
 /**
- * Settlement: rare, only after TSUNAMI_FIRST_CYCLE and TSUNAMI_COOLDOWN since the last — and never unannounced.
+ * Settlement: rare, only after TSUNAMI_FIRST_CYCLE and TSUNAMI_COOLDOWN since the last, only to a town of
+ * TSUNAMI_MIN_POPULATION — and never unannounced.
  * The roll that comes up sets the wave for the *next* settlement and says "the sea is uneasy", so the player has
  * one tide to lift decks, raise walls or move boats behind the breakwater.
  */
@@ -109,14 +110,15 @@ export function rollTsunami(state: SimState, grid: Grid): void {
     if (cycle >= t.due) { t.due = -1; startTsunami(state, grid); }
     return;
   }
-  if (cycle < TSUNAMI_FIRST_CYCLE || cycle - t.lastCycle < TSUNAMI_COOLDOWN) return;
-  if (rand(state) < TSUNAMI_CHANCE) warnTsunami(state);
+  if (cycle < TSUNAMI_FIRST_CYCLE || cycle - t.lastCycle < TSUNAMI_COOLDOWN || population(state) < TSUNAMI_MIN_POPULATION) return;
+  if (rand(state) < TSUNAMI_CHANCE) warnTsunami(state, grid);
 }
 
-/** Book the wave for the next settlement. */
-export function warnTsunami(state: SimState): void {
+/** Book the wave for the next settlement, and say what can be done in the tide before it. */
+export function warnTsunami(state: SimState, grid?: Grid): void {
   state.tsunami.due = state.tide.cycle + 1;
-  notify(state, "The sea is uneasy");
+  const height = grid ? ` ${grid.tides.waveHeight.toFixed(1)} m` : "";
+  notify(state, `The sea is uneasy: a wave comes at the next high tide. Decks lifted over${height || " the wave"} (the ] key as you build), anything behind a sea wall or breakwater, and boats in a breakwater's lee come through${state.tsunami.count === 0 ? "; a first wave spends itself on the seafront" : ""}`);
 }
 
 /** Is a wave booked but not yet started? */
@@ -133,6 +135,10 @@ export function startTsunami(state: SimState, grid: Grid): void {
   t.front = -SIZE;
   t.lastCycle = state.tide.cycle;
   t.struck = [];
+  t.hit = 0;
+  // The first wave a town sees reaches only the seafront: FIRST_WAVE_REACH cells past the first building it meets.
+  const fronts = buildingList(state).map(b => Math.min(...b.cells.map(c => along(t.dir, c))));
+  t.reach = t.count === 0 && fronts.length ? Math.min(...fronts) + FIRST_WAVE_REACH : undefined;
   t.count++;
   notify(state, "The sea is pulling back");
 }
@@ -153,7 +159,10 @@ export function tickTsunami(state: SimState, grid: Grid, dt: number): void {
     state.tide.override = DRAWDOWN_LEVEL;
     t.front += WAVE_SPEED * dt;
     strike(state, grid);
-    if (t.front > SIZE) { t.stage = "settle"; t.t = 0; }
+    if (t.front > SIZE) {
+      t.stage = "settle"; t.t = 0;
+      if (t.hit) notify(state, `The wave damaged ${t.hit} building${t.hit > 1 ? "s" : ""}. Free hands mend them a little every tide, for nothing; the purse mends them at the high tides once it can, and a damaged building's panel has Repair now`);
+    }
     return;
   }
   // settle: the water comes back to where the clock says it should be.
@@ -171,6 +180,7 @@ function strike(state: SimState, grid: Grid): void {
     const pos = Math.min(...b.cells.map(c => along(t.dir, c)));
     if (pos > t.front) continue;
     struck.add(b.id);
+    if (t.reach !== undefined && pos > t.reach) continue; // a first wave, spent before it got here
     if ((BUILDINGS[b.kind].slots ?? 0) > 0 && b.boats > 0 && !sheltered(grid, b)) {
       notify(state, `The wave took ${b.boats} boat${b.boats > 1 ? "s" : ""} from the ${BUILDINGS[b.kind].name.toLowerCase()}`);
       b.boats = 0; b.atSea = false;
@@ -181,6 +191,7 @@ function strike(state: SimState, grid: Grid): void {
     if (b.cells.some(c => shielded(grid, t.dir, c))) continue;
     b.damaged = true;
     b.fire = 0;
+    t.hit = (t.hit ?? 0) + 1;
   }
   t.struck = [...struck];
 }

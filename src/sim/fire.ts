@@ -5,8 +5,8 @@
 import { SIM_TICK, TIDE_PERIOD } from "../config";
 import {
   BUILDINGS, FIRE_ADVECT_NONE, FIRE_BURN_SECONDS, FIRE_DECAY, FIRE_DIFFUSE, FIRE_IGNITE_CHANCE, FIRE_IGNITE_THRESHOLD,
-  FIRE_LANTERN, FIRE_MINE, FIRE_SAVE_COVERAGE, FIRE_SMOKEHOUSE, FIRE_SPREAD_PER_S, FIRE_TAVERN, FIRE_WATCH_CUT, REPAIR_FRACTION,
-  REPAIR_TIMBER_PER_100,
+  FIRE_LANTERN, FIRE_MINE, FIRE_SAVE_COVERAGE, FIRE_SMOKEHOUSE, FIRE_SPREAD_PER_S, FIRE_TAVERN, FIRE_WATCH_CUT, MEND_PER_HAND,
+  REPAIR_FRACTION, REPAIR_TIMBER_PER_100,
 } from "./balance";
 import { at, flowFor, stepDrift } from "./fields";
 import { GOODS } from "./goods";
@@ -92,16 +92,69 @@ export function rollIgnitions(state: SimState): void {
  * grows no timber can still mend what the sea breaks.
  */
 export function repairCost(state: SimState, b: Building): { money: number; timber: number; bought: number } {
-  const build = BUILDINGS[b.kind].cost.money;
-  const timber = Math.ceil(build / 100 * REPAIR_TIMBER_PER_100);
+  const build = BUILDINGS[b.kind].cost.money, rest = repairLeft(b);
+  const timber = Math.ceil(build / 100 * REPAIR_TIMBER_PER_100 * rest);
   const have = Math.min(timber, Math.max(0, Math.floor(state.resources.timber)));
   const bought = timber - have;
-  return { money: Math.round(build * REPAIR_FRACTION) + bought * GOODS.timber.sells, timber: have, bought };
+  return { money: Math.round(build * REPAIR_FRACTION * rest) + bought * GOODS.timber.sells, timber: have, bought };
+}
+
+/** A repair's whole work in dollars' worth, as if every plank of its timber were bought in: what free hands must do. */
+export function repairWork(b: Building): number {
+  const build = BUILDINGS[b.kind].cost.money;
+  if (isStreet(b)) return build;
+  return Math.round(build * REPAIR_FRACTION) + Math.ceil(build / 100 * REPAIR_TIMBER_PER_100) * GOODS.timber.sells;
+}
+
+/** The share of a repair still to do (free hands have done the rest). */
+export function repairLeft(b: Building): number {
+  return Math.max(0, 1 - (b.mend ?? 0) / repairWork(b));
+}
+
+/** The healthy residents with no working job this cycle — the crews of damaged workplaces among them. */
+export function freeHands(state: SimState): number {
+  let healthy = 0, working = 0;
+  for (const b of buildingList(state)) if (BUILDINGS[b.kind].residents > 0) healthy += Math.max(0, b.residents - b.injured);
+  for (const a of state.assignments) { const w = state.buildings[a.work]; if (w && !w.damaged) working += a.n; }
+  return Math.max(0, healthy - working);
+}
+
+/** What is damaged, in the order it is mended: streets, then the landings and workplaces, then the rest, cheapest first. */
+export function mendOrder(state: SimState): Building[] {
+  const rank = (b: Building) => (isStreet(b) ? 0 : earns(b) ? 1 : 2);
+  return buildingList(state).filter(b => b.damaged)
+    .sort((x, y) => rank(x) - rank(y) || BUILDINGS[x.kind].cost.money - BUILDINGS[y.kind].cost.money || x.id - y.id);
+}
+
+/**
+ * Settlement, before the purse: the free hands mend what is damaged, MEND_PER_HAND worth each, in mendOrder — slowly,
+ * and for nothing, so a town the sea has wrecked rebuilds itself; the purse (and Repair now) finish what is left.
+ */
+export function mendByHand(state: SimState): number {
+  for (const b of buildingList(state)) if (!b.damaged && b.mend !== undefined) delete b.mend;
+  const order = mendOrder(state);
+  if (!order.length) return 0;
+  let labour = freeHands(state) * MEND_PER_HAND;
+  const done: string[] = [];
+  let streets = 0;
+  for (const b of order) {
+    if (labour <= 0) break;
+    const give = Math.min(repairWork(b) - (b.mend ?? 0), labour);
+    b.mend = (b.mend ?? 0) + give;
+    labour -= give;
+    if (b.mend < repairWork(b) - 1e-9) continue;
+    b.damaged = false;
+    delete b.mend;
+    if (isStreet(b)) streets++; else done.push(`the ${BUILDINGS[b.kind].name.toLowerCase()}`);
+  }
+  if (streets) done.unshift(`${streets} walkway${streets > 1 ? "s" : ""}`);
+  if (done.length) notify(state, `Free hands mended ${done.length > 3 ? done.slice(0, 3).join(", ") + ` and ${done.length - 3} more` : done.join(", ")}`);
+  return done.length;
 }
 
 /** What mending costs now: a street piece its base price (no timber), anything else repairCost. */
 export function mendCost(state: SimState, b: Building): { money: number; timber: number; bought: number } {
-  return isStreet(b) ? { money: BUILDINGS[b.kind].cost.money, timber: 0, bought: 0 } : repairCost(state, b);
+  return isStreet(b) ? { money: Math.ceil(BUILDINGS[b.kind].cost.money * repairLeft(b)), timber: 0, bought: 0 } : repairCost(state, b);
 }
 
 /** Why a damaged building can't be mended now (null: it can): the purse. */
@@ -118,6 +171,7 @@ export function repairNow(state: SimState, b: Building): boolean {
   moveMoney(state, -c.money, "repair");
   state.resources.timber -= c.timber;
   b.damaged = false;
+  delete b.mend;
   notify(state, `Repaired the ${BUILDINGS[b.kind].name.toLowerCase()} for ${c.money}$`);
   return true;
 }
@@ -136,10 +190,11 @@ export function repairDamage(state: SimState): number {
   let streets = 0, spent = 0;
   for (const b of buildingList(state).sort((x, y) => x.id - y.id)) {
     if (!b.damaged || !isStreet(b)) continue;
-    const money = BUILDINGS[b.kind].cost.money;
+    const money = mendCost(state, b).money;
     if (state.resources.money < money) continue;
     moveMoney(state, -money, "rebuild");
     b.damaged = false;
+    delete b.mend;
     streets++; spent += money; repaired++;
   }
   if (streets) notify(state, `Rebuilt ${streets} walkway${streets > 1 ? "s" : ""} for ${spent}$`);
@@ -153,6 +208,7 @@ export function repairDamage(state: SimState): number {
       moveMoney(state, -c.money, "repair");
       state.resources.timber -= c.timber;
       b.damaged = false;
+      delete b.mend;
       repaired++;
       notify(state, `Repaired the ${BUILDINGS[b.kind].name.toLowerCase()} for ${c.money}$${c.timber ? ` and ${c.timber} timber` : ""}${c.bought ? ` (${c.bought} timber bought)` : ""}`);
     }

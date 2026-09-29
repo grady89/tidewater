@@ -1,18 +1,19 @@
 // Fire, storms and the tsunami.
 import { describe, expect, it } from "vitest";
 import { TIDE_PERIOD } from "../src/config";
-import { BUILDINGS, DRAWDOWN_LEVEL, DRAWDOWN_SECONDS, FIRE_BURN_SECONDS, FIRE_IGNITE_THRESHOLD, STORM_LOSS_FIRST_CYCLE } from "../src/sim/balance";
+import { BOAT_COST, BOAT_CREDIT_EVERY, BUILDINGS, DRAWDOWN_LEVEL, DRAWDOWN_SECONDS, FIRE_BURN_SECONDS, FIRE_IGNITE_THRESHOLD, FIRST_WAVE_REACH, MEND_PER_HAND, STORM_LOSS_FIRST_CYCLE, TSUNAMI_FIRST_CYCLE } from "../src/sim/balance";
 import { deserialize, serialize } from "../src/sim/save";
 
 import { rollTsunami, sheltered, shielded, startStorm, startTsunami, tsunamiDue, warnTsunami, waveDirection } from "../src/sim/events";
-import { ignite, repairCost, repairDamage } from "../src/sim/fire";
+import { freeHands, ignite, mendByHand, repairCost, repairDamage, repairWork } from "../src/sim/fire";
+import { upkeepOf } from "../src/sim/upgrades";
 
-import { tryPlace } from "../src/sim/economy";
+import { creditBoat, totalBoats, tryPlace } from "../src/sim/economy";
 import { maxOf } from "../src/sim/fields";
 import { Grid } from "../src/sim/grid";
 
 import { newGame } from "../src/sim/start";
-import { Building, SimState } from "../src/sim/state";
+import { Building, population, SimState } from "../src/sim/state";
 import { advanceCycles, tick } from "../src/sim/tick";
 
 import { growStreet, placeByWalkway, placeEdge, starterTown } from "./scenario";
@@ -154,6 +155,7 @@ describe("storms and the tsunami (M11)", () => {
     const exposed = homes.filter(h => h !== guarded && !h.cells.some(c => shielded(grid, dir, c)));
     expect(exposed.length).toBeGreaterThan(0);
 
+    state.tsunami.count = 1; // not the town's first wave (that one spends itself on the seafront): it goes all the way
     startTsunami(state, grid);
     expect(state.tsunami.stage).toBe("drawdown");
     for (let k = 0; k < DRAWDOWN_SECONDS * 20 + 2; k++) tick(state, grid);
@@ -185,6 +187,78 @@ describe("storms and the tsunami (M11)", () => {
     const old = JSON.parse(serialize(state)) as SimState;
     delete (old.tsunami as Partial<SimState["tsunami"]>).due;
     expect(deserialize(JSON.stringify(old)).tsunami.due).toBe(-1);
+  });
+
+  it("no wave comes to a small town; the first a town sees damages only the seafront", () => {
+    const { state, grid } = town(3);
+    state.resources.money += 3000;
+    growStreet(state, grid, 8);
+    placeByWalkway(state, grid, "house", 6);
+    // A hamlet: however many tides pass, the sea never gets uneasy.
+    state.tide.cycle = TSUNAMI_FIRST_CYCLE;
+    expect(population(state)).toBeLessThan(30);
+    for (let k = 0; k < 300; k++) rollTsunami(state, grid);
+    expect(state.tsunami.due).toBe(-1);
+    // The first wave: nothing further along its axis than FIRST_WAVE_REACH past the first building it meets is damaged.
+    startTsunami(state, grid);
+    const reach = state.tsunami.reach!;
+    expect(reach).toBeDefined();
+    while (state.tsunami.stage) tick(state, grid);
+    const pos = (b: Building) => Math.min(...b.cells.map(c => (c.i + 0.5) * state.tsunami.dir.x + (c.j + 0.5) * state.tsunami.dir.z));
+    const bs = Object.values(state.buildings);
+    const front = Math.min(...bs.map(pos));
+    expect(reach).toBeCloseTo(front + FIRST_WAVE_REACH, 5);
+    const damaged = bs.filter(b => b.damaged);
+    expect(damaged.length).toBeGreaterThan(0);
+    for (const b of damaged) expect(pos(b)).toBeLessThanOrEqual(reach + 1e-6);
+    expect(bs.some(b => !b.damaged && pos(b) > reach && b.floorY < grid.tides.waveHeight)).toBe(true); // spared: it would have been hit
+    expect(state.log.some(m => /The wave damaged \d+ building/.test(m))).toBe(true);
+    // The next wave goes all the way.
+    startTsunami(state, grid);
+    expect(state.tsunami.reach).toBeUndefined();
+  });
+
+  it("nothing damaged pays upkeep, and the free hands mend it for nothing, streets and earners first", () => {
+    const { state, grid, town: t } = town();
+    advanceCycles(state, grid, 3);
+    const market = t.market!, hut = t.huts[0];
+    expect(upkeepOf(market)).toBeGreaterThan(0);
+    market.damaged = true; hut.damaged = true;
+    expect(upkeepOf(market)).toBe(0);
+    // The market's crew are free hands now (their workplace is broken), with everyone else not at work.
+    const hands = freeHands(state);
+    expect(hands).toBeGreaterThan(0);
+    state.resources.money = 0;
+    mendByHand(state);
+    expect(market.mend).toBe(Math.min(repairWork(market), hands * MEND_PER_HAND)); // the market first: it earns
+    expect(hut.mend ?? 0).toBe(Math.max(0, hands * MEND_PER_HAND - repairWork(market)));
+    expect(repairCost(state, market).money).toBeLessThan(Math.round(BUILDINGS.market.cost.money * 0.5) + 30); // the purse pays only what is left
+    let k = 0;
+    while ((market.damaged || hut.damaged) && k++ < 40) { state.resources.money = 0; mendByHand(state); }
+    expect(market.damaged || hut.damaged).toBe(false);
+    expect(market.mend).toBeUndefined();
+    expect(state.resources.money).toBe(0); // for nothing
+    expect(state.log.some(m => /Free hands mended/.test(m))).toBe(true);
+  });
+
+  it("a town with no boat and no money gets one on credit, at most once every BOAT_CREDIT_EVERY tides", () => {
+    const { state, grid, town: t } = town();
+    advanceCycles(state, grid, 2);
+    t.pier.boats = 0;
+    state.resources.money = 5;
+    expect(creditBoat(state)).toBe(true);
+    expect(totalBoats(state)).toBe(1);
+    expect(state.loan.owed).toBe(BOAT_COST);
+    expect(state.loan.perCycle).toBeGreaterThan(0);
+    t.pier.boats = 0; // the sea takes it straight away
+    expect(creditBoat(state)).toBe(false);
+    state.tide.cycle += BOAT_CREDIT_EVERY;
+    expect(creditBoat(state)).toBe(true);
+    expect(state.loan.owed).toBe(2 * BOAT_COST);
+    // Not while a boat floats, nor for a town that can buy its own.
+    expect(creditBoat(state)).toBe(false);
+    t.pier.boats = 0; state.tide.cycle += BOAT_CREDIT_EVERY; state.resources.money = BOAT_COST;
+    expect(creditBoat(state)).toBe(false);
   });
 
   it("damaged walkways rebuild themselves for their base price when the purse allows", () => {

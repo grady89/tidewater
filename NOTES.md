@@ -1223,3 +1223,12 @@ rules; what isn't written there:
   the Inspect button; the panel says where a home's people work and pins those buildings, and a well pins the homes it
   serves. Placing or removing now recomputes the street at once (it only ran on a tick, so while paused a new building
   showed as unconnected).
+- **Recovery after a disaster** (Grady: "damage from world events can just completely hard lock you"; chose 1–4 of the
+  options above). (1) Nothing damaged pays upkeep (`upkeepOf`). (2) Free hands mend for nothing, `MEND_PER_HAND` a
+  head a tide, streets then landings and workplaces then the rest, cheapest first (`mendByHand`, before the purse's
+  `repairDamage`, which pays only what is left). (3) A boat on credit when a town has none and not the money
+  (`creditBoat`, at the start of the settlement so its crew is hired then). (4) No wave to a town under 30; the first
+  wave reaches `FIRST_WAVE_REACH` cells past the first building it meets; the warning says what comes through.
+  Run forward from their saves: the Fourth Sea (1$, 19 of 30 damaged, no boat) is fully mended by cycle 70 with a boat
+  on credit at 46 and the loan cleared at 61; the atoll sea (29$, 10 damaged) is mended in 17 tides with a boat on
+  credit. MEND_PER_HAND 4 makes a starter market (84$ of work) three tides for its own crew plus a few idle hands.
