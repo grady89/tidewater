@@ -170,8 +170,12 @@ Leisure & tourism
 
 - Population lives in houses. New residents move in at the start of each cycle when: connected housing is free, town
   happiness ≥ `IMMIGRATION_HAPPINESS`, and food stock > 0. Arrive by trade ship if a harbor exists, otherwise walk in from the largest pier.
-- Jobs: each production/service building has a worker count. Workers are assigned each cycle by nearest-first over the
-  walkway graph (BFS distance from home). A harbor the street reaches and the isle's piers and docks are one edge apart
+- Jobs: each production/service building has a worker count. Jobs are kept: a resident who holds a job stays in it
+  (`state.assignments` carry over each cycle), so a workplace built nearer never takes anyone from another; it hires only
+  free hands. A job is lost only when its home or workplace goes, the home has fewer people or the workplace fewer jobs
+  than it names (the longest walk goes first), or the street no longer joins them with nothing cut by the tide. An injured
+  resident, or one whose way the tide has cut, keeps the job without working it that cycle. Free hands fill open jobs
+  nearest-first over the walkway graph (BFS distance from home). A harbor the street reaches and the isle's piers and docks are one edge apart
   in that graph, `FERRY_COST` (10) cells long: isle homes staff mainland jobs and mainland homes crew isle boats; in the
   view those workers walk to their terminal and ride the ferry's deck. Unfilled jobs scale output by the filled fraction.
 - Happiness (per house, averaged for town): food, water coverage, job within reach, pollution at home, lantern/night

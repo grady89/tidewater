@@ -1159,3 +1159,10 @@ rules; what isn't written there:
 - **Test scenarios**: `pipeTo` joins a building to the nearest sewer the shortest way; `placeShipyard` now takes a site a
   reached street touches (else lays one), because the production-chain test only passed while the old outfall
   happened to fill the one site whose yard couldn't be staffed.
+- **Jobs are kept** (Grady, after the economy audit): the audit found the one-worker market filled last whenever jobs
+  outnumbered hands, because every settlement reassigned everyone nearest-first, so a new workplace nearer the homes
+  took its worker and nothing sold (two of three Fjord islands, 25 tides of no sales after the stockfish racks). Now
+  `assignWorkers` carries the ledger's assignments over and only free hands fill open jobs. An assignment's `n` is who
+  works this cycle and `held` (when more) who keep the job without working it (injured, or the tide cut the way), so
+  every reader of `n` (walkers, the HUD's "at work", ferry riders) was right as it was. Grady floated splitting a
+  market's two workers between it and a new building; not done: a building never gives up a worker it has.

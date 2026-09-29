@@ -124,13 +124,22 @@ export function checkInvariants(state: SimState, grid: Grid, ledger: Ledger): st
   if (Math.abs(r.money - expected) > 1e-6) out.push(`money ${r.money.toFixed(4)} ≠ ${ledger.money.toFixed(4)} + entries ${ledger.entries.toFixed(4)}`);
   // 4. Workers: every assignment's home and work stand; counts agree with the buildings.
   const byWork = new Map<number, number>(), byHome = new Map<number, number>();
+  const heldByWork = new Map<number, number>(), heldByHome = new Map<number, number>();
   for (const a of state.assignments) {
     const home = state.buildings[a.home], work = state.buildings[a.work];
     if (!home) out.push(`assignment home #${a.home} is gone`);
     if (!work) out.push(`assignment work #${a.work} is gone`);
-    if (!(a.n > 0)) out.push(`assignment ${a.home}→${a.work} n = ${a.n}`);
+    const held = a.held ?? a.n;
+    if (!(a.n >= 0 && held > 0 && a.n <= held)) out.push(`assignment ${a.home}→${a.work} n = ${a.n} held = ${held}`);
     byWork.set(a.work, (byWork.get(a.work) ?? 0) + a.n);
     byHome.set(a.home, (byHome.get(a.home) ?? 0) + a.n);
+    heldByWork.set(a.work, (heldByWork.get(a.work) ?? 0) + held);
+    heldByHome.set(a.home, (heldByHome.get(a.home) ?? 0) + held);
+  }
+  // Jobs held (worked or not) never outnumber a workplace's jobs or a home's people.
+  for (const b of buildingList(state)) {
+    if ((heldByWork.get(b.id) ?? 0) > jobsAt(b)) out.push(`${b.kind} #${b.id} holds ${heldByWork.get(b.id)} jobs of ${jobsAt(b)}`);
+    if ((heldByHome.get(b.id) ?? 0) > b.residents) out.push(`${b.kind} #${b.id} holds ${heldByHome.get(b.id)} jobs for ${b.residents} residents`);
   }
   for (const b of buildingList(state)) {
     const w = byWork.get(b.id) ?? 0;

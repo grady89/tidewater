@@ -275,7 +275,7 @@ export class Walkers {
     const keep = total > this.cap ? this.cap / total : 1;
     for (const a of state.assignments) {
       const home = state.buildings[a.home], work = state.buildings[a.work];
-      if (!home || !work) continue;
+      if (!home || !work || a.n === 0) continue;
       const from = toWork ? home : work, to = toWork ? work : home;
       // Across the water the walk has two legs: to the terminal on this side (then aboard), and — a crossing
       // later — from the far terminal on. On land it is one walk.

@@ -104,7 +104,8 @@ export interface TideState {
   surge?: Surge;
 }
 
-export interface Assignment { home: number; work: number; n: number }
+/** Residents of `home` with jobs at `work`: `n` work this cycle; `held`, when more, keep the job without working it (injured, or the tide has cut their way). */
+export interface Assignment { home: number; work: number; n: number; held?: number }
 
 export interface CycleStats {
   cycle: number;
