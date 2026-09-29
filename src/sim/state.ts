@@ -226,6 +226,8 @@ export interface SimState {
   burnt: number;
   /** Sewer pipes (cell indices): the sewer where no street carries it (sim/sewers.ts). */
   sewers: number[];
+  /** Catch landed since the last settlement; the settlement records it as last.fishCaught and starts again. */
+  landed: number;
   /** Who is in the water this shift, per beach cell. */
   swimmers: Swimmers[];
   /** Shark incidents so far. */
@@ -277,6 +279,7 @@ export function createState(seed = 1, islandSeed = 0, biome: BiomeId = "tidewate
     fires: 0,
     burnt: 0,
     sewers: [],
+    landed: 0,
     swimmers: [],
     incidents: 0,
     achievements: [],

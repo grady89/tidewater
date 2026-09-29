@@ -9,6 +9,7 @@ import {
   REPAIR_TIMBER_PER_100,
 } from "./balance";
 import { at, flowFor, stepDrift } from "./fields";
+import { GOODS } from "./goods";
 import { cellIndex, Grid } from "./grid";
 import { moveMoney } from "./money";
 import { rand } from "./rng";
@@ -85,10 +86,46 @@ export function rollIgnitions(state: SimState): void {
   }
 }
 
-/** What a repair costs: a fraction of the build price in money, plus timber in proportion. */
-export function repairCost(b: Building): { money: number; timber: number } {
+/**
+ * What a repair costs: a fraction of the build price in money, plus timber in proportion, out of the store; timber
+ * the store is short of is bought from the company at its price (`bought`, included in `money`), so a coast that
+ * grows no timber can still mend what the sea breaks.
+ */
+export function repairCost(state: SimState, b: Building): { money: number; timber: number; bought: number } {
   const build = BUILDINGS[b.kind].cost.money;
-  return { money: Math.round(build * REPAIR_FRACTION), timber: Math.ceil(build / 100 * REPAIR_TIMBER_PER_100) };
+  const timber = Math.ceil(build / 100 * REPAIR_TIMBER_PER_100);
+  const have = Math.min(timber, Math.max(0, Math.floor(state.resources.timber)));
+  const bought = timber - have;
+  return { money: Math.round(build * REPAIR_FRACTION) + bought * GOODS.timber.sells, timber: have, bought };
+}
+
+/** What mending costs now: a street piece its base price (no timber), anything else repairCost. */
+export function mendCost(state: SimState, b: Building): { money: number; timber: number; bought: number } {
+  return isStreet(b) ? { money: BUILDINGS[b.kind].cost.money, timber: 0, bought: 0 } : repairCost(state, b);
+}
+
+/** Why a damaged building can't be mended now (null: it can): the purse. */
+export function repairBlocker(state: SimState, b: Building): string | null {
+  if (!b.damaged) return "Not damaged";
+  const c = mendCost(state, b);
+  return state.resources.money < c.money ? `Needs ${c.money}$; the purse holds ${Math.floor(state.resources.money)}$` : null;
+}
+
+/** Mend it now out of the purse (the info panel's Repair button), without waiting for a peak; false when it can't be paid for. */
+export function repairNow(state: SimState, b: Building): boolean {
+  if (repairBlocker(state, b)) return false;
+  const c = mendCost(state, b);
+  moveMoney(state, -c.money, "repair");
+  state.resources.timber -= c.timber;
+  b.damaged = false;
+  notify(state, `Repaired the ${BUILDINGS[b.kind].name.toLowerCase()} for ${c.money}$`);
+  return true;
+}
+
+/** What a town needs back first after damage: its landings and the workplaces that make or sell something. */
+export function earns(b: Building): boolean {
+  const def = BUILDINGS[b.kind];
+  return def.network === "root" || (def.workers > 0 && (def.category === "Production" || def.category === "Sea"));
 }
 
 /** Settlement: repair what the purse and the woodpile allow, oldest damage first. */
@@ -106,15 +143,20 @@ export function repairDamage(state: SimState): number {
     streets++; spent += money; repaired++;
   }
   if (streets) notify(state, `Rebuilt ${streets} walkway${streets > 1 ? "s" : ""} for ${spent}$`);
-  for (const b of buildingList(state).sort((x, y) => x.id - y.id)) {
-    if (!b.damaged) continue;
-    const c = repairCost(b);
-    if (state.resources.money < c.money || state.resources.timber < c.timber) continue;
-    moveMoney(state, -c.money, "repair");
-    state.resources.timber -= c.timber;
-    b.damaged = false;
-    repaired++;
-    notify(state, `Repaired the ${BUILDINGS[b.kind].name.toLowerCase()} for ${c.money}$ and ${c.timber} timber`);
+  // Landings and earners first, cheapest first; everything else waits (the purse saves) until they are all mended.
+  const broken = buildingList(state).filter(b => b.damaged).sort((x, y) => BUILDINGS[x.kind].cost.money - BUILDINGS[y.kind].cost.money || x.id - y.id);
+  for (const first of [true, false]) {
+    for (const b of broken) {
+      if (earns(b) !== first || !b.damaged) continue;
+      const c = repairCost(state, b);
+      if (state.resources.money < c.money) continue;
+      moveMoney(state, -c.money, "repair");
+      state.resources.timber -= c.timber;
+      b.damaged = false;
+      repaired++;
+      notify(state, `Repaired the ${BUILDINGS[b.kind].name.toLowerCase()} for ${c.money}$${c.timber ? ` and ${c.timber} timber` : ""}${c.bought ? ` (${c.bought} timber bought)` : ""}`);
+    }
+    if (broken.some(b => b.damaged && earns(b))) break;
   }
   return repaired;
 }

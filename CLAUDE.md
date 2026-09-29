@@ -185,8 +185,9 @@ Leisure & tourism
   start a walker comes out of the home's door (hidden inside until it passes the wall) and stands still at the
   workplace's door for the shift; when the shift ends the same figure walks home from that spot and goes in at the
   door. Nobody appears or vanishes in the open: only at a door, or climbing onto or off a deck's far edge from a boat.
-  Walks climb the stairs where decks meet at different heights. Porters carry the catch from the landing boats to the
-  market's counter and walk back. Cap live walkers at `MAX_WALKERS` (200); beyond that, sample.
+  Walks climb the stairs where decks meet at different heights, following the treads the meshes draw (`stairsOn` in
+  view/buildings.ts), and always leave a home by the street, never through a wall it shares with the workplace.
+  Porters carry the catch from the landing boats to the market's counter and walk back. Cap live walkers at `MAX_WALKERS` (200); beyond that, sample.
   Walkers are thin instances of one 3-primitive figure (body box, head sphere, hat cone) with per-instance color.
   Idle walkers loiter on market square and beach. Swimmers are walkers bobbing on the water at beach cells at high water.
   Kids (small walkers) play on the street in front of houses at level 2+.
@@ -206,7 +207,17 @@ Leisure & tourism
 - **fireRisk**: smokehouses, taverns, lanterns raise it; rain (storms) zero it; fire watch lowers it. Fire ignites with
   chance ∝ risk, spreads along adjacent wooden pieces each tick until watched or burnt out; burnt buildings are damaged.
 - **coverage fields**: one per service type (water, leisure, night, lifeguard, firewatch), rebuilt at every settlement.
-- Overlays: any field can be shown as a color tint on the grid cells (view layer).
+  The panels, hints and map pins read the same share-out from the layout as it stands (`liveShares`), so a well built
+  or mended since the last peak already counts; the street network is also recomputed as each piece is placed or
+  removed, so a building placed with the clock stopped is on the street at once.
+- Overlays: any field can be shown as a color tint on the grid cells (view layer), draped on the ground or just above
+  the water at the current tide. A field's colour reaches full strength at the level where it does harm (pollution:
+  `OYSTER_POLLUTION_KILL`; fire: `FIRE_IGNITE_THRESHOLD`), square-rooted so a faint plume still shows, and a legend line
+  under the buttons says what it shows and the worst value now, or that there is nothing to show.
+- Pollution is also seen without an overlay: the water shader's pollution tint (`pollTex`, one texel a cell) turns foul
+  water murky and less clear, so an outfall's plume drifts with the tide and fades once a treatment plant takes the waste.
+- Shark fins roam the risky open water (risk ≥ 0.15, deep enough, clear of every deck), one for every few risky cells,
+  swimming from spot to spot within the plume; they sink when the water stops drawing sharks.
 
 ## 9. Events and damage
 
@@ -223,8 +234,11 @@ Leisure & tourism
   building height) and not shielded by a sea wall or breakwater (ray from the deep side along the wave axis) is damaged.
   Boats outside shelter are lost.
 - **Damaged** buildings stop producing; repair costs `REPAIR_FRACTION` of build cost in money + timber, paid automatically
-  when affordable, otherwise they sit damaged (darker tint, tilted roof). Burnt = damaged. Damaged walkways and paths are
-  rebuilt first, for their base price and no timber, whenever the purse allows.
+  at the peaks when affordable, otherwise they sit damaged (darker tint, tilted roof, an amber pin overhead). Timber the
+  store is short of is bought at the company's price (four coasts grow none), so a repair is only ever waiting for money.
+  Damaged walkways and paths are rebuilt first, for their base price and no timber; then the landings and the staffed
+  workplaces (Production, Sea), cheapest first; everything else waits until those are mended. The info panel's
+  "Repair now" mends one at once, out of the purse. Burnt = damaged.
 
 ## 10. Trade
 
@@ -241,10 +255,20 @@ Leisure & tourism
   plus a door tab: a building faces an adjoining street on its own (`Grid.facing`; with none, its door looks to the lowest
   ground, the sea), turns to a street laid beside it later (`Grid.reface`) unless the player turned it, and R turns it by quarter turns
   (`Building.rot`; odd turns swap a footprint's width and depth). Streets and everything in the water don't turn.
-- Click a building: info panel (workers filled/needed, output last cycle, status: working / idle: no workers / cut / damaged / polluted;
-  a home's sewer; a service's capacity and the Upgrade button). Pieces that need no street (outfalls, treatment
-  plants, nets, walls, warehouses: `offStreet`) never warn that no street reaches them.
-- Overlays toggle: pollution, fish density, shark risk, fire risk, happiness, water coverage, sewers (happiness and water coverage not built yet).
+- Inspect (desktop): the hand starts empty on entering a town, and Esc or the Inspect button at the end of the tabs empties
+  it again; with an empty hand there is no ghost and a click only inspects (a missed click never builds). Picking a card
+  fills the hand.
+- Click a building: info panel (status as a pill — green working, amber held up, red damaged — with what to do; workers
+  filled/needed and from how many homes; a home's residents, where they work, who is off work or without a job, its
+  water and why not, its sewer; a service's capacity and the Upgrade button; a well's people served now; Repair now while
+  damaged). Blue pins mark what the selected building is tied to: the homes a well serves, where a home's people work,
+  whose people work here. Pieces that need no street (outfalls, treatment plants, nets, walls, warehouses:
+  `offStreet`) never warn that no street reaches them; the others show a red marker overhead until one does.
+- The building in hand tints where it can go (green: a street will reach it; gold: it fits but nothing would reach it).
+- Streets beside a piece drawn on the ground whatever its ledger floor (rice paddy, oyster bed, salt pan) meet the ground
+  there and let a ladder down through a gap in the rail, instead of a stair up to a floor that isn't drawn.
+- Overlays toggle: pollution, fish density, shark risk, fire risk, happiness, water coverage, sewers (happiness and water coverage not built yet),
+  with a legend line under the buttons.
 - Notifications feed (immigrants arrived, oyster bed died, shark incident, boat lost, storm coming, the sea is pulling back).
 - Speed: pause / 1× / 2× / 4×. Time is game time; the tide period is in game seconds.
 - Quality presets (`ui/settings.ts`): High / Medium (no water reflections) / Low (no bloom, reflections, caustics or
@@ -257,11 +281,14 @@ Leisure & tourism
   a tap pins its ghost, a street tool's one-finger drag lays out a run, and nothing is built until Place (Turn and
   −/+ lift beside it). Unarmed, a tap opens a building's sheet (with Remove). One finger pans, two pinch to zoom and
   twist to turn. More holds the tide clock, overlays, the ledger and loan, Town…, sound, reflections and quality.
-- Save/load: autosave to localStorage every cycle; manual save slots (3); load on start if present; "new town" resets,
+- Save/load: autosave to localStorage every cycle, a moment after any change between peaks, and when the tab is hidden
+  or closed; manual save slots (3); load on start if present; "new town" resets,
   on an island chosen by a seed (the Town menu's seed field and "Random" button). Seed 0 is the original island, exactly;
   any other seed's island is generated and validated (`island.ts`: flats, a contiguous flats region, pier and harbor
   sites, trees on the hill) and rerolled until it passes. The seed lives in the ledger (`world.seed`) and in saves.
-- Start: 500$, 2 boats available to buy, a hut, a pier suggestion highlighted. Short 5-step tutorial via notifications.
+- Start: 500$, 2 boats available to buy, a hut, a pier suggestion highlighted. A six-step walkthrough, kept per sea
+  (a fresh sea starts at step 1); the market and the second hut count once the street reaches them, and a "walkthrough
+  complete" card stays up for two tides. Street cards read "+ stilts": walkways price their stilts by length.
 - Playtest log (`ui/playtest.ts`): opt-in in the Town menu, off by default, local only. For the first 30 minutes it
   keeps every placement and removal (cycle, purse), every warning and hint shown, the walkthrough's steps with
   timestamps, and money and population once per cycle; "Export playtest log" downloads JSON with a notes field.

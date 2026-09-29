@@ -14,6 +14,9 @@
 // The biomes (docs/biomes) turned the three depth tints into uniforms with the study's values as defaults, added a
 // `depthScale` (1 = the study) so a biome's deeper or shallower water keeps its bands, and one additive term: lagoon
 // cells (material code 1, carried in the height texture's blue channel) pulled toward `lagoonTint` by `lagoonMix` (0 = off).
+// Pollution (the design's "pollution tint") adds one sampler and one line: `pollTex` carries the ledger's pollution
+// field per cell (red = its share of the harm line, square-rooted), and the colour is pulled toward murk (and the
+// water made less clear) by it, scaled by `pollMix` (0 = the study's colour and alpha exactly).
 // The only substitution is ${SIZE}, which the reference also interpolated from its SIZE constant.
 import { COMMON } from "./common";
 import { SIZE } from "../src/config";
@@ -48,6 +51,7 @@ export const waterFS = `
     uniform vec3 lagoonTint; uniform float lagoonMix; // lagoon cells (material code 1 in the blue channel) pulled toward a tint
     uniform float depthScale;                 // the biome's tide multiplier: the depth bands follow the water line
     uniform float ice;                        // sea ice (Fjord): the surface whitens and stills as it rises toward 1
+    uniform sampler2D pollTex; uniform float pollMix; // pollution per cell (red channel), pulled toward murk
     void main(){
       vec3 L = (frame * vec4(vW, 1.0)).xyz;
       vec2 uv = L.xz / ${SIZE}.0 + 0.5;
@@ -64,10 +68,13 @@ export const waterFS = `
       float isLagoon = step(abs(t.b*255.0 - 1.0), 0.5);
       col = mix(col, lagoonTint, lagoonMix * isLagoon);
       col = mix(col, vec3(0.93, 0.95, 0.92), (1.0 - t.a) * isLagoon); // bleached coral under the water (alpha = 1 − bleach)
+      float murk = pollMix * smoothstep(0.05, 1.0, texture2D(pollTex, uv).r); // foul water: browner, and no seeing the bed through it
+      col = mix(col, vec3(0.44, 0.37, 0.18), murk * 0.85);
       col = mix(col, vec3(0.88, 0.92, 0.94), ice * 0.85);
       col = mix(col, vec3(0.10,0.24,0.42), dusk*0.55);
       float alpha = mix(0.34, 0.92, smoothstep(0.0, 1.4, depth));
       alpha = mix(alpha, 0.98, ice);
+      alpha = mix(alpha, 0.95, murk * 0.7);
       // fresnel toward sky
       float fres = pow(1.0 - max(dot(n, V), 0.0), 3.0);
       vec2 ruv = vClip.xy / vClip.w * 0.5 + 0.5 + n.xz * 0.03;

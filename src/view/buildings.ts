@@ -5,7 +5,7 @@
 // sphere that is lit while the home is reached. View only: nothing here changes a number in the sim.
 import { Axis, Color3, Matrix, Mesh, MeshBuilder, Scene, Space, StandardMaterial, Vector3, VertexBuffer } from "@babylonjs/core";
 import { STILT_SINK } from "../config";
-import { BUILDINGS, mayTurn, STREET_STEP_MAX } from "../sim/balance";
+import { BuildingKind, BUILDINGS, mayTurn, STREET_STEP_MAX } from "../sim/balance";
 import { cellCenter, DIRS, Grid } from "../sim/grid";
 import { ground } from "./ground";
 import { roofFor, roofShape, setRoofPalette } from "./roofs";
@@ -377,13 +377,23 @@ function home(scene: Scene, b: Building, bodyW: number, baseH: number): Building
 // ---------- streets ----------
 
 /**
- * What a walkway meets on each side: nothing, a deck at its own height, a deck `dh` higher (a step up), or a
+ * What a walkway meets on each side: nothing, a deck at its own height, a deck `dh` higher (a step up), a
  * pier, dock or harbor `-dh` lower ("down": those draw nothing toward the street, so the street steps down onto
- * them). `root`: the neighbour is a pier, dock or harbor, whose deck stops a little short of its cell's edge.
+ * them), or a field on the ground `-dh` below ("ladder": a ladder down to it). `root`: the neighbour is a pier,
+ * dock or harbor, whose deck stops a little short of its cell's edge.
  */
-export type Join = { side: Cell; kind: "open" | "flush" | "step" | "down"; dh: number; root?: boolean };
+export type Join = { side: Cell; kind: "open" | "flush" | "step" | "down" | "ladder"; dh: number; root?: boolean };
 /** How far a path's surface sits above the ground it drapes over (the same lift as its strips). */
 const PATH_LIFT = 0.05;
+/**
+ * Pieces drawn on the ground itself whatever their ledger floor (a paddy behind its bunds, oyster racks on the mud,
+ * salt pans on the levee):
+ * a street beside one meets the ground at the shared edge, and a deck above it lets a ladder down instead of
+ * climbing a stair to a floor that isn't drawn.
+ */
+const ON_GROUND: ReadonlySet<BuildingKind> = new Set<BuildingKind>(["ricePaddy", "oysterBed", "saltPan"]);
+/** A deck this far above a field beside it gets a ladder down; nearer, it simply meets it. */
+const LADDER_MIN = 0.15;
 export function deckJoins(b: Building, grid: Grid): Join[] {
   const c = b.cells[0];
   return DIRS.map(d => {
@@ -394,16 +404,73 @@ export function deckJoins(b: Building, grid: Grid): Join[] {
     // A path's surface at the shared edge is the ground there, not its cell's nominal floor: a deck that meets
     // a path on a bank climbs to where the path actually is.
     const { x, z } = cellCenter(c);
-    const nh = n.kind === "path" ? ground(x + d.i * 0.5, z + d.j * 0.5) + PATH_LIFT : n.floorY;
+    const onGround = ON_GROUND.has(n.kind);
+    const nh = n.kind === "path" || onGround ? ground(x + d.i * 0.5, z + d.j * 0.5) + PATH_LIFT : n.floorY;
     const dh = nh - b.floorY;
     const root = BUILDINGS[n.kind].network === "root";
     if (dh > 0.1 && dh <= STREET_STEP_MAX + 1e-6) return { side: d, kind: "step" as const, dh, root };
     if (root && dh < -0.1 && -dh <= STREET_STEP_MAX + 1e-6) return { side: d, kind: "down" as const, dh, root };
+    if (onGround && b.kind !== "path" && dh < -LADDER_MIN) return { side: d, kind: "ladder" as const, dh };
     return { side: d, kind: "flush" as const, dh: 0, root };
   });
 }
+/** A flight of stairs standing on a cell: it climbs from `base` to `top` toward the edge on `side`, `depth` deep from that
+ *  edge in `n` treads, `half` wide either side of its axis. */
+export interface Stair { side: Cell; base: number; top: number; depth: number; n: number; half: number }
+/** How far before a stair's first tread a figure starts to step up. */
+const STAIR_LEAD = 0.1;
+
+/**
+ * The stairs the meshes stand on a cell, with the same numbers: a street's or path's flight up to a higher
+ * neighbour, and the flight a walkway lets down onto a lower pier, dock or harbor (it stands on that deck's cell).
+ */
+export function stairsOn(grid: Grid, c: Cell): Stair[] {
+  const b = grid.buildingAt(c);
+  if (!b) return [];
+  const out: Stair[] = [];
+  const { x, z } = cellCenter(c);
+  if (b.kind === "walkway" || b.kind === "raisedWalkway" || b.kind === "path") {
+    for (const j of deckJoins(b, grid)) {
+      if (j.kind !== "step") continue;
+      const top = b.floorY + j.dh;
+      const base = b.kind === "path" ? ground(x + j.side.i * 0.5, z + j.side.j * 0.5) + PATH_LIFT : b.floorY;
+      const n = Math.max(2, Math.ceil((top - base) / 0.13));
+      out.push({ side: j.side, base, top, depth: Math.min(0.9, 0.15 * n), n, half: b.kind === "path" ? 0.3 : 0.35 });
+    }
+  }
+  if (BUILDINGS[b.kind].network === "root") {
+    for (const d of DIRS) {
+      const n = grid.buildingAt({ i: c.i + d.i, j: c.j + d.j });
+      if (!n || (n.kind !== "walkway" && n.kind !== "raisedWalkway")) continue;
+      const down = deckJoins(n, grid).find(j => j.side.i === -d.i && j.side.j === -d.j && j.kind === "down");
+      if (!down) continue;
+      const count = Math.max(2, Math.ceil(-down.dh / 0.13));
+      out.push({ side: d, base: n.floorY + down.dh, top: n.floorY, depth: Math.min(0.45, 0.15 * count), n: count, half: 0.35 });
+    }
+  }
+  return out;
+}
+
+/**
+ * How high a cell's stairs reach at (x, z), or -Infinity off them: the line along the treads' front edges (and a
+ * short lead-in before the first), so a figure that follows it steps up each tread and never cuts through one.
+ */
+export function stairHeight(stairs: Stair[], c: Cell, x: number, z: number): number {
+  const { x: cx, z: cz } = cellCenter(c);
+  let h = -Infinity;
+  for (const s of stairs) {
+    const across = s.side.i ? z - cz : x - cx;
+    if (Math.abs(across) > s.half + 0.05) continue;
+    const d = 0.5 - ((x - cx) * s.side.i + (z - cz) * s.side.j);
+    if (d > s.depth + STAIR_LEAD) continue;
+    const f = d > s.depth ? (1 - (d - s.depth) / STAIR_LEAD) / s.n : Math.min(1, (s.n + 1) / s.n - d / s.depth);
+    h = Math.max(h, s.base + (s.top - s.base) * f);
+  }
+  return h;
+}
+
 function joinKey(b: Building, grid: Grid): string {
-  return deckJoins(b, grid).map(j => (j.kind === "open" ? "-" : j.kind === "flush" ? "=" : j.kind === "step" ? `s${Math.round(j.dh * 10)}` : `d${Math.round(-j.dh * 10)}`) + (j.root ? "r" : "")).join("");
+  return deckJoins(b, grid).map(j => (j.kind === "open" ? "-" : j.kind === "flush" ? "=" : j.kind === "step" ? `s${Math.round(j.dh * 10)}` : j.kind === "ladder" ? `l${Math.round(-j.dh * 20)}` : `d${Math.round(-j.dh * 10)}`) + (j.root ? "r" : "")).join("");
 }
 
 /**
@@ -421,6 +488,18 @@ function streetDeck(scene: Scene, parts: Mesh[], b: Building, grid: Grid, x: num
         for (const t of [-0.36, 0.36]) parts.push(box(scene, 0.045, 0.16, 0.045, x + ax * 0.44 + (ax ? 0 : t), F + 0.08, z + az * 0.44 + (az ? 0 : t), kerb));
         parts.push(box(scene, ax ? 0.035 : 0.8, 0.03, az ? 0.035 : 0.8, x + ax * 0.44, F + 0.15, z + az * 0.44, kerb));
       } else parts.push(box(scene, ax ? 0.1 : 0.9, 0.07, az ? 0.1 : 0.9, x + ax * 0.45, F - 0.035, z + az * 0.45, surface));
+      continue;
+    }
+    if (j.kind === "ladder") {
+      // A field on the ground beside the deck: the edge stays railed but for a gap, and a ladder goes down through it
+      // to the ground at the field's edge.
+      if (kerb) {
+        for (const t of [-0.36, 0.36]) parts.push(box(scene, 0.045, 0.16, 0.045, x + ax * 0.44 + (ax ? 0 : t), F + 0.08, z + az * 0.44 + (az ? 0 : t), kerb));
+        for (const t of [-0.27, 0.27]) parts.push(box(scene, ax ? 0.035 : 0.2, 0.03, az ? 0.035 : 0.2, x + ax * 0.44 + (ax ? 0 : t), F + 0.15, z + az * 0.44 + (az ? 0 : t), kerb));
+      } else parts.push(box(scene, ax ? 0.1 : 0.9, 0.07, az ? 0.1 : 0.9, x + ax * 0.45, F - 0.035, z + az * 0.45, surface));
+      const foot = F + j.dh - PATH_LIFT, top = F + 0.14, ex = x + ax * 0.52, ez = z + az * 0.52;
+      for (const t of [-0.12, 0.12]) parts.push(box(scene, 0.035, top - foot, 0.035, ex + (ax ? 0 : t), (top + foot) / 2, ez + (az ? 0 : t), PALETTE.wood));
+      for (let y = foot + 0.12; y < F - 0.02; y += 0.14) parts.push(box(scene, ax ? 0.025 : 0.24, 0.025, az ? 0.025 : 0.24, ex, y, ez, PALETTE.planks));
       continue;
     }
     // Fill out to the edge (0.45 → 0.5); the neighbour fills its own half, so the seam vanishes. A pier, dock or

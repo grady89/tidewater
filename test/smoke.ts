@@ -1155,9 +1155,11 @@ try {
           slopeHut = api.place("hut", i, j);
         }
         let avalanche = null;
-        for (let k = 0; k < 6 && !(slopeHut && slopeHut.damaged); k++) avalanche = api.forceBiome("avalanche");
+        // Buried — or, with a purse this full, already mended at the peak (repairs buy the timber they lack).
+        const buriedOnce = () => !!slopeHut && (slopeHut.damaged || api.sim.log.some((m: string) => /Repaired the hut/.test(m)));
+        for (let k = 0; k < 6 && !buriedOnce(); k++) avalanche = api.forceBiome("avalanche");
         api.frameTown(26);
-        return { produced, season: { cycle: season.cycle, whaleSeason: season.biomeState.whaleSeason }, whales, oil, stationOut, horns: api.view.audio().horns ?? 0, ice: { seaIce: ice0.biomeState.seaIce, view: iceView, label: iceLabel }, slopeHut: !!slopeHut, buried: !!slopeHut?.damaged, avalanches: avalanche?.biomeState.avalanches ?? 0, aurora: api.view.biome().aurora, fauna: api.view.fauna() };
+        return { produced, season: { cycle: season.cycle, whaleSeason: season.biomeState.whaleSeason }, whales, oil, stationOut, horns: api.view.audio().horns ?? 0, ice: { seaIce: ice0.biomeState.seaIce, view: iceView, label: iceLabel }, slopeHut: !!slopeHut, buried: buriedOnce(), avalanches: avalanche?.biomeState.avalanches ?? 0, aurora: api.view.biome().aurora, fauna: api.view.fauna() };
       });
       console.log("Biome fjord:", JSON.stringify(fj));
       assert(fj.produced.racks > 0 && fj.produced.stockfish > 0 && fj.produced.mine > 0 && fj.produced.iron > 0 && fj.produced.ice, "Fjord: the racks dried fish and the mine dug iron; the ice house stands");

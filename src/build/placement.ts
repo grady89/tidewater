@@ -6,7 +6,7 @@ import { BuildingKind, BUILDINGS, LINE_KINDS, PlacementClass, ROTATABLE_CLASSES,
 import { autoStilts, boatPurchaseBlocker, buyBoat, canAfford, placeCost, removeBuilding, tryPlace } from "../sim/economy";
 import { BOAT_COST, LANDFILL_COST, LANTERN_COST, LIFT_MAX, PLANT_COST } from "../sim/balance";
 import { CLEARANCE } from "../config";
-import type { BiomeId } from "../sim/biomes";
+import { costOf, type BiomeId } from "../sim/biomes";
 import { DIRS, Grid, HALF, inBounds, worldToCell } from "../sim/grid";
 import { Axis, linePath, MAX_LINE, routePath } from "./line";
 export { linePath, routePath } from "./line";
@@ -26,6 +26,7 @@ export function isBuildingTool(t: Tool): t is BuildingKind { return !SPECIAL.has
 export type Fate = "safe" | "spring" | "always";
 
 const CLICK_SLOP_PX = 5;
+const SIZE_CELLS = 4 * HALF * HALF;
 /** How far above its deck a building counts as hit by a tap (roofs, towers). */
 const PICK_HEIGHT = 1.6;
 /** Per-cell pieces that are laid in runs: drag from one cell to another and the whole line goes down. */
@@ -70,7 +71,20 @@ export class Placement {
   private pinPoint: { x: number; y: number } | null = null;
 
   /** Line tools draw with the left button, so the camera must not grab the ground with it. */
-  get dragsLine(): boolean { return LINE_TOOLS.has(this.tool); }
+  get dragsLine(): boolean { return !this.empty && LINE_TOOLS.has(this.tool); }
+
+  /**
+   * Inspect (desktop): the hand is empty — no ghost, and a click inspects the building under the pointer and never
+   * builds. Picking a card fills the hand (setTool); Esc or the Inspect button empties it. Phones keep their own
+   * armed state (ui/mobile.ts), so this applies only off touch mode.
+   */
+  inspecting = true;
+  private get empty(): boolean { return this.inspecting && !this.touchMode; }
+  inspect(): void {
+    this.inspecting = true;
+    this.pinned = null; this.lineStart = null; this.linePath = []; this.down = null;
+    this.refresh();
+  }
   /** Off while the World is shown (the canvas is shared); the ghost hides and clicks are ignored. */
   private _enabled = true;
   get enabled(): boolean { return this._enabled; }
@@ -81,7 +95,7 @@ export class Placement {
 
   /** Extra deck height for auto-sized pieces, in LIFT_STEP steps ([ and ] keys); never below the safe height. */
   lift = 0;
-  get liftable(): boolean { return isBuildingTool(this.tool) && autoStilts(this.tool); }
+  get liftable(): boolean { return !this.empty && isBuildingTool(this.tool) && autoStilts(this.tool); }
   /** Stilt length (floor − ground) and full price of the hovered footprint, for the ghost's label. */
   stilt = 0;
   cost = 0;
@@ -101,7 +115,7 @@ export class Placement {
 
   /** Quarter turns the player gave the ghost with R; null lets the door face the street on its own. */
   turns: number | null = null;
-  get rotatable(): boolean { return isBuildingTool(this.tool) && ROTATABLE.has(BUILDINGS[this.tool].cls) && !LINE_TOOLS.has(this.tool); }
+  get rotatable(): boolean { return !this.empty && isBuildingTool(this.tool) && ROTATABLE.has(BUILDINGS[this.tool].cls) && !LINE_TOOLS.has(this.tool); }
   /** R: one more quarter turn from whatever the ghost shows now (its own facing, or the last turn given). */
   rotate(): void {
     if (!this.rotatable) return;
@@ -153,6 +167,7 @@ export class Placement {
     canvas.addEventListener("pointerleave", e => { if (touch(e)) return; this.hover = null; this.ghost.setEnabled(false); this.ghostStilts.setEnabled(false); this.ghostDoor.setEnabled(false); });
     canvas.addEventListener("pointerdown", e => {
       if (!this.enabled || touch(e)) return;
+      if (this.empty) { this.down = { x: e.clientX, y: e.clientY, button: e.button }; return; }
       this.refresh(); // pick where the press lands, not where the pointer last moved
       this.down = { x: e.clientX, y: e.clientY, button: e.button };
       if (e.button === 0 && this.dragsLine && this.hover) { this.lineStart = this.hover; this.lineAxis = null; }
@@ -165,6 +180,8 @@ export class Placement {
       this.lineStart = null;
       if (!d || d.button !== e.button) { this.linePath = []; this.refresh(); return; }
       const moved = Math.hypot(e.clientX - d.x, e.clientY - d.y) > CLICK_SLOP_PX;
+      // An empty hand: a click shows what is there (or closes the panel on open ground); nothing is built or removed.
+      if (this.empty) { if (e.button === 0 && !moved) this.onSelect(this.buildingUnder(this.scene.pointerX, this.scene.pointerY)); return; }
       if (e.button === 0 && start && this.linePath.length > 1) { this.placeLine(); return; }
       this.linePath = [];
       this.refresh();
@@ -187,6 +204,7 @@ export class Placement {
   setTool(tool: Tool): void {
     if (tool !== this.tool) { this.turns = null; this.pinned = null; this.lineStart = null; this.linePath = []; }
     this.tool = tool;
+    this.inspecting = false;
     this.refresh();
   }
 
@@ -244,6 +262,31 @@ export class Placement {
     }
     if (Math.abs(x) >= HALF || Math.abs(z) >= HALF) return null;
     return worldToCell(x, z);
+  }
+
+  private placeableKey = "";
+  private placeableMask: Uint8Array | null = null;
+  /**
+   * Where the current building tool can go, per cell (the cell the ghost is anchored on): 2 where it can and a street
+   * or pier touches it, 1 where it can but nothing would reach it, 0 where it can't. Null for streets and the special
+   * tools (a street can go on half the map, so the tint would say nothing). Cached until the tool or the layout changes.
+   */
+  placeable(): Uint8Array | null {
+    if (this.empty || !isBuildingTool(this.tool) || BUILDINGS[this.tool].category === "Streets") return null;
+    const kind = this.tool;
+    const key = `${kind}:${this.turns ?? 0}:${this.grid.layoutVersion}:${this.grid.terrainVersion}`;
+    if (key === this.placeableKey) return this.placeableMask;
+    this.placeableKey = key;
+    const mask = new Uint8Array(SIZE_CELLS);
+    const def = BUILDINGS[kind];
+    for (let i = -HALF; i < HALF; i++) for (let j = -HALF; j < HALF; j++) {
+      const cells = this.grid.footprint(kind, { i, j }, this.turns ?? 0);
+      if (!cells || !this.grid.canPlace(kind, cells)) continue;
+      const joined = def.offStreet || cells.some(c => this.grid.neighbors(c).some(n => { const b = this.grid.buildingAt(n); return !!b && !cells.some(x => x.i === n.i && x.j === n.j) && (b.reached || BUILDINGS[b.kind].network === "root"); }));
+      mask[(i + HALF) * (2 * HALF) + (j + HALF)] = joined ? 2 : 1;
+    }
+    this.placeableMask = mask;
+    return mask;
   }
 
   /** The blocker for the current tool at `anchor` (null = it can go there). */
@@ -508,6 +551,13 @@ export class Placement {
   }
 
   refresh(): void {
+    if (this.empty) {
+      this.hover = null; this.blocker = null; this.warn = null; this.line = null;
+      this.ghost.setEnabled(false); this.ghostStilts.setEnabled(false); this.ghostDoor.setEnabled(false);
+      this.lineGhosts.ok.setEnabled(false); this.lineGhosts.bad.setEnabled(false);
+      this.setTag(null, "ok", null);
+      return;
+    }
     this.hover = this.touchMode
       ? (this.pinPoint ? this.pickCell(this.pinPoint.x, this.pinPoint.y) : this.pinned)
       : this.pickCell();
@@ -537,7 +587,10 @@ export class Placement {
       const laid = this.line && this.line.count > 0;
       const what = this.tool === "sewerPipe" ? "sewer pipe" : this.tool === "clearPipe" ? "pipe taken up" : BUILDINGS[this.tool as BuildingKind].name.toLowerCase();
       const none = this.tool === "clearPipe" ? "No pipe to take up here" : this.tool === "sewerPipe" ? "Sewer runs here already" : "Nothing can be laid here";
-      this.setTag(laid ? `${this.line!.count} × ${what}${this.tool === "clearPipe" ? "" : ` · ${this.line!.cost}$`}` : none, laid ? "ok" : "blocked", { x: this.hover.i + 0.5, y: PIPE_TOOLS.has(this.tool) ? this.pipeY(this.hover) : this.pickY(), z: this.hover.j + 0.5 });
+      // Street runs on stilts say how much of the price is the stilts (low ground is dear).
+      const base = isBuildingTool(this.tool) ? costOf(this.tool, this.grid.state.world.biome).money * (this.line?.count ?? 0) : this.line?.cost ?? 0;
+      const stilts = laid && isBuildingTool(this.tool) && autoStilts(this.tool) ? Math.max(0, this.line!.cost - base) : 0;
+      this.setTag(laid ? `${this.line!.count} × ${what}${this.tool === "clearPipe" ? "" : ` · ${this.line!.cost}$`}${stilts > 0 ? ` (${stilts}$ of it stilts)` : ""}` : none, laid ? "ok" : "blocked", { x: this.hover.i + 0.5, y: PIPE_TOOLS.has(this.tool) ? this.pipeY(this.hover) : this.pickY(), z: this.hover.j + 0.5 });
       return;
     }
     this.lineGhosts.ok.setEnabled(false); this.lineGhosts.bad.setEnabled(false);

@@ -10,7 +10,14 @@ export const FOG_NEAR = 45, FOG_FAR = 140;
 /** Every uniform the water shader takes (the World builds its own materials from the same list). */
 export const WATER_UNIFORMS = ["world", "worldViewProjection", "time", "sunDir", "sunColor", "skyColor", "fogColor", "camPos", "dusk",
   "waveAmp", "waveDir", "waveFront", "waveHeight", "waveWidth", "reflectMix", "caustics", "frame", "fogNear", "fogFar",
-  "shallow", "mid", "deep", "lagoonTint", "lagoonMix", "depthScale", "ice"];
+  "shallow", "mid", "deep", "lagoonTint", "lagoonMix", "depthScale", "ice", "pollMix"];
+/** Every sampler it takes (the World binds a blank pollution texture: its seas show none). */
+export const WATER_SAMPLERS = ["heightTex", "reflectTex", "pollTex"];
+
+/** A pollution texture with nothing in it, for water that shows none. */
+export function blankPollution(scene: Scene): RawTexture {
+  return RawTexture.CreateRGBATexture(new Uint8Array(4), 1, 1, scene, false, false, Texture.NEAREST_SAMPLINGMODE);
+}
 
 /** The biome's look on a water material: the three tints, the lagoon, the depth scale. */
 export function applyWaterLook(material: ShaderMaterial, look: BiomeLook, depthScale = 1): void {
@@ -41,6 +48,8 @@ export interface Water {
   readonly caustics: boolean;
   /** The reflection render target, for anything that must behave differently in the mirror pass. */
   readonly mirror: MirrorTexture;
+  /** The ledger's pollution field (64×64), shown as murk in the water; full at `full` (null clears it). */
+  setPollution(field: ArrayLike<number> | null, full: number): void;
 }
 
 /** The vertex shader's surface displacement, for anything that floats. Keep in step with shaders/water.ts. */
@@ -58,10 +67,15 @@ export function createWater(scene: Scene, heightTex: RawTexture): Water {
   const material = new ShaderMaterial("water", scene, { vertexSource: waterVS, fragmentSource: waterFS }, {
     attributes: ["position"],
     uniforms: WATER_UNIFORMS,
-    samplers: ["heightTex", "reflectTex"],
+    samplers: WATER_SAMPLERS,
     needAlphaBlending: true,
   });
   material.setTexture("heightTex", heightTex);
+  // Pollution, one texel a cell (texel column = cell i along x, row = cell j along z), smoothed between cells.
+  const pollData = new Uint8Array(SIZE * SIZE * 4);
+  const pollTex = RawTexture.CreateRGBATexture(pollData, SIZE, SIZE, scene, false, false, Texture.BILINEAR_SAMPLINGMODE);
+  pollTex.wrapU = pollTex.wrapV = Texture.CLAMP_ADDRESSMODE;
+  material.setTexture("pollTex", pollTex).setFloat("pollMix", 1);
   material.setFloat("waveAmp", 1).setVector2("waveDir", new Vector2(0, 1)).setFloat("waveFront", -999).setFloat("waveHeight", 0).setFloat("waveWidth", 3);
   material.setMatrix("frame", Matrix.Identity()).setFloat("fogNear", FOG_NEAR).setFloat("fogFar", FOG_FAR);
   material.backFaceCulling = false;
@@ -97,6 +111,13 @@ export function createWater(scene: Scene, heightTex: RawTexture): Water {
       material.setFloat("reflectMix", on ? 1 : 0);
     },
     setSwell(amp) { material.setFloat("waveAmp", amp); },
+    setPollution(field, full) {
+      for (let i = 0; i < SIZE; i++) for (let j = 0; j < SIZE; j++) {
+        const v = field ? Math.sqrt(Math.min(1, Math.max(0, field[i * SIZE + j]) / full)) : 0;
+        pollData[(j * SIZE + i) * 4] = Math.round(v * 255);
+      }
+      pollTex.update(pollData);
+    },
     setLook(look, depthScale = 1) { applyWaterLook(material, look, depthScale); },
     setIce(ice) { material.setFloat("ice", ice); },
     setCrest(dir, front, height, width) {

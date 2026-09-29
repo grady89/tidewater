@@ -9,6 +9,7 @@ import { SIZE } from "../config";
 import { BUILDINGS, SWIM_FRACTION } from "../sim/balance";
 import { cellCenter, cellIndex, Grid } from "../sim/grid";
 import { ground as groundHeight } from "./ground";
+import { Stair, stairHeight, stairsOn } from "./buildings";
 import { ferryTerminals } from "../sim/network";
 import { Building, Cell, Phase, population, SimState } from "../sim/state";
 import { flatMaterial, mergeFlat, tint } from "../world/flatMesh";
@@ -64,6 +65,8 @@ const ARRIVALS_MAX = 12;
 const FERRY_CROSSING_SECONDS = 20;
 /** How far inside a cell's edge a building's wall stands (a walker is hidden past it), and where a worker waits outside. */
 const WALL = 0.16, STAND = 0.2;
+/** Where a walk crosses a cell with stairs, it follows the treads in steps this long. */
+const STAIR_SAMPLE = 0.08;
 /** Seconds to climb up onto a deck. */
 const CLIMB = 0.4;
 /** Newcomers come on a visiting boat: seconds for it to sail in from open water, and to sail away again. */
@@ -333,15 +336,15 @@ export class Walkers {
   }
 
   /** Every walker drawn at `viewTime`, where and doing what (a probe for the movement checks). */
-  probe(viewTime: number): { x: number; z: number; stage: "waiting" | "climbing" | "walking" | "standing"; carry: string | null; d: number; from: number; to: number }[] {
-    const out: { x: number; z: number; stage: "waiting" | "climbing" | "walking" | "standing"; carry: string | null; d: number; from: number; to: number }[] = [];
+  probe(viewTime: number): { x: number; y: number; z: number; stage: "waiting" | "climbing" | "walking" | "standing"; carry: string | null; d: number; from: number; to: number }[] {
+    const out: { x: number; y: number; z: number; stage: "waiting" | "climbing" | "walking" | "standing"; carry: string | null; d: number; from: number; to: number }[] = [];
     for (const w of this.walkers) {
       if (viewTime < w.t0 && !w.waits) continue;
       const d = distance(w, viewTime);
       if (d < w.from || (!w.stay && d > w.to)) continue;
       const { pos } = along(w, d);
       const stage = viewTime < w.t0 ? "waiting" : below(w, viewTime) > 0 ? "climbing" : d >= w.len ? "standing" : "walking";
-      out.push({ x: +pos.x.toFixed(2), z: +pos.z.toFixed(2), stage, carry: w.carry, d: +d.toFixed(2), from: +w.from.toFixed(2), to: Number.isFinite(w.to) ? +w.to.toFixed(2) : -1 });
+      out.push({ x: +pos.x.toFixed(2), y: +(pos.y - below(w, viewTime)).toFixed(3), z: +pos.z.toFixed(2), stage, carry: w.carry, d: +d.toFixed(2), from: +w.from.toFixed(2), to: Number.isFinite(w.to) ? +w.to.toFixed(2) : -1 });
     }
     return out;
   }
@@ -361,11 +364,24 @@ export class Walkers {
     return !!b && b.reached && !b.cut && BUILDINGS[b.kind].network !== "leaf";
   }
 
-  /** The height a figure stands at on a cell: the deck, or the ground under a path at that point. */
+  private stairCache = new Map<number, Stair[]>();
+  private stairLayout = -1;
+  /** The stairs standing on a cell (as the meshes draw them), kept until the layout changes. */
+  private stairs(c: Cell): Stair[] {
+    if (this.grid.layoutVersion !== this.stairLayout) { this.stairCache.clear(); this.stairLayout = this.grid.layoutVersion; }
+    const k = cellIndex(c.i, c.j);
+    let s = this.stairCache.get(k);
+    if (!s) { s = stairsOn(this.grid, c); this.stairCache.set(k, s); }
+    return s;
+  }
+
+  /** The height a figure stands at on a cell: the deck, or the ground under a path at that point; on a stair's treads where one stands. */
   private footY(c: Cell, x: number, z: number): number {
     const b = this.grid.buildingAt(c);
     if (!b) return groundHeight(x, z);
-    return BUILDINGS[b.kind].floor === "terrain" ? groundHeight(x, z) + 0.05 : b.floorY;
+    const own = BUILDINGS[b.kind].floor === "terrain" ? groundHeight(x, z) + 0.05 : b.floorY;
+    const stairs = this.stairs(c);
+    return stairs.length ? Math.max(own, stairHeight(stairs, c, x, z)) : own;
   }
 
   /** Where a boat comes alongside `b`: the middle of its cell farthest from `near`, and a point just past that cell's
@@ -392,9 +408,12 @@ export class Walkers {
     const toCells = new Set(to.cells.map(c => cellIndex(c.i, c.j)));
     const prev = new Int32Array(SIZE * SIZE).fill(-2);
     const queue: Cell[] = [];
+    // A walk leaves by the street: straight into a neighbouring building only off a deck (a pier beside the market),
+    // never through the wall a home shares with its workplace.
+    const fromDeck = this.walkable(from.cells[0]);
     for (const c of from.cells) for (const n of this.grid.neighbors(c)) {
       const k = cellIndex(n.i, n.j);
-      if (fromCells.has(k) || prev[k] !== -2 || (!this.walkable(n) && !toCells.has(k))) continue;
+      if (fromCells.has(k) || prev[k] !== -2 || (!this.walkable(n) && !(fromDeck && toCells.has(k)))) continue;
       prev[k] = cellIndex(c.i, c.j);
       queue.push(n);
     }
@@ -441,8 +460,10 @@ export class Walkers {
     if (!route) return null;
     const chain = [route.first, ...route.cells, route.last];
     const pts: Vector3[] = [];
+    /** Whether the stretch from each point to the next lies on the street's surface (so it follows any stairs). */
+    const onDeck: boolean[] = [];
     let hideBefore = -1, hideAfter = -1;
-    const P = (x: number, y: number, z: number) => pts.push(new Vector3(x, y, z));
+    const P = (x: number, y: number, z: number, deck = true) => { pts.push(new Vector3(x, y, z)); onDeck.push(deck); };
     for (let i = 0; i < chain.length - 1; i++) {
       const A = chain[i], B = chain[i + 1];
       const ca = cellCenter(A), cb = cellCenter(B);
@@ -456,13 +477,13 @@ export class Walkers {
       if (i === 0) {
         if (start === "door") {
           // A worker standing at their post: the walk starts there, already outside.
-          const s = startAt ?? new Vector3(ex + dx * STAND, yB, ez + dz * STAND);
+          const s = startAt ?? new Vector3(ex + dx * STAND, this.footY(B, ex + dx * STAND, ez + dz * STAND), ez + dz * STAND);
           P(s.x, s.y, s.z);
         } else {
           if (start === "deck") {
             // Up over the far edge from a boat alongside, onto the deck, and along it to the street.
             const e = this.farEdge(from, A);
-            P(e.over.x, e.over.y, e.over.z);
+            P(e.over.x, e.over.y, e.over.z, false);
             if (Math.hypot(e.tip.x - ca.x, e.tip.z - ca.z) > 0.01) P(e.tip.x, e.tip.y, e.tip.z);
           }
           P(ca.x, this.footY(A, ca.x, ca.z), ca.z);
@@ -478,6 +499,7 @@ export class Walkers {
       }
       if (!(i === 0 && start === "door")) {
         if (bothGround) P(ex, groundHeight(ex, ez) + 0.05, ez);
+        else if (this.stairs(A).length || this.stairs(B).length) P(ex, Math.max(yA, yB), ez);
         else {
           const top = Math.max(yA, yB);
           if (yA < yB - 0.02) P(ex - dx * foot, yA, ez - dz * foot);
@@ -486,12 +508,13 @@ export class Walkers {
         }
       }
       if (lastLink) {
-        if (end === "inside") { P(ex + dx * WALL, yB, ez + dz * WALL); hideAfter = pts.length - 1; P(ex + dx * 0.34, yB, ez + dz * 0.34); }
+        if (end === "inside") { P(ex + dx * WALL, yB, ez + dz * WALL, false); hideAfter = pts.length - 1; P(ex + dx * 0.34, yB, ez + dz * 0.34); }
         else if (end === "board") {
           // Along the deck to its far edge, and over it (down into the boat alongside).
           P(cb.x, this.footY(B, cb.x, cb.z), cb.z);
           const e = this.farEdge(to, B);
           if (Math.hypot(e.tip.x - cb.x, e.tip.z - cb.z) > 0.01) P(e.tip.x, e.tip.y, e.tip.z);
+          onDeck[onDeck.length - 1] = false;
           P(e.over.x, e.over.y, e.over.z);
         } else if (end === "middle") {
           const is = to.cells.map(c => c.i), js = to.cells.map(c => c.j);
@@ -502,16 +525,38 @@ export class Walkers {
       } else P(cb.x, this.footY(B, cb.x, cb.z), cb.z);
     }
     if (pts.length < 2) return null;
+    // Across a cell with stairs, follow the treads instead of cutting through them.
+    const path: Vector3[] = [], at: number[] = [];
+    for (let k = 0; k < pts.length; k++) {
+      if (k > 0 && onDeck[k - 1]) {
+        const a = pts[k - 1], b = pts[k];
+        const steps = Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / STAIR_SAMPLE);
+        for (let s = 1; s < steps; s++) {
+          const x = a.x + (b.x - a.x) * s / steps, z = a.z + (b.z - a.z) * s / steps;
+          const c = { i: Math.floor(x), j: Math.floor(z) };
+          if (this.stairs(c).length) path.push(new Vector3(x, this.footY(c, x, z), z));
+        }
+      }
+      at.push(path.length);
+      path.push(pts[k]);
+    }
     const cum = [0];
-    for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y, pts[i].z - pts[i - 1].z));
-    return { path: pts, from: hideBefore >= 0 ? cum[hideBefore] : 0, to: hideAfter >= 0 ? cum[hideAfter] : Infinity };
+    for (let i = 1; i < path.length; i++) cum.push(cum[i - 1] + Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y, path[i].z - path[i - 1].z));
+    return { path, from: hideBefore >= 0 ? cum[at[hideBefore]] : 0, to: hideAfter >= 0 ? cum[at[hideAfter]] : Infinity };
   }
 
   /** Put a walker on a walk. A small sideways offset keeps a crowd from walking in one file. */
   private spawn(walk: { path: Vector3[]; from: number; to: number }, t0: number, color: Color4, o: { speed?: number; carry?: Walker["carry"]; climb?: boolean; descend?: boolean; stay?: boolean; home?: number; work?: number; keepStart?: boolean; waits?: boolean; linger?: number } = {}): Walker {
     // A walk home starts exactly where the worker stood; the rest of every walk gets its own small offset.
     const jx = (this.rand() - 0.5) * 0.3, jz = (this.rand() - 0.5) * 0.3;
-    const path = walk.path.map((p, i) => (i === 0 && o.keepStart ? p.clone() : new Vector3(p.x + jx, p.y, p.z + jz)));
+    const path = walk.path.map((p, i) => {
+      if (i === 0 && o.keepStart) return p.clone();
+      const x = p.x + jx, z = p.z + jz;
+      // By a stair the offset can land on another tread: a point on the street's surface stays on it.
+      const c0 = { i: Math.floor(p.x), j: Math.floor(p.z) }, c1 = { i: Math.floor(x), j: Math.floor(z) };
+      const onStair = (this.stairs(c0).length > 0 || this.stairs(c1).length > 0) && Math.abs(p.y - this.footY(c0, p.x, p.z)) < 1e-3;
+      return new Vector3(x, onStair ? this.footY(c1, x, z) : p.y, z);
+    });
     const cum = [0];
     for (let i = 1; i < path.length; i++) cum.push(cum[i - 1] + Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y, path[i].z - path[i - 1].z));
     const w: Walker = { path, cum, len: cum[cum.length - 1], t0, speed: o.speed ?? SPEED, color, from: walk.from, to: walk.to, stay: !!o.stay, seed: this.rand() * 6.28, carry: o.carry ?? null, climb: !!o.climb, descend: !!o.descend, linger: o.linger ?? 0, waits: o.waits ?? !!o.keepStart, home: o.home, work: o.work };

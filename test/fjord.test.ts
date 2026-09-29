@@ -184,7 +184,8 @@ describe("the Fjord's hazards and moments", () => {
     for (let k = 0; k < 12 && !buried; k++) {
       startStorm(state, grid);
       advanceCycles(state, grid, 2);
-      buried = slopeHut!.damaged;
+      // Buried — and with a purse this full, mended again at a peak (the timber bought in).
+      buried = slopeHut!.damaged || state.log.some(m => /Repaired the hut/.test(m));
     }
     expect(buried).toBe(true);
     expect(state.log.some(m => /avalanche/.test(m))).toBe(true);

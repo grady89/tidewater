@@ -1177,3 +1177,49 @@ rules; what isn't written there:
   (`api.view.walkerProbe()`) confirming every appearance is at a door or a deck's far edge; a visiting boat brings
   newcomers. `test/_move.mjs` and `test/_arrive.mjs` (scratch) are the harnesses. Swimmers still appear at the start of
   a high water and go at its end.
+
+## Session H (2026-09-28/29, with Grady): Round 5 results and the Round 6 reports
+
+- **Round 5** (logs + dev log): the tester's markets were really off the street — one a cell off the walkway behind a
+  hut, one a cell short. Nothing said so in words they could act on. Now: a red marker over anything the street
+  doesn't reach, the status and the walkthrough say "a walkway has to touch one of its sides", the building in hand
+  tints the cells it can go on (green reached, gold not), and the walkthrough's market and second-hut steps count only
+  once reached. "Reload wiped my build" was a save that only ran at a peak: now a moment after any change, and on
+  pagehide / hidden. "Re-entering reset the walkthrough" was one shared key: now per sea. "Cost 123 not 120" was stilts:
+  street cards read "+ stilts". "Second Sea" on the first card: the new-sea card kept the name it computed the first
+  time it opened; it now follows the World unless the player typed one.
+- **Round 6, the atoll save** (cycle 351): a tsunami at cycle 64 damaged 33 buildings and sank both boats; repairs
+  needed timber and the atoll grows none, so nothing was mended for 287 tides, the market sold nothing, and the ledger
+  line's "348 fish landed" was a running total since cycle 1 (`last.fishCaught` was never reset; `landed` now
+  accumulates between peaks). Repairs now buy the timber the store is short of (`GOODS.timber.sells`), mend the
+  landings and staffed workplaces first (cheapest first) and the rest after, and the panel has Repair now.
+- **The Fourth Sea** (Delta, cycle 43): a wave at 32 damaged 19 of 30 (every non-street piece), took the boats, and left
+  1$ with 80$ of loan owed. Taxes (12$) equal upkeep (12$) — damaged buildings still pay upkeep — so the purse never
+  grows, even with the cheaper repairs; forty tides later it is still at 1$ and a second wave has damaged all 30. A run
+  with no upkeep on damaged pieces clears the loan by cycle 53 and mends slowly, but never affords a boat. Options for
+  Grady (not built yet): no upkeep while damaged; idle hands mend for free; a boat on credit when a town has none;
+  tsunamis later / rarer / gentler for small towns; relief after a disaster.
+- **Overlays "don't show anything"**: the quads were laid once from the first island's heights at max(ground, 0.95), so on
+  any other island they floated (and over water always sat well above it), and the ramps reached full colour at 1.5
+  where a real town's pollution is 0.03 and its shark risk 0.01. Now draped per island and tide, scaled to the harm
+  lines with a square root, and a legend says what is shown and the worst value.
+- **The treatment plant "does nothing"**: nothing showed pollution in the water at all. The water shader's pollution
+  tint (the design's allowed uniform) now shows it: a staged town's outfall plume (0.99 at the outfall, 0.1–0.4 over a
+  9×9 patch) and, after two plants took the network's waste, 0.12 twelve tides later.
+- **Sharks under the docks**: fins circled the three riskiest cells, and risk peaks at its source — the market or dock
+  deck. Now they roam open water in the plume, clear of decks by 0.3.
+- **People in the stairs**: a stair stands on the lower deck up to 0.9 of a cell deep, but walkers ramped over the last
+  0.15–0.42 and read the bare deck elsewhere; the per-walker sideways offset also moved a point onto a higher tread.
+  A downward ray against the real meshes over 272 figure samples (192 on stair cells) found 114 below a surface before,
+  0 after. The same check found workers standing inside their own hut: a walk from a home straight into an adjoining
+  workplace went through the wall; walks now leave by the street (straight in only off a deck).
+- **Stairs to nothing / floating salt pans**: the rice paddy (fixed floor 1.0), the oyster bed (stilt floor) and the salt
+  pan ("ground" floor, kept over the floods) are drawn on the ground, but streets read their ledger floors and built a
+  stair up; the salt pan was drawn at its floor with nothing under it. They are drawn on the ground now and a street
+  beside one lets a ladder down (\`ON_GROUND\` in view/buildings.ts). The ledger floors are unchanged.
+- **Water warning beside a well** and **no way to click without building**: the warning read the coverage from the last
+  peak (a new well didn't count) and said "build a well" whatever the reason; it now reads a live share-out and names
+  the reason (full, damaged, off the street, none in reach). Inspect mode on desktop: an empty hand by default, Esc or
+  the Inspect button; the panel says where a home's people work and pins those buildings, and a well pins the homes it
+  serves. Placing or removing now recomputes the street at once (it only ran on a tick, so while paused a new building
+  showed as unconnected).

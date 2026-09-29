@@ -109,9 +109,9 @@ describe("tutorial and big town (M12)", () => {
     const { state, grid } = newGame(7);
     expect(STEPS.map(s => s.done(state))).toEqual([false, false, false, false, false, false]);
     starterTown(state, grid);
-    expect(STEPS.slice(0, 5).map(s => s.done(state))).toEqual([true, true, false, true, true]);
+    // The street, the market and the second home count once the street reaches them, which it does as each is placed.
+    expect(STEPS.slice(0, 5).map(s => s.done(state))).toEqual([true, true, true, true, true]);
     advanceCycles(state, grid, 1);
-    expect(STEPS[2].done(state)).toBe(true);
     advanceCycles(state, grid, 3);
     expect(STEPS[5].done(state)).toBe(true);
     for (const s of STEPS) expect(s.title.length).toBeGreaterThan(0);
@@ -190,6 +190,16 @@ describe("achievements (backlog 7)", () => {
     expect(s.achievements.slice(0, 2)).toEqual(["firstBoat", "firstCatch"]);
     expect(s.log.some(m => m.startsWith("★ First boat"))).toBe(true);
     expect(new Set(s.achievements).size).toBe(s.achievements.length);
+  });
+
+  it("the catch in the ledger line is the last tide's, not a running total", () => {
+    const { state: s, grid: g } = town();
+    advanceCycles(s, g, 4);
+    const first = s.last.fishCaught;
+    expect(first).toBeGreaterThan(0);
+    for (const b of Object.values(s.buildings)) b.boats = 0; // the boats are gone
+    advanceCycles(s, g, 2);
+    expect(s.last.fishCaught).toBe(0);
   });
   it("a big town earns fifty residents and the isle; a save keeps the list and an old save gets an empty one", () => {
     const { state, grid, town: t } = town();

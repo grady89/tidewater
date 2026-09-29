@@ -33,6 +33,8 @@ export class WorldUi {
   private shownBuilt = false;
   private seedValue = "";
   private nameValue = "";
+  /** The player typed a name: keep it while the card stays on this sea. Otherwise the suggestion follows the World. */
+  private nameTyped = false;
   private biomeValue: Biome = "tidewater";
   private previewTimer = 0;
 
@@ -107,7 +109,9 @@ export class WorldUi {
       if (!same) this.reveal();
       return;
     }
-    if (!same) { this.seedValue = String(Math.floor(Math.random() * 999999) + 1); this.nameValue = this.hooks.defaultName(); this.biomeValue = "tidewater"; }
+    if (!same) { this.seedValue = String(Math.floor(Math.random() * 999999) + 1); this.nameTyped = false; this.biomeValue = "tidewater"; }
+    // "First Sea", "Second Sea"… by how many seas there are now (one may have been begun or deleted since the card opened).
+    if (!this.nameTyped) this.nameValue = this.hooks.defaultName();
     const biomes = biomesFor(face);
     this.card.innerHTML = `
       <div class="card-kicker">Uncharted sea · ${BAND_LABEL[bandOf(face)]}</div>
@@ -119,7 +123,7 @@ export class WorldUi {
     const seed = this.card.querySelector<HTMLInputElement>(".seed")!, name = this.card.querySelector<HTMLInputElement>(".name")!;
     seed.value = this.seedValue; name.value = this.nameValue;
     seed.addEventListener("input", () => { this.seedValue = seed.value; this.previewSoon(face); });
-    name.addEventListener("input", () => { this.nameValue = name.value; });
+    name.addEventListener("input", () => { this.nameValue = name.value; this.nameTyped = true; });
     for (const el of [seed, name]) el.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); this.begin(face); } });
     this.card.querySelector(".random")!.addEventListener("click", () => { seed.value = String(Math.floor(Math.random() * 999999) + 1); this.seedValue = seed.value; this.previewNow(face); });
     const blurb = this.card.querySelector<HTMLElement>(".biome-blurb")!;

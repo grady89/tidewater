@@ -19,7 +19,7 @@ import { waterFS, waterVS } from "../../shaders/water";
 import { flatMaterial, mergeFlat, tint } from "../world/flatMesh";
 import { computeLighting, createLights, Lighting, SceneLights } from "../world/lighting";
 import { applyTerrainLook, encodeHeightInto, TERRAIN_SAMPLERS, TERRAIN_UNIFORMS } from "../world/terrain";
-import { applyWaterLook, WATER_UNIFORMS } from "../world/water";
+import { applyWaterLook, blankPollution, WATER_SAMPLERS, WATER_UNIFORMS } from "../world/water";
 import { lookOf, TIDEWATER_LOOK } from "../view/biomes";
 import { clampToPentagon, EDGE, EDGES, Face, FACE_CIRCUMRADIUS, FACES, faceToward, insidePentagon, pentagonDisc, SOLID_CIRCUMRADIUS, toLocal, V3 } from "./geometry";
 import { MINI_CELLS, miniatureHeights, roofPlacements } from "./miniature";
@@ -278,11 +278,14 @@ export class World {
 
   // ---------- construction ----------
 
+  private blankPoll: RawTexture | null = null;
+
   private waterMaterial(name: string, heightTex: RawTexture): ShaderMaterial {
     const m = new ShaderMaterial(name, this.scene, { vertexSource: waterVS, fragmentSource: waterFS }, {
-      attributes: ["position"], uniforms: WATER_UNIFORMS, samplers: ["heightTex", "reflectTex"], needAlphaBlending: true,
+      attributes: ["position"], uniforms: WATER_UNIFORMS, samplers: WATER_SAMPLERS, needAlphaBlending: true,
     });
-    m.setTexture("heightTex", heightTex).setTexture("reflectTex", this.dummyReflect);
+    this.blankPoll ??= blankPollution(this.scene);
+    m.setTexture("heightTex", heightTex).setTexture("reflectTex", this.dummyReflect).setTexture("pollTex", this.blankPoll).setFloat("pollMix", 0);
     m.setFloat("waveAmp", 1).setVector2("waveDir", new Vector2(0, 1)).setFloat("waveFront", -999).setFloat("waveHeight", 0).setFloat("waveWidth", 3);
     m.setFloat("reflectMix", 0).setFloat("caustics", 0).setFloat("time", 0).setMatrix("frame", Matrix.Identity());
     m.setFloat("fogNear", FOG_WORLD[0]).setFloat("fogFar", FOG_WORLD[1]);

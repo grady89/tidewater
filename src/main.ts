@@ -4,10 +4,10 @@ import { CameraControl } from "./build/cameraControl";
 import { PIPE_TOOLS, Placement, Tool } from "./build/placement";
 import { upgradeBuilding } from "./sim/upgrades";
 import { HAZE_FAR, HAZE_NEAR, HAZE_TINT, LANES_ENABLED, SIM_TICK, SIZE, TIDE_PERIOD, TREMOR_SHAKE } from "./config";
-import { BUILDINGS, COMPANY_SLIDE_UNITS, STORM_WAVE_AMP, WAVE_WIDTH } from "./sim/balance";
+import { BUILDINGS, COMPANY_SLIDE_UNITS, OYSTER_POLLUTION_KILL, STORM_WAVE_AMP, WAVE_WIDTH } from "./sim/balance";
 import { districtOf } from "./sim/districts";
 import { startStorm, startTsunami } from "./sim/events";
-import { ignite } from "./sim/fire";
+import { ignite, isStreet, repairNow } from "./sim/fire";
 import { biomeFor } from "./sim/biomes";
 import { hatching } from "./sim/biomes/atoll";
 import { seaIce, whaleSeason } from "./sim/biomes/fjord";
@@ -43,7 +43,7 @@ import { applyPalette, roofShape } from "./view/buildings";
 import { BuildingViews } from "./view/buildingViews";
 import { Effects } from "./view/effects";
 import { Ferry } from "./view/ferry";
-import { PierMarker } from "./view/marker";
+import { PierMarker, Pins, StreetMarkers } from "./view/marker";
 import { OverlayKind, Overlays } from "./view/overlays";
 import { Ship } from "./view/ship";
 import { MobileControls, phoneMode } from "./ui/mobile";
@@ -125,6 +125,9 @@ const fauna = new CoastFauna(scene, grid);
 const audio = new Audio();
 const ferry = new Ferry(scene, grid);
 const pierMarker = new PierMarker(scene, grid);
+const streetMarkers = new StreetMarkers(scene);
+const damagedPins = new Pins(scene, "damagedPins", "#ffb859", 2.05);
+const linkPins = new Pins(scene, "linkPins", "#3fb3eb", 1.55);
 const placement = new Placement(scene, camera, grid, canvas);
 const hud = new Hud(document.getElementById("hud")!, document.getElementById("resources")!, document.getElementById("notes")!, grid, tool => placement.setTool(tool), kind => overlays.show(kind), () => orderPlanks(state), () => takeLoan(state));
 const info = new InfoPanel(document.getElementById("info")!, grid, good => orderGood(state, good));
@@ -167,12 +170,17 @@ function adopt(next: SimState): void {
   walkers.clear();
   boats.clear();
   info.select(null);
+  placement.inspect(); // a town opens with an empty hand: clicks look until a card is picked
   achievements.adopt(state);
   syncView();
 }
 // The loaded ledger's ground and look, once every view exists (a seeded island, landfill, or another biome).
 if (state.landfill.length || state.world.seed !== 0 || state.world.biome !== "tidewater") syncGround();
 /** A fresh town on island `seed` (0 = the original island), replacing the active sector's town. */
+/** A sea nothing has been done in: its first tide, and only the hut it began with. */
+function isFresh(s: SimState): boolean {
+  return s.tide.cycle === 0 && Object.keys(s.buildings).length <= 1;
+}
 function newTown(seed = 0): void {
   tutorial.reset();
   adopt(newGame(SEED, seed, state.world.biome).state); // the sector keeps its coast
@@ -256,7 +264,13 @@ function stepWorldJob(budgetMs = WORLD_SLICE_MS): void {
   }
 }
 function finishWorldJob(): void { stepWorldJob(Infinity); }
-window.addEventListener("pagehide", () => finishWorldJob());
+window.addEventListener("pagehide", () => { finishWorldJob(); if (mode === "island") save(); });
+// The town is saved at every tide peak and on the way back to the World; a change between those is saved a moment
+// later, and whatever is left when the tab is hidden or closed, so a reload never loses a build.
+let unsaved = 0;
+function changed(): void { if (!unsaved) unsaved = performance.now(); }
+let lastMark = "";
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden" && mode === "island" && unsaved) { save(); unsaved = 0; } });
 /** One World cycle while the World itself is up: every built sea settles, cargo sails, the globe and the card follow. */
 function settleIdleWorld(): void {
   startWorldJob(null, () => {
@@ -484,7 +498,7 @@ async function enterSector(face: number, opts: { instant?: boolean } = {}): Prom
     adopt(rec.state);
     hud.setTitle(rec.meta.name);
     if (LANES_ENABLED) applyPending(store, face, state, grid); // what the World sent while it was away (an eruption's wave)
-    if (rec.state.tide.cycle === 0) tutorial.reset(); // a fresh sea gets the walkthrough, whatever an earlier town did
+    tutorial.bind(face, isFresh(rec.state)); // each sea keeps its own walkthrough; a fresh one starts at step 1
     const framing = townFraming();
     const instant = !!opts.instant || reducedMotion();
     worldRoot.classList.add("fading");
@@ -624,11 +638,13 @@ const mobile: MobileControls | null = phoneMode()
   })
   : null;
 info.onRemove = b => placement.remove(b.cells[0]);
+info.onRepair = b => { if (repairNow(state, b)) playtest.record("repair", state.tide.cycle, state.resources.money, `${b.kind} at ${b.cells[0].i},${b.cells[0].j}`); };
+hud.onInspect = () => placement.inspect();
 info.onUpgrade = b => { if (upgradeBuilding(state, b)) playtest.record("upgrade", state.tide.cycle, state.resources.money, `${b.kind} to level ${b.level} at ${b.cells[0].i},${b.cells[0].j}`); };
 /** A sewer tool in hand (laying pipe, or an outfall or treatment plant) shows the Sewers overlay until it is put down. */
 let sewerView: { was: OverlayKind | null } | null = null;
 function syncSewerView(): void {
-  const tool = mobile && !mobile.armed ? null : placement.tool;
+  const tool = (mobile ? !mobile.armed : placement.inspecting) ? null : placement.tool;
   const on = tool !== null && (PIPE_TOOLS.has(tool) || tool === "outfall" || tool === "treatmentPlant") && document.body.dataset.mode === "island";
   if (on && !sewerView) { sewerView = { was: overlays.kind }; overlays.show("sewer"); hud.markOverlay("sewer"); }
   else if (!on && sewerView) {
@@ -656,8 +672,9 @@ window.addEventListener("keydown", e => {
     e.preventDefault();
     return;
   }
-  // Escape closes what is open, top down; at the island's top level it returns to the World (docs/globe/experience.md).
-  if (e.key === "Escape") { if (settings.open) settings.toggle(false); else if (menu.open) menu.toggle(false); else if (info.selectedId !== null) info.select(null); else void returnToWorld(); return; }
+  // Escape closes what is open, top down, then puts down the tool in hand (Inspect); with nothing left it returns to
+  // the World (docs/globe/experience.md).
+  if (e.key === "Escape") { if (settings.open) settings.toggle(false); else if (menu.open) menu.toggle(false); else if (info.selectedId !== null) info.select(null); else if (!mobile && !placement.inspecting) placement.inspect(); else void returnToWorld(); return; }
   if (e.key === " ") { speed = speed === 0 ? 1 : 0; e.preventDefault(); return; }
   if (e.key === "]" || e.key === "[") { placement.adjustLift(e.key === "]" ? 1 : -1); e.preventDefault(); return; }
   if ((e.key === "r" || e.key === "R") && placement.rotatable) { placement.rotate(); e.preventDefault(); return; }
@@ -676,6 +693,7 @@ let lastBleachCycle = -1;
 const landKeyOf = (s: SimState) => s.newLand.length + ":" + (s.biomeState.eruptions ?? 0) + ":" + s.world.seed + s.world.biome;
 let lastLandKey = landKeyOf(state);
 let bleachShown = false;
+let lastMurk = -1;
 let lastFrameTime = 0;
 
 /** Everything the view derives from the ledger for one frame. */
@@ -703,12 +721,15 @@ function syncView(): void {
   const iceTarget = (state.biomeState.seaIce ?? 0) > 0 ? 1 : 0;
   iceMix += (iceTarget - iceMix) * Math.min(1, frameDt / 4);
   water.setIce(iceMix);
+  // Foul water shows as murk where the pollution field is (refreshed twice a second; it drifts with the tide).
+  if (viewTime - lastMurk > 0.5 || viewTime < lastMurk) { lastMurk = viewTime; water.setPollution(state.fields.pollution, OYSTER_POLLUTION_KILL); }
   water.setSwell((1 + (STORM_WAVE_AMP * (biomeFor(state).storm?.swell ?? 1) - 1) * stormMix) * (1 - 0.9 * iceMix));
   const ts = state.tsunami;
   water.setCrest(ts.dir, ts.stage === "wave" ? ts.front : -999, ts.stage === "wave" ? grid.tides.waveHeight : 0, WAVE_WIDTH);
   views.sync(state, light.lamp);
   trees.sync(state, stormMix);
   overlays.sync(state);
+  hud.setOverlayLegend(overlays.legend);
   boats.sync(state, viewTime, walkers.visits(viewTime));
   ferry.sync(state, viewTime, crossCommuters(state, grid));
   walkers.sync(state, viewTime, ferry.riders());
@@ -721,13 +742,27 @@ function syncView(): void {
   wildlife.sync(state, viewTime);
   fauna.sync(state, viewTime);
   pierMarker.sync(state, viewTime);
+  streetMarkers.sync(state, viewTime);
+  // Amber pins over what is damaged (streets rebuild themselves cheaply, so they go unpinned); blue ones over what the
+  // selected building is tied to: the homes a well serves, where a home's people work, whose people work here.
+  damagedPins.show(Object.values(state.buildings).filter(b => b.damaged && !isStreet(b)), viewTime);
+  const picked = info.selectedId !== null ? state.buildings[info.selectedId] : undefined;
+  linkPins.show(picked ? InfoPanel.linked(state, grid, picked) : [], viewTime);
   cameraControl.setWaterLevel(state.tide.level);
   terrain.update(camera.position, state.tide.level, state.tide.wetLevel);
   water.update(viewTime, camera.position, state.tide.level);
   cameraControl.leftDrag = mobile ? !mobile.drawing : !placement.dragsLine;
   mobile?.update();
   syncSewerView();
-  hud.update({ tool: placement.tool, blocker: placement.blocker, warn: placement.warn, line: placement.line, lift: placement.liftable ? placement.lift : null, rotatable: placement.rotatable, stilt: placement.stilt, cost: placement.cost, fate: placement.fate, state });
+  // The building in hand tints the cells it can go on (not on phones until a card is picked, nor over another overlay).
+  // Anything built, removed, laid, upgraded or borrowed since the last save is saved a moment later.
+  if (mode === "island") {
+    const mark = grid.layoutVersion + ":" + Math.round(state.resources.money * 100) + ":" + state.tide.cycle;
+    if (mark !== lastMark) { if (lastMark && mark.split(":")[2] === lastMark.split(":")[2]) changed(); lastMark = mark; }
+    if (unsaved && performance.now() - unsaved > 1500) { save(); unsaved = 0; }
+  }
+  overlays.showPlaceable(mode === "island" && (!mobile || mobile.armed) ? placement.placeable() : null);
+  hud.update({ tool: !mobile && placement.inspecting ? null : placement.tool, blocker: placement.blocker, warn: placement.warn, line: placement.line, lift: placement.liftable ? placement.lift : null, rotatable: placement.rotatable, stilt: placement.stilt, cost: placement.cost, fate: placement.fate, state });
   info.update(state);
   tutorial.update(state, grid);
   hud.highlight(tutorial.current);
@@ -892,6 +927,7 @@ const api = {
     walkerProbe: () => walkers.probe(viewTime),
     swimmers: () => walkers.swimmerCount(state),
     fins: () => effects.finCount,
+    finProbe: () => effects.finProbe(),
     ship: () => ship.pose,
     burning: () => effects.burning,
     dusk: () => duskAt(state.time),
@@ -929,6 +965,10 @@ const api = {
     camera: () => cameraControl.pose,
     category: () => hud.category,
     pierMarker: () => pierMarker.cell,
+    /** How many buildings carry the red "no street" marker. */
+    noStreet: () => streetMarkers.count,
+    /** Pins up: over damaged buildings, and over what the selected building is tied to. */
+    pins: () => ({ damaged: damagedPins.count, linked: linkPins.count }),
     hint: () => document.querySelector("#hud .hint")?.textContent ?? "",
     /** How many homes wear each roof shape. */
     roofs: () => {

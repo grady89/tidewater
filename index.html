@@ -67,6 +67,12 @@
       }
       .tabs button:hover { color: var(--ink); }
       .tabs button.active { color: var(--accent); border-color: rgba(255, 209, 138, 0.4); background: rgba(255, 209, 138, 0.08); }
+      .tabs button.inspect { margin-left: auto; border-color: var(--panel-line); }
+      body.mobile .tabs button.inspect { display: none; }
+      #info .pill { display: inline-block; padding: 1px 8px; border-radius: 9px; line-height: 1.5; }
+      #info .pill.ok { background: rgba(121, 173, 94, 0.22); color: #cfe8b8; }
+      #info .pill.warn { background: rgba(255, 184, 89, 0.2); color: #ffd18a; }
+      #info .pill.bad { background: rgba(224, 138, 122, 0.22); color: #f2b5a8; }
       .palette { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
       .palette button[hidden] { display: none; }
       .palette button .reason { grid-column: 1; font-size: 10px; color: var(--bad); }
@@ -149,6 +155,10 @@
       .info-orders .order-row { align-items: center; margin-top: 3px; }
       .info-orders .order-good { font: inherit; font-size: 11px; color: var(--ink); background: rgba(255, 255, 255, 0.06); border: 1px solid var(--panel-line); border-radius: 6px; padding: 2px 8px; cursor: pointer; }
       .info-orders .order-good:disabled { opacity: 0.45; cursor: default; }
+      #info .repair { font: inherit; font-size: 12px; color: #f2b5a8; background: rgba(224, 138, 122, 0.12); border: 1px solid rgba(224, 138, 122, 0.5); border-radius: 8px; padding: 6px 10px; cursor: pointer; text-align: center; }
+      #info .repair:hover:not(:disabled) { background: rgba(224, 138, 122, 0.22); }
+      #info .repair:disabled { color: var(--ink-dim); background: transparent; border-color: var(--panel-line); cursor: default; }
+      #info .repair[hidden] { display: none; }
       #info .upgrade { font: inherit; font-size: 12px; color: var(--accent); background: rgba(255, 209, 138, 0.08); border: 1px solid rgba(255, 209, 138, 0.4); border-radius: 8px; padding: 6px 10px; cursor: pointer; text-align: center; }
       #info .upgrade:hover:not(:disabled) { background: rgba(255, 209, 138, 0.16); }
       #info .upgrade:disabled { color: var(--ink-dim); background: transparent; border-color: var(--panel-line); cursor: default; }
@@ -158,6 +168,7 @@
       .info-body .district h3 { margin: 0 0 2px; font-size: 13px; font-weight: 600; color: var(--ink); }
       .overlays { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
       .overlays label { margin-right: 4px; }
+      .overlays .overlay-legend { flex-basis: 100%; margin: 4px 0 0; font-size: 11px; line-height: 1.45; color: var(--ink-dim); }
       .overlays button {
         font: inherit; font-size: 11px; color: var(--ink-dim); background: rgba(255, 255, 255, 0.05);
         border: 1px solid var(--panel-line); border-radius: 6px; padding: 3px 8px; cursor: pointer;
@@ -348,7 +359,7 @@
         left: 8px; right: 8px; width: auto; bottom: calc(64px + env(safe-area-inset-bottom, 0px)); max-height: 42vh; overflow-y: auto; z-index: 2;
       }
       body.mobile #info .close { min-width: 44px; min-height: 36px; font-size: 20px; }
-      body.mobile #info .upgrade { min-height: 40px; }
+      body.mobile #info .upgrade, body.mobile #info .repair { min-height: 40px; }
       body.mobile #info .remove {
         display: block; position: sticky; bottom: 0; min-height: 40px; margin-top: 4px; font: inherit; font-size: 12px; color: var(--bad);
         background: #2b3238; border: 1px solid rgba(224, 138, 122, 0.4); border-radius: 8px; cursor: pointer;

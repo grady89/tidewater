@@ -1,4 +1,4 @@
-// Ambient effects driven by the ledger: shark fins patrolling the riskiest water; flames and smoke over burning
+// Ambient effects driven by the ledger: shark fins roaming the risky open water; flames and smoke over burning
 // buildings; the floats and buoys of every shark net, riding the water. View only.
 import { Color3, Matrix, Mesh, MeshBuilder, Quaternion, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
 import { CELLS } from "../sim/fields";
@@ -15,7 +15,18 @@ import { waveHeight } from "../world/water";
 const FLOATS_PER_NET = 5;
 
 const FIN_COUNT = 3;
-const FIN_MIN_RISK = 0.25;
+/** Fins show where the water draws sharks: open water (no deck over it) at least this risky and this deep. */
+const FIN_MIN_RISK = 0.15;
+const FIN_MIN_DEPTH = 0.2;
+/** How far a fin keeps from any deck, so it never slides under a pier's edge. */
+const FIN_CLEAR = 0.3;
+/** Cells a second a fin swims, radians a second it turns, and how far it looks for the next stretch of water. */
+const FIN_SPEED = 0.55, FIN_TURN = 1.6, FIN_ROAM = 5;
+/** Seconds to surface or sink. */
+const FIN_SURFACE = 1.2;
+
+/** A fin under way: where it is and heads, the spot it swims to, and how far under it is (1 = gone). */
+interface Fin { x: number; z: number; yaw: number; tx: number; tz: number; under: number }
 const FLAMES_PER_FIRE = 4;
 const PUFFS_PER_FIRE = 5;
 const CHIMNEY_PUFFS = 3;
@@ -31,7 +42,10 @@ export class Effects {
   /** Floats drawn this frame and the height of the first, for checks. */
   netFloatCount = 0;
   netFloatY = 0;
+  /** Open water cells risky enough for a fin, refreshed every second or so. */
   private finCells: number[] = [];
+  private finList: Fin[] = [];
+  private finTime = -1;
   private frame = 0;
   private finMatrices = new Float32Array(FIN_COUNT * 16);
   private flameMatrices = new Float32Array(0);
@@ -195,35 +209,94 @@ export class Effects {
     this.netBuoys.thinInstanceSetBuffer("matrix", bm, 16, false);
   }
 
-  /** The riskiest water cells, refreshed every second or so. */
-  private pickCells(state: SimState): void {
-    const f = state.fields.shark;
-    const best: { k: number; v: number }[] = [];
-    for (let k = 0; k < CELLS; k++) {
-      const v = f[k];
-      if (v < FIN_MIN_RISK) continue;
-      if (best.length < FIN_COUNT) { best.push({ k, v }); best.sort((a, b) => b.v - a.v); }
-      else if (v > best[best.length - 1].v) { best[best.length - 1] = { k, v }; best.sort((a, b) => b.v - a.v); }
+  /** Open water with room for a fin: deep enough at this tide, and no pier, dock or street over it or close by. */
+  private swimmable(grid: Grid, level: number, x: number, z: number): boolean {
+    const i = Math.floor(x), j = Math.floor(z);
+    if (i < -HALF || i >= HALF || j < -HALF || j >= HALF) return false;
+    if (level - grid.heights[(i + HALF) * SIZE + (j + HALF)] < FIN_MIN_DEPTH) return false;
+    for (const [dx, dz] of [[0, 0], [FIN_CLEAR, 0], [-FIN_CLEAR, 0], [0, FIN_CLEAR], [0, -FIN_CLEAR]]) {
+      const a = Math.floor(x + dx), b = Math.floor(z + dz);
+      if (a >= -HALF && a < HALF && b >= -HALF && b < HALF && grid.buildingAtIJ(a, b)) return false;
     }
-    this.finCells = best.map(b => b.k);
+    return true;
   }
 
-  get finCount(): number { return this.finCells.length; }
+  /** The open water cells risky enough to draw a fin. */
+  private pickCells(state: SimState, grid: Grid): void {
+    const f = state.fields.shark, level = state.tide.level;
+    this.finCells = [];
+    for (let k = 0; k < CELLS; k++) {
+      if (f[k] < FIN_MIN_RISK) continue;
+      if (this.swimmable(grid, level, Math.floor(k / SIZE) - HALF + 0.5, (k % SIZE) - HALF + 0.5)) this.finCells.push(k);
+    }
+  }
 
-  private syncFins(state: SimState, viewTime: number): void {
-    if (this.frame % 60 === 0 || this.finCells.length === 0) this.pickCells(state);
-    const n = this.finCells.length;
+  get finCount(): number { return this.finList.filter(f => f.under < 1).length; }
+  /** Where each fin is and how far under (0 = surfaced), for checks. */
+  finProbe(): { x: number; z: number; under: number }[] { return this.finList.map(f => ({ x: +f.x.toFixed(2), z: +f.z.toFixed(2), under: +f.under.toFixed(2) })); }
+
+  /** A spot for a fin to swim to: a risky cell within reach, the riskier the likelier, with open water all the way. */
+  private nextSpot(state: SimState, grid: Grid, fin: { x: number; z: number }): { x: number; z: number } | null {
+    const f = state.fields.shark, level = state.tide.level;
+    const near = this.finCells.filter(k => Math.hypot(Math.floor(k / SIZE) - HALF + 0.5 - fin.x, (k % SIZE) - HALF + 0.5 - fin.z) <= FIN_ROAM);
+    for (let tries = 0; tries < 8 && near.length; tries++) {
+      let total = 0;
+      for (const k of near) total += f[k];
+      let r = Math.random() * total, k = near[0];
+      for (const c of near) { r -= f[c]; if (r <= 0) { k = c; break; } }
+      const x = Math.floor(k / SIZE) - HALF + 0.2 + Math.random() * 0.6, z = (k % SIZE) - HALF + 0.2 + Math.random() * 0.6;
+      const d = Math.hypot(x - fin.x, z - fin.z), steps = Math.ceil(d / 0.4);
+      let clear = d > 0.6;
+      for (let s = 1; s < steps && clear; s++) clear = this.swimmable(grid, level, fin.x + (x - fin.x) * s / steps, fin.z + (z - fin.z) * s / steps);
+      if (clear) return { x, z };
+    }
+    return null;
+  }
+
+  /**
+   * Fins roam the risky open water: each swims to a spot, turns and picks another nearby, so they wander the plume
+   * instead of circling one cell. One surfaces for every few risky cells (up to FIN_COUNT) and sinks when the
+   * water it is in stops drawing sharks.
+   */
+  private syncFins(state: SimState, grid: Grid, viewTime: number): void {
+    if (this.frame % 60 === 0 || this.finTime < 0) this.pickCells(state, grid);
+    const dt = this.finTime < 0 ? 0 : Math.min(0.1, Math.max(0, viewTime - this.finTime));
+    this.finTime = viewTime;
+    const level = state.tide.level;
+    const want = Math.min(FIN_COUNT, Math.ceil(this.finCells.length / 4));
+    if (this.finList.length < want) {
+      const k = this.finCells[Math.floor(Math.random() * this.finCells.length)];
+      const x = Math.floor(k / SIZE) - HALF + 0.5, z = (k % SIZE) - HALF + 0.5;
+      this.finList.push({ x, z, yaw: Math.random() * Math.PI * 2, tx: x, tz: z, under: 1 });
+    }
+    let n = 0;
+    const gone: Fin[] = [];
+    this.finList.forEach((fin, idx) => {
+      const i = Math.floor(fin.x) + HALF, j = Math.floor(fin.z) + HALF;
+      const risky = i >= 0 && i < SIZE && j >= 0 && j < SIZE && state.fields.shark[i * SIZE + j] >= FIN_MIN_RISK * 0.5 && this.swimmable(grid, level, fin.x, fin.z);
+      const leaving = !risky || idx >= want;
+      fin.under = Math.min(1, Math.max(0, fin.under + (leaving ? dt : -dt) / FIN_SURFACE));
+      if (leaving && fin.under >= 1) { gone.push(fin); return; }
+      if (Math.hypot(fin.tx - fin.x, fin.tz - fin.z) < 0.25) {
+        const spot = this.nextSpot(state, grid, fin);
+        if (spot) { fin.tx = spot.x; fin.tz = spot.z; }
+      }
+      // Swim on toward the spot, turning at most FIN_TURN a second (a fin never spins on the spot).
+      const want2 = Math.atan2(fin.tx - fin.x, fin.tz - fin.z);
+      let turn = want2 - fin.yaw;
+      turn = Math.atan2(Math.sin(turn), Math.cos(turn));
+      fin.yaw += Math.max(-FIN_TURN * dt, Math.min(FIN_TURN * dt, turn));
+      const go = Math.hypot(fin.tx - fin.x, fin.tz - fin.z) < 0.25 ? 0 : FIN_SPEED * dt * Math.max(0.2, Math.cos(turn));
+      const nx = fin.x + Math.sin(fin.yaw) * go, nz = fin.z + Math.cos(fin.yaw) * go;
+      if (this.swimmable(grid, level, nx, nz)) { fin.x = nx; fin.z = nz; } else { fin.tx = fin.x; fin.tz = fin.z; }
+      if (fin.under >= 1) return;
+      const pos = new Vector3(fin.x, level + waveHeight(fin.x, fin.z, viewTime) - 0.1 - fin.under * 0.45, fin.z);
+      // The mesh's blade runs along x: a quarter turn past the heading lays it along the way it swims.
+      Matrix.Compose(new Vector3(1, 1, 1), Quaternion.FromEulerAngles(0, fin.yaw + Math.PI / 2, 0), pos).copyToArray(this.finMatrices, n++ * 16);
+    });
+    if (gone.length) this.finList = this.finList.filter(f => !gone.includes(f));
     if (n === 0) { this.fins.setEnabled(false); return; }
     this.fins.setEnabled(true);
-    const level = state.tide.level;
-    const scale = new Vector3(1, 1, 1);
-    this.finCells.forEach((k, idx) => {
-      const ci = Math.floor(k / 64) - HALF + 0.5, cj = (k % 64) - HALF + 0.5;
-      const t = viewTime * 0.5 + idx * 2.1;
-      const x = ci + Math.cos(t) * 0.9, z = cj + Math.sin(t) * 0.9;
-      const pos = new Vector3(x, level + waveHeight(x, z, viewTime) - 0.1, z);
-      Matrix.Compose(scale, Quaternion.FromEulerAngles(0, -t + Math.PI / 2, 0), pos).copyToArray(this.finMatrices, idx * 16);
-    });
     this.fins.thinInstanceSetBuffer("matrix", this.finMatrices.subarray(0, n * 16), 16, false);
   }
 
@@ -275,7 +348,7 @@ export class Effects {
   sync(state: SimState, grid: Grid, viewTime: number): void {
     this.frame++;
     this.syncMountain(state, grid, viewTime);
-    this.syncFins(state, viewTime);
+    this.syncFins(state, grid, viewTime);
     this.syncFire(state, viewTime);
     this.syncNets(state, viewTime);
   }

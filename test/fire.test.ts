@@ -5,7 +5,7 @@ import { BUILDINGS, DRAWDOWN_LEVEL, DRAWDOWN_SECONDS, FIRE_BURN_SECONDS, FIRE_IG
 import { deserialize, serialize } from "../src/sim/save";
 
 import { rollTsunami, sheltered, shielded, startStorm, startTsunami, tsunamiDue, warnTsunami, waveDirection } from "../src/sim/events";
-import { ignite, repairDamage } from "../src/sim/fire";
+import { ignite, repairCost, repairDamage } from "../src/sim/fire";
 
 import { tryPlace } from "../src/sim/economy";
 import { maxOf } from "../src/sim/fields";
@@ -195,13 +195,37 @@ describe("storms and the tsunami (M11)", () => {
     state.resources.money = BUILDINGS[w.kind].cost.money + 1; state.resources.timber = 0;
     repairDamage(state);
     expect(w.damaged).toBe(false);
-    expect(hut.damaged).toBe(true); // a house needs the repair fund and timber
+    expect(hut.damaged).toBe(true); // a house needs the repair fund
     expect(state.resources.money).toBe(1);
     expect(state.log[state.log.length - 1]).toMatch(/Rebuilt 1 walkway for/);
     w.damaged = true;
     state.resources.money = 0;
     repairDamage(state);
     expect(w.damaged).toBe(true);
+  });
+
+  it("a repair buys the timber the store is short of, and mends the landings and workplaces before the homes", () => {
+    const { state, town: t } = town();
+    const hut = t.huts[0], pier = t.pier;
+    hut.damaged = true; pier.damaged = true;
+    state.resources.timber = 0;
+    const c = repairCost(state, pier);
+    expect(c.timber).toBe(0);
+    expect(c.bought).toBeGreaterThan(0);
+    state.resources.money = c.money + 1; // the pier's repair, with a dollar over
+    repairDamage(state);
+    expect(pier.damaged).toBe(false);
+    expect(hut.damaged).toBe(true); // it waits: the purse went to the pier first
+    expect(state.resources.money).toBe(1);
+    // With timber in store, the repair takes it and buys none.
+    state.resources.timber = 50;
+    const d = repairCost(state, hut);
+    expect(d.bought).toBe(0);
+    expect(d.timber).toBeGreaterThan(0);
+    state.resources.money = d.money;
+    repairDamage(state);
+    expect(hut.damaged).toBe(false);
+    expect(state.resources.timber).toBe(50 - d.timber);
   });
 });
 

@@ -90,24 +90,24 @@ const crabPots: PieceFactory = (scene, b) => {
   return { root: mergeFlat("crabPots", parts, scene) };
 };
 
-/** Salt pans: shallow beds of brine in plank frames, heaps of white salt, a rake and a small store. */
+/** Salt pans: shallow beds of brine in plank frames on the ground itself, heaps of white salt, a rake and a small store. */
 const saltPan: PieceFactory = (scene, b) => {
   const { box, cyl, rock, gable, bounds } = KIT;
   const { cx, cz, w, d } = bounds(b.cells, b.rot);
-  const F = b.floorY;
+  const g = (x: number, z: number) => ground(x, z);
   const parts: Mesh[] = [];
   for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1]] as [number, number][]) {
-    const x = cx + sx * w / 4, z = cz + sz * d / 4;
-    parts.push(box(scene, w / 2 - 0.1, 0.06, d / 2 - 0.1, x, F - 0.02, z, "#b9a377"));
-    parts.push(box(scene, w / 2 - 0.2, 0.02, d / 2 - 0.2, x, F + 0.02, z, sx === 1 ? SALT : "#d5e6ea"));
+    const x = cx + sx * w / 4, z = cz + sz * d / 4, y = g(x, z) + 0.04;
+    parts.push(box(scene, w / 2 - 0.1, 0.08, d / 2 - 0.1, x, y - 0.02, z, "#b9a377"));
+    parts.push(box(scene, w / 2 - 0.2, 0.02, d / 2 - 0.2, x, y + 0.03, z, sx === 1 ? SALT : "#d5e6ea"));
   }
   // The store in the fourth quarter, and the heaps.
-  const sx = cx + w / 4, sz = cz + d / 4;
-  parts.push(box(scene, 0.62, 0.45, 0.52, sx, F + 0.225, sz, PALETTE.walls[1 % PALETTE.walls.length]));
-  gable(scene, parts, sx, sz, 0.62, 0.52, F + 0.45, 0.26, PALETTE.roofs[1 % PALETTE.roofs.length], true);
-  for (const [dx, dz, s] of [[-0.3, 0.2, 0.34], [0.05, 0.3, 0.26]] as [number, number, number][]) parts.push(cyl(scene, s, s * 0.7, cx + dx, F + s * 0.35, cz + dz, SALT, 7, 0));
-  const rake = box(scene, 0.03, 0.7, 0.03, cx - 0.15, F + 0.3, cz - 0.1, PALETTE.wood); rake.rotation.z = 0.5; parts.push(rake);
-  parts.push(rock(scene, cx + 0.2, F + 0.05, cz - 0.4, 0.2, "#d9c9a5", 2));
+  const sx = cx + w / 4, sz = cz + d / 4, sy = g(sx, sz) + 0.02;
+  parts.push(box(scene, 0.62, 0.45, 0.52, sx, sy + 0.225, sz, PALETTE.walls[1 % PALETTE.walls.length]));
+  gable(scene, parts, sx, sz, 0.62, 0.52, sy + 0.45, 0.26, PALETTE.roofs[1 % PALETTE.roofs.length], true);
+  for (const [dx, dz, s] of [[-0.3, 0.2, 0.34], [0.05, 0.3, 0.26]] as [number, number, number][]) parts.push(cyl(scene, s, s * 0.7, cx + dx, g(cx + dx, cz + dz) + 0.04 + s * 0.35, cz + dz, SALT, 7, 0));
+  const rake = box(scene, 0.03, 0.7, 0.03, cx - 0.15, g(cx - 0.15, cz - 0.1) + 0.32, cz - 0.1, PALETTE.wood); rake.rotation.z = 0.5; parts.push(rake);
+  parts.push(rock(scene, cx + 0.2, g(cx + 0.2, cz - 0.4) + 0.05, cz - 0.4, 0.2, "#d9c9a5", 2));
   return { root: mergeFlat("saltPan", parts, scene) };
 };
 

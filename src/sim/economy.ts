@@ -20,6 +20,7 @@ import { LANES_ENABLED } from "../config";
 import { repayLoan } from "./loan";
 import { Grid } from "./grid";
 import { moveMoney } from "./money";
+import { updateNetwork } from "./network";
 import { depleteGround, fishAt, pollutionAt, routeWaste, settleFields } from "./pollution";
 import { chooseGround } from "./sea";
 import { announceLevel, rebuildCoverage, servesPeople } from "./services";
@@ -72,6 +73,7 @@ export function tryPlace(state: SimState, grid: Grid, kind: BuildingKind, anchor
   const b = grid.place(kind, cells, autoStilts(kind) ? lift : 0, rot ?? (mayTurn(kind) ? grid.facing(cells) : 0));
   if (rot !== null && mayTurn(kind)) b.turned = true; // the player's turn: streets laid later leave it be
   if (firstHarbor) notify(state, "The ferry runs: the isle across the water is open to build on");
+  updateNetwork(state, grid, state.tide.level); // on the street at once, even with the clock stopped
   return b;
 }
 
@@ -79,6 +81,7 @@ export function tryPlace(state: SimState, grid: Grid, kind: BuildingKind, anchor
 export function removeBuilding(state: SimState, grid: Grid, b: Building): number {
   const refund = Math.round(costOf(b.kind, state.world.biome).money * REMOVE_REFUND);
   grid.remove(b);
+  updateNetwork(state, grid, state.tide.level);
   moveMoney(state, refund, "refund");
   return refund;
 }
@@ -182,7 +185,7 @@ export function shiftEnd(state: SimState, grid: Grid, phase: Phase): void {
       const fish = b.boats * BOAT_BASE_FISH * staffing(b) * netLoftBonus(state, b) * toolBonus(state, b) * density * (biomeFor(state).harbourFactor?.(state, b) ?? 1);
       depleteGround(state, b);
       b.output += addCapped(state, biomeFor(state).catch ?? "fish", fish);
-      state.last.fishCaught += fish;
+      state.landed += fish;
       continue;
     }
     if (phase !== "low" || !active(b)) continue;
@@ -320,7 +323,7 @@ const FOODS = goodsOfRole("food");
 /** The cycle settlement, run once at every high-tide peak. quiet (the World ledger, sim/lanes.ts) skips the hazards: no ignitions. */
 export function settleCycle(state: SimState, grid: Grid, opts: { quiet?: boolean } = {}): void {
   const r = state.resources;
-  const stats = { cycle: state.tide.cycle, fishCaught: state.last.fishCaught, fishSold: 0, shellfishSold: 0, income: 0, expenses: 0, immigrants: 0, tourism: 0, trade: 0 };
+  const stats = { cycle: state.tide.cycle, fishCaught: state.landed, fishSold: 0, shellfishSold: 0, income: 0, expenses: 0, immigrants: 0, tourism: 0, trade: 0 };
   const buildings = buildingList(state).sort((a, b) => a.id - b.id);
 
   assignWorkers(state, grid);
@@ -371,7 +374,7 @@ export function settleCycle(state: SimState, grid: Grid, opts: { quiet?: boolean
   // itself can't be under water — its stilts clear every tide — but the street to it can, at a spring peak.)
   const markets = buildings.filter(b => b.kind === "market");
   if (markets.length && !markets.some(b => active(b) && b.workers > 0) && r.fish > reserve) {
-    notify(state, markets.some(b => !b.reached) ? "The market has no walkway to a pier: nothing sold"
+    notify(state, markets.some(b => !b.reached) ? "The market isn't on the street, so nothing sold: lay a walkway from the pier up to one of its sides"
       : population(state) === 0 ? "No one lives here yet to work the market: homes on the street fill at the next peak"
       : "The market has no workers: nothing sold");
   }
@@ -416,4 +419,5 @@ export function settleCycle(state: SimState, grid: Grid, opts: { quiet?: boolean
   }
 
   state.last = stats;
+  state.landed = 0;
 }

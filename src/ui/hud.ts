@@ -3,7 +3,7 @@
 import { Fate, isBuildingTool, PIPE_TOOLS, Tool } from "../build/placement";
 import { BOAT_COST, BUILDING_KINDS, LINE_KINDS, BuildingKind, BUILDINGS, CATEGORIES, Category, CLEAR_TIMBER, LANDFILL_COST, LANTERN_COST, LIFT_STEP, LOAN_AMOUNT, LOAN_GRACE_CYCLES, LOAN_INTEREST, LOAN_REPAY_CYCLES, PLANK_ORDER_SIZE, PLANT_COST, SEWER_PIPE_COST, TRADE_PLANK_PRICE } from "../sim/balance";
 import { biomeFor, BiomeId, catalogFor, catchOf, costOf, makesOf } from "../sim/biomes";
-import { canAfford } from "../sim/economy";
+import { autoStilts, canAfford } from "../sim/economy";
 import { GOOD_IDS, GOOD_ROLES, GoodId, GOODS, shownGoods } from "../sim/goods";
 import { Grid } from "../sim/grid";
 import { population, SimState } from "../sim/state";
@@ -13,7 +13,8 @@ import { jobsAt } from "../sim/workers";
 import { OverlayKind, OVERLAYS } from "../view/overlays";
 
 export interface HudState {
-  tool: Tool;
+  /** The tool in hand; null when the hand is empty (Inspect). */
+  tool: Tool | null;
   blocker: string | null;
   warn: string | null;
   line: { count: number; cost: number } | null;
@@ -46,7 +47,8 @@ function costText(kind: BuildingKind, biome: BiomeId = "tidewater"): string {
   const parts = [`${c.money}$`];
   if (c.planks) parts.push(`${c.planks}p`);
   if (c.timber) parts.push(`${c.timber}t`);
-  return parts.join("+");
+  // Pieces on stilts pay for them on top, by the metre: the card says so, the ghost says how much.
+  return parts.join("+") + (autoStilts(kind) ? " + stilts" : "");
 }
 
 const FATE_TEXT: Record<Fate | "line" | "sewerPipe" | "clearPipe", string> = {
@@ -58,6 +60,7 @@ const FATE_TEXT: Record<Fate | "line" | "sewerPipe" | "clearPipe", string> = {
   always: "Floods every high tide",
 };
 const LINE_TOOL_HINT: ReadonlySet<Tool> = new Set<Tool>(LINE_KINDS);
+const INSPECT_HINT = "Inspect: click a building to see who lives or works there and what it is doing · pick a card to build, Esc to put it down";
 
 /** The bar's fixed cells; the goods sit between money and population, grouped by role, per the island. */
 const RESOURCES_HEAD = ["money"];
@@ -142,6 +145,14 @@ export class Hud {
       tabs.appendChild(b);
       this.tabs.set(cat, b);
     }
+    // Inspect: an empty hand (clicks look, never build). At the end of the tabs, so the categories keep their places.
+    this.inspectButton = document.createElement("button");
+    this.inspectButton.type = "button";
+    this.inspectButton.className = "inspect";
+    this.inspectButton.textContent = "Inspect";
+    this.inspectButton.title = "Click buildings to see what they are doing, without building anything (Esc)";
+    this.inspectButton.addEventListener("click", () => this.onInspect());
+    tabs.appendChild(this.inspectButton);
     const palette = root.querySelector<HTMLElement>(".palette")!;
     for (const t of TOOLS) {
       const b = document.createElement("button");
@@ -166,6 +177,10 @@ export class Hud {
       overlays.appendChild(b);
       this.overlayButtons.set(o.kind, b);
     }
+    this.overlayLegend = document.createElement("p");
+    this.overlayLegend.className = "overlay-legend";
+    this.overlayLegend.hidden = true;
+    overlays.appendChild(this.overlayLegend);
     this.tideLevel = root.querySelector<SVGRectElement>(".tide-level")!;
     this.tideMarker = root.querySelector<SVGCircleElement>(".tide-marker")!;
     this.tideValue = root.querySelector<HTMLElement>(".tide-value")!;
@@ -208,6 +223,17 @@ export class Hud {
   }
 
   get category(): Category { return this._category; }
+
+  private readonly overlayLegend: HTMLElement;
+  private readonly inspectButton: HTMLButtonElement;
+  /** Empty the hand (the Inspect button). */
+  onInspect: () => void = () => {};
+  /** The line under the overlay buttons: what the one showing means, and the worst of it now (empty hides it). */
+  setOverlayLegend(text: string): void {
+    if (this.overlayLegend.textContent === text) return;
+    this.overlayLegend.textContent = text;
+    this.overlayLegend.hidden = !text;
+  }
 
   /** Light the overlay button that is showing (the sewer tools switch the Sewers overlay on by themselves). */
   markOverlay(kind: OverlayKind | null): void {
@@ -289,6 +315,7 @@ export class Hud {
       const active = TOOLS.find(t => t.tool === s.tool);
       if (active && active.category !== this._category) this.showCategory(active.category);
     }
+    this.inspectButton.classList.toggle("active", s.tool === null);
     for (const [tool, b] of this.buttons) {
       b.classList.toggle("active", tool === s.tool);
       const lock = this.lock(state, tool);
@@ -346,7 +373,7 @@ export class Hud {
     const fateText = s.fate !== "safe" ? FATE_TEXT[s.fate] : null;
     // Auto-sized pieces show their stilts and the price they make: long stilts on low ground cost more.
     const stiltText = s.lift !== null ? `Stilts ${s.stilt.toFixed(1)} m · ${s.cost}$${s.lift > 0 ? ` · deck +${(s.lift * LIFT_STEP).toFixed(1)} m` : ""} · [ ] lifts the deck` : null;
-    const base = PIPE_TOOLS.has(s.tool) ? FATE_TEXT[s.tool as "sewerPipe" | "clearPipe"] : LINE_TOOL_HINT.has(s.tool) ? FATE_TEXT.line : FATE_TEXT.safe;
+    const base = s.tool === null ? INSPECT_HINT : PIPE_TOOLS.has(s.tool) ? FATE_TEXT[s.tool as "sewerPipe" | "clearPipe"] : LINE_TOOL_HINT.has(s.tool) ? FATE_TEXT.line : FATE_TEXT.safe;
     const turnText = s.rotatable ? "R turns it (the door faces the street on its own)" : null;
     const cautions = [s.warn, fateText, stiltText, turnText].filter((t): t is string => t !== null);
     const hintText = s.blocker ?? lineText ?? (cautions.length ? cautions.join(" · ") : base);
