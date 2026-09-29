@@ -14,6 +14,7 @@ import { cellIndex, Grid, HALF } from "./grid";
 import { rand } from "./rng";
 import { buildingList, Cell, notify, SimState } from "./state";
 import { isRising } from "./tide";
+import { levelCapacity } from "./upgrades";
 import { staffing } from "./workers";
 
 const TICKS_PER_CYCLE = TIDE_PERIOD / SIM_TICK;
@@ -95,7 +96,7 @@ export function rollIncidents(state: SimState, grid: Grid): number {
 export function healInjuries(state: SimState): void {
   const homes = buildingList(state).filter(b => BUILDINGS[b.kind].residents > 0).sort((a, b) => a.id - b.id);
   let beds = 0;
-  for (const b of buildingList(state)) if (b.kind === "clinic" && b.reached && !b.cut) beds += CLINIC_HEAL_PER_CYCLE * staffing(b);
+  for (const b of buildingList(state)) if (b.kind === "clinic" && b.reached && !b.cut) beds += (levelCapacity(b) ?? CLINIC_HEAL_PER_CYCLE) * staffing(b);
   for (const h of homes) {
     while (beds >= 1 && h.injured > 0) { h.injured--; beds--; }
     if (h.shock > 0) h.shock--;

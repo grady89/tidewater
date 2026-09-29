@@ -1,6 +1,7 @@
 // The balance probe (docs/world Stage 5), off unless BALANCE=1: a scripted "natural" player on each coast, and two
 // connected seas trading, printing when homes first reach levels 2 and 3. `BALANCE=1 npx vitest run test/balance.test.ts`.
 // The numbers it prints are recorded in NOTES.md; nothing here asserts them.
+import { backedUpShare } from "../src/sim/sewers";
 import { describe, it } from "vitest";
 import { BOAT_CREW, BuildingKind, BUILDINGS } from "../src/sim/balance";
 import { addLantern } from "../src/sim/services";
@@ -99,7 +100,7 @@ describe.skipIf(!on)("balance probe", () => {
         if (process.env.TRACE === biome && seed === Number(process.env.TSEED ?? 2)) {
           const homes = buildingList(state).filter(b => BUILDINGS[b.kind].residents > 0);
           const cov = state.fields.coverage.water;
-          console.log(`  c${c} ${did ?? ""} pop ${population(state)} work ${buildingList(state).reduce((n, b) => n + b.workers, 0)} happy ${state.happiness.toFixed(2)} money ${state.resources.money.toFixed(0)} foods ${GOOD_IDS.filter(g => GOODS[g].role === "food" && state.resources[g] > 0).join("+")} homes ${homes.map(h => h.residents + ":" + h.happiness.toFixed(2) + "w" + cov[(h.cells[0].i + 32) * 64 + h.cells[0].j + 32].toFixed(1)).join(" ")}`);
+          console.log(`  c${c} ${did ?? ""} pop ${population(state)} work ${buildingList(state).reduce((n, b) => n + b.workers, 0)} happy ${state.happiness.toFixed(2)} money ${state.resources.money.toFixed(0)} foods ${GOOD_IDS.filter(g => GOODS[g].role === "food" && state.resources[g] > 0).join("+")} homes ${homes.map(h => h.residents + ":" + h.happiness.toFixed(2) + "w" + cov[(h.cells[0].i + 32) * 64 + h.cells[0].j + 32].toFixed(1) + "s" + backedUpShare(grid, h).toFixed(1)).join(" ")}`);
         }
         if (c === 4) m4 = state.resources.money - m0;
         const lv = levels(state);

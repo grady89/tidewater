@@ -12,6 +12,7 @@ import { GOOD_IDS, GoodId, GOODS } from "./goods";
 import { Grid } from "./grid";
 import { moveMoney } from "./money";
 import { Building, buildingList, notify, population, SimState } from "./state";
+import { levelCapacity } from "./upgrades";
 import { staffing } from "./workers";
 
 export function harborOf(state: SimState): Building | null {
@@ -29,7 +30,7 @@ export function tradeInterval(state: SimState): number {
 /** Room for tourists across reached inns: the beds are there without staff; staff make room for a full house. */
 export function innCapacity(state: SimState): number {
   let n = 0;
-  for (const b of buildingList(state)) if (b.kind === "inn" && b.reached && !b.cut) n += Math.round(INN_CAPACITY * (0.5 + 0.5 * staffing(b)));
+  for (const b of buildingList(state)) if (b.kind === "inn" && b.reached && !b.cut) n += Math.round((levelCapacity(b) ?? INN_CAPACITY) * (0.5 + 0.5 * staffing(b)));
   return n;
 }
 

@@ -513,9 +513,11 @@ try {
   await page.waitForTimeout(300);
   await page.screenshot({ path: "shots/m5.png" });
 
-  // M6: an outfall fouls the water; the pollution overlay shows it and an oyster bed beside it dies.
-  const m6 = await page.evaluate(() => {
+  // M6: an outfall piped to the street fouls the water; the pollution overlay shows it and an oyster bed beside it dies.
+  const m6 = await page.evaluate(async () => {
     const api = (window as unknown as { __tidewater: Api }).__tidewater;
+    const url = "/test/scenario.ts";
+    const scenario = (await import(url)) as typeof import("./scenario");
     const s = api.sim, grid = api.grid;
     api.grant(500);
     let bed: Building | null = null, outfall: Building | null = null;
@@ -529,16 +531,18 @@ try {
       bed = grid.place("oysterBed", [c]);
       outfall = api.place("outfall", deep.i, deep.j);
     }
+    const piped = outfall ? scenario.pipeTo(s, grid, outfall) : 0;
     api.setOverlay("pollution");
     let died = -1;
     for (let cycle = 1; cycle <= 5; cycle++) { api.advance(1); if (!s.buildings[bed!.id]) { died = cycle; break; } }
     let peak = 0; for (const v of api.fields.pollution) if (v > peak) peak = v;
     api.frameAt(outfall!.cells[0].i + 0.5, outfall!.cells[0].j + 0.5, 18);
-    return { bed: !!bed, outfall: !!outfall, died, peak, log: s.log.slice(-2) };
+    return { bed: !!bed, outfall: !!outfall, piped, carried: outfall!.output, died, peak, log: s.log.slice(-2) };
   });
   console.log("M6:", JSON.stringify(m6));
   assert(m6.bed && m6.outfall, "oyster bed and outfall placed");
   assert(m6.peak > 0, "pollution field has mass");
+  assert(m6.carried > 0, "the outfall carries the town's waste once piped to the street");
   assert(m6.died > 0 && m6.died <= 4, "oyster bed beside the outfall died within 4 cycles");
   await page.waitForTimeout(400);
   await page.screenshot({ path: "shots/m6.png" });

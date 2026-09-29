@@ -2,6 +2,8 @@
 // Each step says what to build, points at the tab and tool for it (the HUD pulses them), and clears itself when
 // the town has done the thing. Progress lives in localStorage (UI state, not ledger state). Read-only over the sim.
 import { BUILDINGS, Category } from "../sim/balance";
+import { Grid } from "../sim/grid";
+import { backedUpShare } from "../sim/sewers";
 import { population, SimState } from "../sim/state";
 import { Tool } from "../build/placement";
 
@@ -29,7 +31,7 @@ export const STEPS: Step[] = [
     why: s => count(s, "walkway") + count(s, "raisedWalkway") + count(s, "path") === 0 ? null : "Your street doesn't reach the hut yet: it has to run from the pier without a gap and touch a side of the hut. Drag again from the last plank to the hut." },
   { title: "Sell the catch", text: "Production → Fish market, on the street. It sells fish at every high-tide peak; that is your income.", tab: "Production", tool: "market", done: s => has(s, "market") },
   { title: "Make room", text: "Homes → Hut, beside the street. Residents arrive at each high-tide peak while a home on the street has a free bed, there is fish in store and the town is content.", tab: "Homes", tool: "hut", done: s => count(s, "hut") + count(s, "house") >= 2 },
-  { title: "Watch a tide", text: "Boats sail at high water; the ledger settles at the peak. Next: a well and a sewage outfall (Services) keep people happy.", done: s => s.tide.cycle >= 3 && population(s) >= 4 },
+  { title: "Watch a tide", text: "Boats sail at high water; the ledger settles at the peak. Next, from Services: a well for water, and a sewage outfall set against a street or a pier (or joined to one by a sewer pipe) so the waste has somewhere to go.", done: s => s.tide.cycle >= 3 && population(s) >= 4 },
 ];
 
 export class Tutorial {
@@ -75,12 +77,14 @@ export class Tutorial {
   get stepIndex(): number { return this.step; }
 
   /** The empty-state hint once the walkthrough is over: what the town is missing most. */
-  private hint(state: SimState): string {
+  private hint(state: SimState, grid: Grid | null): string {
     const bs = Object.values(state.buildings);
     if (!bs.some(b => b.kind === "pier" || b.kind === "dock" || b.kind === "harbor")) return "No pier: nothing can fish. Sea tab.";
     if (boats(state) === 0) return "No boats: buy one at the pier, or build a shipyard.";
     if (!bs.some(b => b.kind === "market")) return "No fish market: the catch has nowhere to go.";
-    if (!bs.some(b => b.kind === "outfall") && state.wasteBacklog > 0) return "Waste is piling up: a sewage outfall (Services tab) puts it in the sea.";
+    if (grid && bs.some(b => b.residents > 0 && backedUpShare(grid, b) > 0)) return bs.some(b => b.kind === "outfall")
+      ? "Waste is backing up at some homes: their sewer has no way out. Join it to an outfall with a sewer pipe (Services tab), or give it its own."
+      : "Waste is backing up into cesspits: a sewage outfall (Services tab) against a street, or joined to one by a sewer pipe, puts it in the sea.";
     // Water from anywhere counts: a well, the Delta's river, the Dunes' cistern.
     const water = state.fields.coverage.water;
     if (bs.some(b => BUILDINGS[b.kind].residents > 0 && b.residents > 0 && water[(b.cells[0].i + 32) * 64 + (b.cells[0].j + 32)] === 0)) return "Homes without water stay unhappy: a well (Services tab) near them.";
@@ -95,13 +99,13 @@ export class Tutorial {
     return `No pier and not enough for one (${BUILDINGS.pier.cost.money}$). Borrow (the button under the ledger), or right-click a building to remove it — half its cost comes back.`;
   }
 
-  update(state: SimState): void {
+  update(state: SimState, grid: Grid | null = null): void {
     while (this.step < STEPS.length && STEPS[this.step].done(state)) { this.step++; this.persist(); }
     const stuck = Tutorial.stuck(state);
     let step = "", title = "", text = "";
     if (stuck) { step = "Stuck"; title = "Nothing can earn"; text = stuck; }
     else if (this.step < STEPS.length) { const s = STEPS[this.step]; step = `Step ${this.step + 1} of ${STEPS.length}`; title = s.title; text = s.text; const why = s.why?.(state); if (why) text += ` — ${why}`; }
-    else text = this.hint(state);
+    else text = this.hint(state, grid);
     if (this.stepEl.textContent !== step) this.stepEl.textContent = step;
     if (this.titleEl.textContent !== title) this.titleEl.textContent = title;
     // Phones tap; the walkthrough's words follow.

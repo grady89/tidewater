@@ -149,6 +149,10 @@
       .info-orders .order-row { align-items: center; margin-top: 3px; }
       .info-orders .order-good { font: inherit; font-size: 11px; color: var(--ink); background: rgba(255, 255, 255, 0.06); border: 1px solid var(--panel-line); border-radius: 6px; padding: 2px 8px; cursor: pointer; }
       .info-orders .order-good:disabled { opacity: 0.45; cursor: default; }
+      #info .upgrade { font: inherit; font-size: 12px; color: var(--accent); background: rgba(255, 209, 138, 0.08); border: 1px solid rgba(255, 209, 138, 0.4); border-radius: 8px; padding: 6px 10px; cursor: pointer; text-align: center; }
+      #info .upgrade:hover:not(:disabled) { background: rgba(255, 209, 138, 0.16); }
+      #info .upgrade:disabled { color: var(--ink-dim); background: transparent; border-color: var(--panel-line); cursor: default; }
+      #info .upgrade[hidden] { display: none; }
       .info-body .desc { margin: 4px 0 0; font-size: 11px; color: var(--ink-dim); }
       .info-body .district { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.1); font-size: 11px; color: var(--ink-dim); }
       .info-body .district h3 { margin: 0 0 2px; font-size: 13px; font-weight: 600; color: var(--ink); }
@@ -344,6 +348,7 @@
         left: 8px; right: 8px; width: auto; bottom: calc(64px + env(safe-area-inset-bottom, 0px)); max-height: 42vh; overflow-y: auto; z-index: 2;
       }
       body.mobile #info .close { min-width: 44px; min-height: 36px; font-size: 20px; }
+      body.mobile #info .upgrade { min-height: 40px; }
       body.mobile #info .remove {
         display: block; position: sticky; bottom: 0; min-height: 40px; margin-top: 4px; font: inherit; font-size: 12px; color: var(--bad);
         background: #2b3238; border: 1px solid rgba(224, 138, 122, 0.4); border-radius: 8px; cursor: pointer;

@@ -1,7 +1,7 @@
 // The UI: resource bar, build menu by category, tide clock, last-cycle ledger, notifications. Plain DOM over the
 // canvas, read-only over the sim.
-import { Fate, isBuildingTool, Tool } from "../build/placement";
-import { BOAT_COST, BUILDING_KINDS, LINE_KINDS, BuildingKind, BUILDINGS, CATEGORIES, Category, CLEAR_TIMBER, LANDFILL_COST, LANTERN_COST, LIFT_STEP, LOAN_AMOUNT, LOAN_GRACE_CYCLES, LOAN_INTEREST, LOAN_REPAY_CYCLES, PLANK_ORDER_SIZE, PLANT_COST, TRADE_PLANK_PRICE } from "../sim/balance";
+import { Fate, isBuildingTool, PIPE_TOOLS, Tool } from "../build/placement";
+import { BOAT_COST, BUILDING_KINDS, LINE_KINDS, BuildingKind, BUILDINGS, CATEGORIES, Category, CLEAR_TIMBER, LANDFILL_COST, LANTERN_COST, LIFT_STEP, LOAN_AMOUNT, LOAN_GRACE_CYCLES, LOAN_INTEREST, LOAN_REPAY_CYCLES, PLANK_ORDER_SIZE, PLANT_COST, SEWER_PIPE_COST, TRADE_PLANK_PRICE } from "../sim/balance";
 import { biomeFor, BiomeId, catalogFor, catchOf, costOf, makesOf } from "../sim/biomes";
 import { canAfford } from "../sim/economy";
 import { GOOD_IDS, GOOD_ROLES, GoodId, GOODS, shownGoods } from "../sim/goods";
@@ -36,6 +36,8 @@ const TOOLS: ToolDef[] = [
   { tool: "landfill", label: "Landfill", category: "Land", cost: `${LANDFILL_COST.money}$+${LANDFILL_COST.timber}t` },
   { tool: "plantTree", label: "Plant tree", category: "Land", cost: `${PLANT_COST}$` },
   { tool: "clearTree", label: "Clear tree", category: "Land", cost: `+${CLEAR_TIMBER}t` },
+  { tool: "sewerPipe", label: "Sewer pipe", category: "Services", cost: `${SEWER_PIPE_COST}$/cell` },
+  { tool: "clearPipe", label: "Take up pipe", category: "Services", cost: "free" },
 ];
 const KEYS = "123456789";
 
@@ -47,9 +49,11 @@ function costText(kind: BuildingKind, biome: BiomeId = "tidewater"): string {
   return parts.join("+");
 }
 
-const FATE_TEXT: Record<Fate | "line", string> = {
+const FATE_TEXT: Record<Fate | "line" | "sewerPipe" | "clearPipe", string> = {
   safe: "Click to place · right-click to remove (half the cost comes back)",
   line: "Click to place, or drag to lay a run · right-click to remove",
+  sewerPipe: "Drag a pipe from a street to an outfall or a treatment plant · it runs under anything · right-click takes one up",
+  clearPipe: "Click a pipe, or drag along a run, to take it up (nothing comes back)",
   spring: "Low ground: floods at spring tides — a raised walkway or landfill stays dry",
   always: "Floods every high tide",
 };
@@ -86,6 +90,7 @@ export class Hud {
   private readonly loanStatus: HTMLElement;
   private readonly loanButton: HTMLButtonElement;
   private readonly notes: HTMLElement;
+  private readonly overlayButtons = new Map<OverlayKind | null, HTMLButtonElement>();
   private _category: Category = "Homes";
   private lastTool: Tool | null = null;
   private lastCycle = -1;
@@ -155,10 +160,11 @@ export class Hud {
       b.textContent = o.label;
       b.classList.toggle("active", o.kind === null);
       b.addEventListener("click", () => {
-        for (const x of overlays.querySelectorAll("button")) x.classList.toggle("active", x === b);
+        this.markOverlay(o.kind);
         onOverlay(o.kind);
       });
       overlays.appendChild(b);
+      this.overlayButtons.set(o.kind, b);
     }
     this.tideLevel = root.querySelector<SVGRectElement>(".tide-level")!;
     this.tideMarker = root.querySelector<SVGCircleElement>(".tide-marker")!;
@@ -203,6 +209,11 @@ export class Hud {
 
   get category(): Category { return this._category; }
 
+  /** Light the overlay button that is showing (the sewer tools switch the Sewers overlay on by themselves). */
+  markOverlay(kind: OverlayKind | null): void {
+    for (const [k, b] of this.overlayButtons) b.classList.toggle("active", k === kind);
+  }
+
   /** Pulse the tab and tool the walkthrough points at (null clears). */
   highlight(h: { tab?: Category; tool?: Tool } | null): void {
     for (const [c, b] of this.tabs) b.classList.toggle("pulse", !!h?.tab && c === h.tab);
@@ -242,7 +253,8 @@ export class Hud {
     if (tool === "lanternPost") return state.resources.money >= LANTERN_COST ? null : "no money";
     if (tool === "landfill") return state.resources.money < LANDFILL_COST.money ? "no money" : state.resources.timber < LANDFILL_COST.timber ? "no timber" : null;
     if (tool === "plantTree") return state.resources.money >= PLANT_COST ? null : "no money";
-    if (tool === "clearTree") return null;
+    if (tool === "clearTree" || tool === "clearPipe") return null;
+    if (tool === "sewerPipe") return state.resources.money >= SEWER_PIPE_COST ? null : "no money";
     const def = BUILDINGS[tool];
     const cost = costOf(tool, state.world.biome);
     if (def.requires && !this.grid.has(def.requires)) return `needs ${BUILDINGS[def.requires].name.toLowerCase()}`;
@@ -329,11 +341,12 @@ export class Hud {
     this.tideEvent.textContent = ts === "drawdown" ? "The sea is pulling back" : ts === "wave" ? "A wave is coming in" : ts === "settle" ? "The water returns" : uneasy ? "The sea is uneasy: a wave at the next peak" : state.storm.active ? "Storm: the boats stay in" : season;
     this.tideEvent.classList.toggle("now", ts !== null || state.storm.active || uneasy);
 
-    const lineText = s.line ? `${s.line.count} × ${TOOLS.find(t => t.tool === s.tool)?.label.toLowerCase() ?? s.tool} · ${s.line.cost}$ — release to lay them` : null;
+    const lineText = !s.line ? null : s.tool === "clearPipe" ? `${s.line.count} pipe${s.line.count === 1 ? "" : "s"} — release to take them up`
+      : `${s.line.count} × ${TOOLS.find(t => t.tool === s.tool)?.label.toLowerCase() ?? s.tool} · ${s.line.cost}$ — release to lay them`;
     const fateText = s.fate !== "safe" ? FATE_TEXT[s.fate] : null;
     // Auto-sized pieces show their stilts and the price they make: long stilts on low ground cost more.
     const stiltText = s.lift !== null ? `Stilts ${s.stilt.toFixed(1)} m · ${s.cost}$${s.lift > 0 ? ` · deck +${(s.lift * LIFT_STEP).toFixed(1)} m` : ""} · [ ] lifts the deck` : null;
-    const base = LINE_TOOL_HINT.has(s.tool) ? FATE_TEXT.line : FATE_TEXT.safe;
+    const base = PIPE_TOOLS.has(s.tool) ? FATE_TEXT[s.tool as "sewerPipe" | "clearPipe"] : LINE_TOOL_HINT.has(s.tool) ? FATE_TEXT.line : FATE_TEXT.safe;
     const turnText = s.rotatable ? "R turns it (the door faces the street on its own)" : null;
     const cautions = [s.warn, fateText, stiltText, turnText].filter((t): t is string => t !== null);
     const hintText = s.blocker ?? lineText ?? (cautions.length ? cautions.join(" · ") : base);

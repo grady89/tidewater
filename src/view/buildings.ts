@@ -759,6 +759,19 @@ function market(scene: Scene, b: Building): BuildingMeshes {
   crate(scene, parts, cx - 0.72, F, cz - 0.7, 0.2); crate(scene, parts, cx - 0.5, F, cz - 0.75, 0.16);
   barrel(scene, parts, cx + 0.75, F, cz - 0.6, 0.2);
   parts.push(box(scene, 0.34, 0.2, 0.03, cx + 0.5, F + 0.7, cz + 0.57, PALETTE.sail)); // the signboard
+  if (b.level >= 2) {
+    // A fish hall: a striped awning out over the counter on two posts, and a second counter under it.
+    for (let k = 0; k < 4; k++) { const a = box(scene, 0.36, 0.035, 0.42, cx - 0.54 + k * 0.36, F + 0.78, cz - 0.78, k % 2 ? PALETTE.sail : PALETTE.roofs[0]); a.rotation.x = -0.25; parts.push(a); }
+    for (const sx of [-1, 1]) parts.push(cyl(scene, 0.05, 0.76, cx + sx * 0.68, F + 0.38, cz - 0.94, PALETTE.wood, 4));
+    parts.push(box(scene, 0.5, 0.3, 0.2, cx + 0.45, F + 0.15, cz - 0.82, PALETTE.walls[3]));
+  }
+  if (b.level >= 3) {
+    // A fish exchange: a flagpole at the corner flying a pennant, and a lamp by the door.
+    parts.push(cyl(scene, 0.04, 1.8, cx + 0.88, F + 0.9, cz + 0.88, PALETTE.wood, 4));
+    const flag = box(scene, 0.42, 0.22, 0.02, cx + 0.88 + 0.21, F + 1.62, cz + 0.88, PALETTE.roofs[0]);
+    parts.push(flag);
+    parts.push(box(scene, 0.2, 0.08, 0.025, cx + 0.88 + 0.21, F + 1.62, cz + 0.88, PALETTE.sail));
+  }
   return { root: mergeFlat("market", parts, scene) };
 }
 
@@ -907,7 +920,17 @@ function warehouse(scene: Scene, b: Building): BuildingMeshes {
 
 // ---------- services ----------
 
-/** A stone well with a timber A-frame roof, a bucket on its windlass and a lantern. */
+/** A banded timber tank with a lid, standing at (x, y) (its foot), for the cistern and the water tower. */
+function tank(scene: Scene, parts: Mesh[], x: number, y: number, z: number, diameter: number, height: number): void {
+  parts.push(cyl(scene, diameter, height, x, y + height / 2, z, PALETTE.planks, 8));
+  for (const t of [0.22, 0.78]) parts.push(cyl(scene, diameter + 0.03, 0.035, x, y + height * t, z, PALETTE.wood, 8));
+  parts.push(cyl(scene, diameter + 0.04, 0.04, x, y + height + 0.02, z, PALETTE.wood, 8));
+}
+
+/**
+ * A stone well with a timber A-frame roof, a bucket on its windlass and a lantern. Level 2 (a cistern) adds a banded
+ * tank beside it, piped to the well; level 3 (a water tower) raises a tank on four legs over the whole of it.
+ */
 function well(scene: Scene, b: Building): BuildingMeshes {
   const { x, z } = cellCenter(b.cells[0]);
   const F = b.floorY;
@@ -920,7 +943,19 @@ function well(scene: Scene, b: Building): BuildingMeshes {
   parts.push(cyl(scene, 0.08, 0.5, x, F + 0.72, z, PALETTE.wood, 6).rotate(Axis.Z, Math.PI / 2, Space.WORLD) as Mesh);
   gable(scene, parts, x, z, 0.4, 0.5, F + 0.8, 0.22, PALETTE.wood, true, 0.12);
   parts.push(cyl(scene, 0.12, 0.12, x, F + 0.55, z, PALETTE.planks, 6));
-  parts.push(rock(scene, x + 0.35, F + 0.05, z + 0.3, 0.25, STONE, 1));
+  if (b.level < 2) parts.push(rock(scene, x + 0.35, F + 0.05, z + 0.3, 0.25, STONE, 1));
+  if (b.level >= 2) {
+    tank(scene, parts, x + 0.28, F, z + 0.28, 0.34, 0.46);
+    parts.push(cyl(scene, 0.05, 0.3, x + 0.14, F + 0.3, z + 0.14, BLUE, 5).rotate(Axis.Y, Math.PI / 4, Space.WORLD).rotate(Axis.Z, Math.PI / 2, Space.LOCAL) as Mesh);
+  }
+  if (b.level >= 3) {
+    const top = F + 1.45;
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) parts.push(box(scene, 0.06, top - F, 0.06, x + sx * 0.4, F + (top - F) / 2, z + sz * 0.4, PALETTE.wood));
+    for (const sz of [-1, 1]) { const brace = box(scene, 0.86, 0.035, 0.035, x, F + 1.05, z + sz * 0.4, PALETTE.wood); brace.rotation.z = 0.5; parts.push(brace); }
+    parts.push(box(scene, 0.9, 0.05, 0.9, x, top, z, PALETTE.planks));
+    tank(scene, parts, x, top + 0.025, z, 0.66, 0.5);
+    parts.push(cyl(scene, 0.74, 0.26, x, top + 0.66, z, PALETTE.roofs[3], 8, 0));
+  }
   const lantern = bracketLantern(scene, parts, x + 0.27, F + 0.68, z, 1, 0);
   return { root: mergeFlat("well", parts, scene), lantern };
 }
@@ -933,8 +968,20 @@ function clinic(scene: Scene, b: Building): BuildingMeshes {
   deck(scene, parts, cx, cz, w, d, F);
   parts.push(box(scene, 1.0, 1.25, 0.75, cx - 0.35, F + 0.625, cz, PALETTE.walls[0]));
   gable(scene, parts, cx - 0.35, cz, 1.0, 0.75, F + 1.25, 0.42, PALETTE.roofs[0], true);
-  parts.push(box(scene, 0.6, 0.6, 0.65, cx + 0.45, F + 0.3, cz + 0.05, PALETTE.walls[0]));
-  gable(scene, parts, cx + 0.45, cz + 0.05, 0.6, 0.65, F + 0.6, 0.25, PALETTE.roofs[0], true);
+  // The annex (the ward): one storey, two from level 2 (an infirmary).
+  const annexH = b.level >= 2 ? 1.05 : 0.6;
+  parts.push(box(scene, 0.6, annexH, 0.65, cx + 0.45, F + annexH / 2, cz + 0.05, PALETTE.walls[0]));
+  gable(scene, parts, cx + 0.45, cz + 0.05, 0.6, 0.65, F + annexH, 0.25, PALETTE.roofs[0], true);
+  if (b.level >= 2) window_(scene, parts, cx + 0.45, F + 0.8, cz - 0.28, false, 0.14, 0.14);
+  if (b.level >= 3) {
+    // A hospital: the cross flies over the ridge, and a porch roof shelters the door.
+    parts.push(cyl(scene, 0.035, 0.7, cx - 0.35, F + 1.67 + 0.35, cz, PALETTE.wood, 4));
+    parts.push(box(scene, 0.3, 0.2, 0.02, cx - 0.2, F + 2.2, cz, PALETTE.sail));
+    parts.push(box(scene, 0.16, 0.05, 0.025, cx - 0.2, F + 2.2, cz, PALETTE.roofs[0]));
+    parts.push(box(scene, 0.05, 0.16, 0.025, cx - 0.2, F + 2.2, cz, PALETTE.roofs[0]));
+    parts.push(box(scene, 0.42, 0.04, 0.26, cx - 0.35, F + 0.5, cz - 0.5, PALETTE.roofs[0]));
+    for (const sx of [-1, 1]) parts.push(cyl(scene, 0.04, 0.5, cx - 0.35 + sx * 0.18, F + 0.25, cz - 0.6, PALETTE.wood, 4));
+  }
   door(scene, parts, cx - 0.35, F, cz - 0.38, false, 0.2, 0.36);
   window_(scene, parts, cx - 0.65, F + 0.45, cz - 0.38, false, 0.14, 0.16);
   window_(scene, parts, cx - 0.15, F + 0.95, cz - 0.38, false, 0.14, 0.16);
@@ -952,13 +999,13 @@ function fireWatch(scene: Scene, b: Building): BuildingMeshes {
   const F = b.floorY;
   const parts: Mesh[] = [];
   deck(scene, parts, x, z, 1, 1, F);
-  const H = 1.9;
+  const H = 1.9 + 0.45 * (b.level - 1);
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
     const leg = box(scene, 0.07, H, 0.07, x + sx * 0.3, F + H / 2, z + sz * 0.3, PALETTE.wood);
     leg.rotation.x = -sz * 0.06; leg.rotation.z = sx * 0.06;
     parts.push(leg);
   }
-  for (const level of [0.6, 1.2]) {
+  for (const level of [0.6, 1.2, 1.8, 2.3].slice(0, 1 + b.level)) {
     for (const sz of [-1, 1]) { const b1 = box(scene, 0.6, 0.04, 0.04, x, F + level, z + sz * 0.3, PALETTE.wood); b1.rotation.z = 0.5; parts.push(b1); const b2 = box(scene, 0.6, 0.04, 0.04, x, F + level, z + sz * 0.3, PALETTE.wood); b2.rotation.z = -0.5; parts.push(b2); }
   }
   parts.push(box(scene, 0.8, 0.06, 0.8, x, F + H, z, PALETTE.planks));
@@ -968,7 +1015,7 @@ function fireWatch(scene: Scene, b: Building): BuildingMeshes {
   window_(scene, parts, x, F + H + 0.26, z - 0.255, false, 0.16, 0.12, false);
   hip(scene, parts, x, z, 0.6, 0.6, F + H + 0.43, 0.28, PALETTE.roofs[0], 0.12);
   parts.push(cyl(scene, 0.03, 0.2, x, F + H + 0.8, z, PALETTE.wood, 4));
-  const bell = MeshBuilder.CreateCylinder("bell", { diameterTop: 0.08, diameterBottom: 0.18, height: 0.18, tessellation: 6 }, scene);
+  const bell = MeshBuilder.CreateCylinder("bell", { diameterTop: 0.08, diameterBottom: 0.18 + 0.04 * (b.level - 1), height: 0.18 + 0.03 * (b.level - 1), tessellation: 6 }, scene);
   bell.position.set(x, F + H - 0.15, z);
   parts.push(tint(bell, PALETTE.lantern));
   return { root: mergeFlat("fireWatch", parts, scene) };
@@ -993,6 +1040,17 @@ function treatmentPlant(scene: Scene, b: Building): BuildingMeshes {
   parts.push(cyl(scene, 0.05, 0.7, cx - 0.55, F + 0.3, cz, BLUE, 5).rotate(Axis.X, Math.PI / 2, Space.WORLD) as Mesh);
   parts.push(cyl(scene, 0.05, 0.9, cx - 0.55, F + 0.75, cz - 0.4, BLUE, 5));
   parts.push(cyl(scene, 0.09, 0.5, cx + 0.7, F + 1.0, cz + 0.6, STONE, 5));
+  if (b.level >= 2) {
+    // Settling ponds: a stone-rimmed basin in front of the shed.
+    parts.push(box(scene, 0.86, 0.1, 0.52, cx + 0.42, F + 0.05, cz - 0.62, STONE));
+    parts.push(box(scene, 0.74, 0.04, 0.4, cx + 0.42, F + 0.1, cz - 0.62, "#2a5f7a"));
+  }
+  if (b.level >= 3) {
+    // Reed beds: the basin grows reeds, and a third tank joins the others.
+    const reeds = [[-0.25, -0.1], [-0.08, 0.08], [0.1, -0.08], [0.27, 0.1], [0.02, -0.14], [-0.2, 0.12]];
+    reeds.forEach(([dx, dz], k) => parts.push(cyl(scene, 0.05, 0.26 + 0.05 * (k % 3), cx + 0.42 + dx, F + 0.24 + 0.025 * (k % 3), cz - 0.62 + dz, k % 2 ? "#4a8a55" : "#5a9a5c", 4)));
+    tank(cx - 0.1, cz - 0.05, 0.2, PALETTE.walls[3]);
+  }
   return { root: mergeFlat("treatmentPlant", parts, scene) };
 }
 
@@ -1103,9 +1161,12 @@ function inn(scene: Scene, b: Building): BuildingMeshes {
   const F = b.floorY;
   const parts: Mesh[] = [];
   deck(scene, parts, cx, cz, w, d, F);
-  parts.push(box(scene, 1.3, 1.35, 1.1, cx - 0.15, F + 0.675, cz + 0.1, PALETTE.walls[0]));
-  gable(scene, parts, cx - 0.15, cz + 0.1, 1.3, 1.1, F + 1.35, 0.5, BLUE, true, 0.16);
-  chimney(scene, parts, cx - 0.55, F + 1.35 + 0.25, cz + 0.3, 0.3, PALETTE.walls[0]);
+  // A guesthouse (level 2) and a grand hotel (level 3) each stand a storey taller, a row of windows more.
+  const H = 1.35 + 0.42 * (b.level - 1);
+  parts.push(box(scene, 1.3, H, 1.1, cx - 0.15, F + H / 2, cz + 0.1, PALETTE.walls[0]));
+  gable(scene, parts, cx - 0.15, cz + 0.1, 1.3, 1.1, F + H, 0.5, BLUE, true, 0.16);
+  chimney(scene, parts, cx - 0.55, F + H + 0.25, cz + 0.3, 0.3, PALETTE.walls[0]);
+  for (let storey = 2; storey <= b.level; storey++) for (const wx of [-0.5, 0.2]) window_(scene, parts, cx + wx, F + 1.0 + 0.42 * (storey - 1), cz - 0.455, false, 0.14, 0.16);
   door(scene, parts, cx - 0.15, F, cz - 0.455, false, 0.22, 0.38);
   window_(scene, parts, cx - 0.6, F + 0.45, cz - 0.455, false, 0.15, 0.16);
   window_(scene, parts, cx + 0.3, F + 0.45, cz - 0.455, false, 0.15, 0.16);

@@ -38,6 +38,10 @@ export class Grid {
   readonly materials = new Uint8Array(SIZE * SIZE);
   /** Bumped whenever the heights change (attach, landfill), so caches keyed on the terrain (the field flows) refresh. */
   terrainVersion = 0;
+  /** Cell index → a sewer pipe lies here (state.sewers, indexed). */
+  readonly pipes = new Uint8Array(SIZE * SIZE);
+  /** Bumped whenever a piece or a pipe is laid or taken up, so caches keyed on the layout (the sewer networks) refresh. */
+  layoutVersion = 0;
   /** The biome's tide numbers (tides.ts): class thresholds, clearances, marks, flood lines. Set at attach. */
   tides: Tides = BASE_TIDES;
 
@@ -119,6 +123,19 @@ export class Grid {
   private rebuild(): void {
     this.occupancy.fill(null);
     for (const b of Object.values(this.state.buildings)) for (const c of b.cells) this.occupancy[cellIndex(c.i, c.j)] = b;
+    this.pipes.fill(0);
+    for (const k of this.state.sewers) this.pipes[k] = 1;
+    this.layoutVersion++;
+  }
+
+  hasPipe(c: Cell): boolean { return inBounds(c.i, c.j) && this.pipes[cellIndex(c.i, c.j)] === 1; }
+  /** Lay or take up the pipe in a cell (the ledger's list and the index together). No checks: see sim/sewers.ts. */
+  setPipe(c: Cell, on: boolean): void {
+    const k = cellIndex(c.i, c.j);
+    if ((this.pipes[k] === 1) === on) return;
+    this.pipes[k] = on ? 1 : 0;
+    if (on) this.state.sewers.push(k); else this.state.sewers = this.state.sewers.filter(x => x !== k);
+    this.layoutVersion++;
   }
 
   heightAt(c: Cell): number { return this.heights[cellIndex(c.i, c.j)]; }
@@ -411,6 +428,7 @@ export class Grid {
     };
     for (const c of cells) this.occupancy[cellIndex(c.i, c.j)] = b;
     s.buildings[b.id] = b;
+    this.layoutVersion++;
     if (BUILDINGS[kind].network !== "leaf") this.refaceAround(cells);
     return b;
   }
@@ -427,6 +445,7 @@ export class Grid {
   remove(b: Building): void {
     for (const c of b.cells) this.occupancy[cellIndex(c.i, c.j)] = null;
     delete this.state.buildings[b.id];
+    this.layoutVersion++;
     this.state.assignments = this.state.assignments.filter(a => a.home !== b.id && a.work !== b.id);
     if (BUILDINGS[b.kind].network !== "leaf") this.refaceAround(b.cells);
   }

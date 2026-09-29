@@ -1,45 +1,27 @@
-// Waste, outfalls, treatment, and what pollution does: kills oyster beds, sours homes, and thins the fish.
+// Pollution's sources (the sewers' outfalls and cesspits, smokehouses, docks) and what it does: kills oyster beds,
+// sours homes, and thins the fish.
 import { SIM_TICK, TIDE_PERIOD } from "../config";
 import {
   BUILDINGS, DOCK_POLLUTION, FISH_CAP, FISH_DEPLETE_PER_BOAT, FISH_FLOOR, FISH_REGEN, OYSTER_KILL_CYCLES,
   OYSTER_POLLUTION_KILL, POLLUTION_ADVECT, POLLUTION_DECAY, POLLUTION_DIFFUSE, SMOKEHOUSE_POLLUTION,
-  WASTE_BACKLOG_DRAIN, WASTE_PER_RESIDENT,
 } from "./balance";
 import { at, CELLS, flowFor, stepDrift } from "./fields";
 import { cellIndex, Grid } from "./grid";
-import { Building, buildingList, Cell, notify, SimState } from "./state";
+import { drainSewage } from "./sewers";
+import { Building, buildingList, Cell, Emitter, notify, SimState } from "./state";
 import { isRising } from "./tide";
 import { staffing } from "./workers";
 
 const TICKS_PER_CYCLE = TIDE_PERIOD / SIM_TICK;
 
-/** Fraction of a home's waste neutralised by treatment plants in range: the treatment coverage layer. */
-export function treatedFraction(state: SimState, home: Building): number {
-  return at(state.fields.coverage.treatment, home.cells[0]);
-}
-
 /**
- * Settlement: route this cycle's waste to the outfalls as per-tick emitters (plus the smokehouses' and docks'
- * own smoke and fish waste). Waste with no outfall backs up and sours the town.
+ * Settlement: this cycle's pollution sources as per-tick emitters — the sewers' (sim/sewers.ts: outfalls and the
+ * cesspits of homes whose waste backs up), then the smokehouses' smoke and the docks' fish waste.
  */
-export function routeWaste(state: SimState): void {
+export function routeWaste(state: SimState, grid: Grid): void {
   const buildings = buildingList(state).sort((a, b) => a.id - b.id);
-  let untreated = 0;
-  for (const b of buildings) {
-    if (BUILDINGS[b.kind].residents === 0 || b.residents === 0) continue;
-    untreated += b.residents * WASTE_PER_RESIDENT * (1 - treatedFraction(state, b));
-  }
-  const outfalls = buildings.filter(b => b.kind === "outfall");
-  const emitters: { k: number; rate: number }[] = [];
-  if (outfalls.length) {
-    // The outfalls take this cycle's waste plus a share of any backlog, which goes into the sea too.
-    const drained = Math.min(state.wasteBacklog, WASTE_BACKLOG_DRAIN);
-    state.wasteBacklog -= drained;
-    const each = (untreated + drained) / outfalls.length / TICKS_PER_CYCLE;
-    for (const o of outfalls) emitters.push({ k: cellIndex(o.cells[0].i, o.cells[0].j), rate: each });
-  } else {
-    state.wasteBacklog += untreated;
-  }
+  const emitters: Emitter[] = [];
+  drainSewage(state, grid, emitters);
   for (const b of buildings) {
     if (b.kind === "smokehouse" && b.workers > 0) emitters.push({ k: cellIndex(b.cells[0].i, b.cells[0].j), rate: SMOKEHOUSE_POLLUTION * staffing(b) / TICKS_PER_CYCLE });
     const own = BUILDINGS[b.kind].pollution;

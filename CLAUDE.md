@@ -125,15 +125,37 @@ Production
 - Shipyard (edge, 3×2), 300$ + 40 planks. 5 workers. Builds a boat every `SHIPYARD_CYCLES` if planks available; assigns to a dock with a free slot.
 - Warehouse (flat, 2×2), 120$. +100 cap on all goods.
 
+Sewers (`sim/sewers.ts`; the planning puzzle of the waste)
+- Every street and pier (walkway, path, raised walkway, market, pier, dock, harbor) carries a sewer under it. A sewer
+  pipe (Services, `SEWER_PIPE_COST` 2$/cell, `SEWER_PIPE_DEEP_COST` 4$ over deep water; a drag like a street) carries it
+  anywhere else: over the flats and the hill, under buildings, across the water. Pipes are `state.sewers` (cell
+  indices) and are seen only in the Sewers overlay, which comes up by itself while a sewer tool, an outfall or a
+  treatment plant is in hand. "Take up pipe" (and a right-click with the pipe tool) removes one; nothing comes back.
+- A connected run of sewer is a network. A home drains into a sewer under it or beside it. Outfalls and treatment
+  plants are part of the network they stand in or against; neither needs a street, nobody walks there.
+- A network's waste (`WASTE_PER_RESIDENT` a head) goes through its plants, each up to its level's capacity, and the
+  rest out of its outfalls, split evenly, into the pollution field; the tide carries it (§8). A network with no
+  outfall backs up, and a home no sewer reaches keeps a cesspit: that waste seeps into the ground at the home
+  (`CESSPIT_SEEP` of it) and the home loses `HAPPY.cesspit` × the share backed up. Where the outfall goes against the
+  tide (up-tide of the oyster beds, the beach, the pier's own water) and what a pipe to a better spot costs is the puzzle.
+- Sewage outfall (edge, 1×1), 40$. The network's way out to sea.
+- Treatment plant (flat or high, 2×2), 350$, no workers, upkeep 5. Cleans its network's waste up to its capacity.
+
 Services (each has a coverage radius written into a field)
-- Sewage outfall (edge, 1×1), 40$. Houses generate waste. Without an outfall waste piles up (happiness −). Outfall dumps
-  waste into the pollution field at its cell each tick; the tide carries it (§8).
-- Treatment plant (flat or high, 2×2), 350$. 4 workers. Neutralizes waste of houses within radius 12 before it reaches an outfall.
 - Lifeguard tower (shore, 1×1 on a beach cell), 90$. 1 worker. Shark incidents within radius 5 drop 80%.
 - Shark nets (deep, per cell line), 20$/cell. Blocks shark risk from crossing.
 - Clinic (flat, 2×1), 200$. 3 workers. Heals injured residents (injury → they stop working until healed).
-- Fire watch (flat or high, 1×1), 120$. 2 workers. Suppresses fires within radius 8. 
-- Well / cistern (flat, 1×1), 50$. Drinking water coverage radius 8; uncovered houses lose happiness.
+- Fire watch (flat or high, 1×1), 120$. 2 workers. Suppresses fires within radius 8 (11, 14 upgraded).
+- Well (flat, 1×1), 50$. Drinking water within radius 8 for up to its capacity in people, the nearest homes first; a
+  home past it gets its share, uncovered houses lose happiness. (Unlimited water — the Delta's river, the Dunes' oases
+  and great cistern — serves everyone in reach.)
+
+Upgrades (`sim/upgrades.ts`, `UPGRADES` in balance.ts): a service that serves a number of people grows from level 1
+to 3 in place, for money and planks, from its info panel ("Upgrade to Cistern · 60$ + 10 planks"). A sprawling town
+builds more of them; a dense one upgrades. Upkeep grows by `UPGRADE_UPKEEP_STEP` of the base per level; the model
+grows with the level. Capacity by level: well 24 / 48 / 80 people (well, cistern, water tower); treatment plant
+40 / 90 / 150 people; fish market 30 / 60 / 100 sold a cycle; clinic 2 / 4 / 7 healed a cycle; inn 6 / 12 / 20 beds;
+fire watch reach 8 / 11 / 14. Homes level on their own (above) and are not upgraded.
 
 Leisure & tourism
 - Beach: any sand cell above high tide adjacent to water (derived, not built). Residents within radius 10 swim at high water in daytime.
@@ -163,7 +185,7 @@ Leisure & tourism
 
 ## 8. Fields and the tide's effect on them
 
-- **pollution**: sources = outfalls (untreated waste), smokehouses (small), docks (small). Each tick: decay ×`POLLUTION_DECAY`,
+- **pollution**: sources = outfalls (the sewers' untreated waste), cesspits (homes whose waste backs up), smokehouses (small), docks (small). Each tick: decay ×`POLLUTION_DECAY`,
   diffuse to 4 neighbors, and **advect** with the tide: rising tide pushes shoreward (toward flats), falling tide pulls seaward.
   Pollution on flat cells kills oyster beds and lowers house happiness; on deep cells it reduces fish density regen.
 - **fishDensity** (deep cells only): regenerates toward `FISH_CAP` × (1 − pollution); boats deplete the ground they fish;
@@ -172,7 +194,7 @@ Leisure & tourism
   cells with swimmers = risk × swimmers × (night ×2), reduced by lifeguard coverage.
 - **fireRisk**: smokehouses, taverns, lanterns raise it; rain (storms) zero it; fire watch lowers it. Fire ignites with
   chance ∝ risk, spreads along adjacent wooden pieces each tick until watched or burnt out; burnt buildings are damaged.
-- **coverage fields**: one per service type (water, leisure, night, lifeguard, treatment, firewatch), rebuilt on placement.
+- **coverage fields**: one per service type (water, leisure, night, lifeguard, firewatch), rebuilt at every settlement.
 - Overlays: any field can be shown as a color tint on the grid cells (view layer).
 
 ## 9. Events and damage
@@ -208,8 +230,10 @@ Leisure & tourism
   plus a door tab: a building faces an adjoining street on its own (`Grid.facing`; with none, its door looks to the lowest
   ground, the sea), turns to a street laid beside it later (`Grid.reface`) unless the player turned it, and R turns it by quarter turns
   (`Building.rot`; odd turns swap a footprint's width and depth). Streets and everything in the water don't turn.
-- Click a building: info panel (workers filled/needed, output last cycle, status: working / idle: no workers / cut / damaged / polluted).
-- Overlays toggle: pollution, fish density, shark risk, fire risk, happiness, water coverage.
+- Click a building: info panel (workers filled/needed, output last cycle, status: working / idle: no workers / cut / damaged / polluted;
+  a home's sewer; a service's capacity and the Upgrade button). Pieces that need no street (outfalls, treatment
+  plants, nets, walls, warehouses: `offStreet`) never warn that no street reaches them.
+- Overlays toggle: pollution, fish density, shark risk, fire risk, sewers.
 - Notifications feed (immigrants arrived, oyster bed died, shark incident, boat lost, storm coming, the sea is pulling back).
 - Speed: pause / 1× / 2× / 4×. Time is game time; the tide period is in game seconds.
 - Quality presets (`ui/settings.ts`): High / Medium (no water reflections) / Low (no bloom, reflections, caustics or
@@ -244,7 +268,8 @@ src/
   sim/                    ledger: state.ts, rng.ts, balance.ts, tide.ts, buildings.ts (catalog + factories of sim entries),
                           grid.ts, network.ts, fields.ts, workers.ts, economy.ts, people.ts, events.ts, trade.ts, save.ts,
                           heightfield.ts (noise per seed), island.ts (seeded islands: validation, rerolls, tree sites),
-                          cells.ts (the lattice helpers), money.ts (moveMoney: every purse change, with an audit hook)
+                          cells.ts (the lattice helpers), money.ts (moveMoney: every purse change, with an audit hook),
+                          sewers.ts (networks, drainage, pipes), upgrades.ts (levels, capacity, upkeep)
   view/                   meshes for pieces (pieces/*.ts), walkers.ts, boats.ts, overlays.ts, effects.ts (storm, wave, fire, damage)
   ui/                     hud.ts, buildMenu.ts, infoPanel.ts, notifications.ts, tideClock.ts, overlaysToggle.ts, saveMenu.ts,
                           mobile.ts (the phone layout and touch placement)

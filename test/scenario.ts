@@ -4,8 +4,10 @@ import { MAX_LINE, routePath } from "../src/build/line";
 import { BuildingKind, BUILDINGS, SWIM_RADIUS } from "../src/sim/balance";
 import { buyBoat, tryPlace } from "../src/sim/economy";
 import { sheltered } from "../src/sim/events";
-import { Grid } from "../src/sim/grid";
+import { cellIndex, DIRS, Grid, HALF, inBounds } from "../src/sim/grid";
 import { updateNetwork } from "../src/sim/network";
+import { layPipe, sewered } from "../src/sim/sewers";
+import { SIZE } from "../src/config";
 import { Building, buildingList, Cell, SimState } from "../src/sim/state";
 import { treeSites } from "../src/sim/trees";
 
@@ -28,6 +30,37 @@ function tryPlaceClearing(state: SimState, grid: Grid, kind: BuildingKind, ancho
 import { floodFate } from "../src/sim/tide";
 
 const dist = (a: Cell, b: Cell) => Math.hypot(a.i - b.i, a.j - b.j);
+
+/**
+ * Join `b` to the nearest sewer that isn't its own (a street, as a rule) with sewer pipe, the shortest way over any
+ * cells, as a player drags a pipe from an outfall to the street. Returns the pipes laid (0 when it touches one already).
+ */
+export function pipeTo(state: SimState, grid: Grid, b: Building): number {
+  const own = new Set(b.cells.map(c => cellIndex(c.i, c.j)));
+  const prev = new Map<number, number>();
+  for (const k of own) prev.set(k, -1);
+  const queue = [...own];
+  let goal = -1;
+  for (let q = 0; q < queue.length && goal < 0; q++) {
+    const k = queue[q];
+    const i = Math.floor(k / SIZE) - HALF, j = (k % SIZE) - HALF;
+    for (const d of DIRS) {
+      const n = { i: i + d.i, j: j + d.j };
+      if (!inBounds(n.i, n.j)) continue;
+      const nk = cellIndex(n.i, n.j);
+      if (prev.has(nk)) continue;
+      prev.set(nk, k);
+      if (sewered(grid, n)) { goal = nk; break; }
+      queue.push(nk);
+    }
+  }
+  if (goal < 0) return 0;
+  let laid = 0;
+  for (let k = prev.get(goal)!; k >= 0 && !own.has(k); k = prev.get(k)!) {
+    if (layPipe(state, grid, { i: Math.floor(k / SIZE) - HALF, j: (k % SIZE) - HALF })) laid++;
+  }
+  return laid;
+}
 
 /** Deep cell that admits a pier, closest to `near`, preferring a shore cell that keeps a standard walkway dry. */
 export function pierSite(grid: Grid, near: Cell): Cell {
@@ -162,6 +195,25 @@ export function placeEdge(state: SimState, grid: Grid, kind: BuildingKind, near:
     if (d >= minDist && d < bd) { bd = d; best = c; }
   }
   return best ? tryPlaceClearing(state, grid, kind, best) : null;
+}
+
+/** An edge-class building on the nearest free shore site at least `minDist` from `near` whose footprint passes `ok`. */
+function placeEdgeWhere(state: SimState, grid: Grid, kind: BuildingKind, near: Cell, minDist: number, ok: (fp: Cell[]) => boolean): Building | null {
+  let best: Cell | null = null, bd = Infinity;
+  for (let i = -32; i < 32; i++) for (let j = -32; j < 32; j++) {
+    const c = { i, j };
+    if (grid.classAt(c) !== "deep") continue;
+    const fp = grid.footprint(kind, c);
+    if (!fp || !grid.canPlace(kind, fp) || !ok(fp)) continue;
+    const d = dist(c, near);
+    if (d >= minDist && d < bd) { bd = d; best = c; }
+  }
+  return best ? tryPlaceClearing(state, grid, kind, best) : null;
+}
+
+/** An edge-class building on the nearest free shore site at least `minDist` from `near` that touches the sewer (a street or pier). */
+export function placeOnSewer(state: SimState, grid: Grid, kind: BuildingKind, near: Cell, minDist = 0): Building | null {
+  return placeEdgeWhere(state, grid, kind, near, minDist, fp => fp.some(x => DIRS.some(d => sewered(grid, { i: x.i + d.i, j: x.j + d.j }))));
 }
 
 /** Another pier (a berth for shipyard boats), on the nearest free shore site to `near`. */
@@ -338,8 +390,14 @@ export function settleIsle(state: SimState, grid: Grid): { pier: Building | null
 }
 
 /** Deep cells against the shore that take a shipyard, nearest the street. */
+/** The shipyard where its hands can walk to it (against a walkway the network reaches); else the nearest site, and a street laid to it. */
 export function placeShipyard(state: SimState, grid: Grid, near: Cell): Building | null {
-  return placeEdge(state, grid, "shipyard", near);
+  const walkedTo = (fp: Cell[]) => fp.some(x => DIRS.some(d => { const b = grid.buildingAt({ i: x.i + d.i, j: x.j + d.j }); return !!b && b.reached && BUILDINGS[b.kind].network === "link"; }));
+  const at = placeEdgeWhere(state, grid, "shipyard", near, 0, walkedTo);
+  if (at) return at;
+  const yard = placeEdge(state, grid, "shipyard", near);
+  if (yard) joinByLine(state, grid, yard.cells[0], yard.cells[0]);
+  return yard;
 }
 
 /**
@@ -371,8 +429,10 @@ export function starterTown(state: SimState, grid: Grid): { pier: Building; huts
   let market = placeByWalkway(state, grid, "market", 1)[0] ?? null;
   // A narrow shore (the Fjord's ledges) may leave no 2×2 by the first walkways: grow the street until one fits.
   for (let k = 0; k < 6 && !market; k++) { if (!growStreet(state, grid, 1)) break; market = placeByWalkway(state, grid, "market", 1)[0] ?? null; }
-  // The change from the 500$ buys the outfall, so waste doesn't pile up while the town grows.
-  placeEdge(state, grid, "outfall", site, 3);
+  // The change from the 500$ buys the outfall, and a pipe from it to the street so waste doesn't back up while the
+  // town grows. (Its site is the one it always had, so the scripted towns built on this one keep their shape.)
+  const outfall = placeEdge(state, grid, "outfall", site, 3);
+  if (outfall) pipeTo(state, grid, outfall);
   return { pier, huts, market, walkways };
 }
 

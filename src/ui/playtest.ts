@@ -8,7 +8,7 @@ export const PLAYTEST_NOTES_KEY = "tidewater.playtest.notes";
 export const PLAYTEST_MINUTES = 30;
 export const PLAYTEST_VERSION = 1;
 
-export type PlaytestEventType = "place" | "remove" | "warning" | "hint" | "step" | "note";
+export type PlaytestEventType = "place" | "remove" | "upgrade" | "warning" | "hint" | "step" | "note";
 
 export interface PlaytestEvent {
   /** Seconds since the log started. */

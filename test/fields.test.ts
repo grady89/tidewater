@@ -1,7 +1,7 @@
 // The fields: pollution and fish, beaches and sharks.
 import { describe, expect, it } from "vitest";
 import { tick } from "../src/sim/tick";
-import { BEACH_MAX_HEIGHT, FISH_CAP, INJURY_NATURAL_CYCLES, OYSTER_POLLUTION_KILL, TREATMENT_RADIUS } from "../src/sim/balance";
+import { BEACH_MAX_HEIGHT, FISH_CAP, INJURY_NATURAL_CYCLES, OYSTER_POLLUTION_KILL } from "../src/sim/balance";
 
 import { injuredCount } from "../src/sim/sharks";
 
@@ -13,7 +13,8 @@ import { newGame } from "../src/sim/start";
 import { Building, buildingList, SimState } from "../src/sim/state";
 import { advanceCycles } from "../src/sim/tick";
 
-import { beachesNear, growStreet, pierByBeach, placeByWalkway, shelterHarbours, starterTown } from "./scenario";
+import { beachesNear, growStreet, pierByBeach, pipeTo, placeByWalkway, shelterHarbours, starterTown } from "./scenario";
+import { sewerMap } from "../src/sim/sewers";
 
 function town(seed = 7): { state: SimState; grid: Grid; town: ReturnType<typeof starterTown> } {
   const { state, grid } = newGame(seed);
@@ -63,7 +64,7 @@ describe("pollution and fish (M6)", () => {
     void state;
   });
 
-  it("an outfall beside an oyster bed kills it within 4 cycles; a treatment plant saves it", () => {
+  it("an outfall piped to the street beside an oyster bed kills it within 4 cycles; a treatment plant on the sewer saves it", () => {
     const run = (withPlant: boolean) => {
       const { state, grid, town: t } = town();
       state.resources.money += 3000;
@@ -81,25 +82,28 @@ describe("pollution and fish (M6)", () => {
         outfall = tryPlace(state, grid, "outfall", deep);
       }
       expect(bed && outfall).toBeTruthy();
+      pipeTo(state, grid, outfall!);
+      const map = sewerMap(grid);
+      const net = map.nets[map.net[cellIndex(outfall!.cells[0].i, outfall!.cells[0].j)]];
+      for (const h of t.huts) expect(map.drainOf.get(h.id)).toBe(net);
       if (withPlant) {
         const plant = placeByWalkway(state, grid, "treatmentPlant", 1)[0];
         expect(plant).toBeDefined();
-        for (const h of t.huts) expect(h.cells.some(c => Math.abs(c.i - plant.cells[0].i) <= TREATMENT_RADIUS && Math.abs(c.j - plant.cells[0].j) <= TREATMENT_RADIUS)).toBe(true);
-        t.pier.boats = 0; // free the hands for the plant
+        expect(sewerMap(grid).nets[sewerMap(grid).net[cellIndex(plant.cells[0].i, plant.cells[0].j)]].homes.length).toBeGreaterThan(0);
       }
       let died = -1;
       for (let cycle = 1; cycle <= 6; cycle++) {
         advanceCycles(state, grid, 1);
         if (!state.buildings[bed!.id]) { died = cycle; break; }
       }
-      return { died, peak: maxOf(state.fields.pollution), plantStaff: buildingList(state).find(b => b.kind === "treatmentPlant")?.workers ?? 0 };
+      return { died, peak: maxOf(state.fields.pollution), cleaned: buildingList(state).find(b => b.kind === "treatmentPlant")?.output ?? 0 };
     };
     const foul = run(false);
     expect(foul.peak).toBeGreaterThan(OYSTER_POLLUTION_KILL);
     expect(foul.died).toBeGreaterThan(0);
     expect(foul.died).toBeLessThanOrEqual(4);
     const clean = run(true);
-    expect(clean.plantStaff).toBeGreaterThan(0);
+    expect(clean.cleaned).toBeGreaterThan(0);
     expect(clean.died).toBe(-1);
   });
 

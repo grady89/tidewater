@@ -1116,3 +1116,46 @@ session should know that those only imply:
   a cycle crossing a bare hub and more than that once it has a warehouse).
 - **Starter towns** on the Delta, the Cinder and the Dunes net positive money over their first four cycles
   (smoke: +52$ on each coast at seed 2).
+
+## Session G (2026-09-28, with Grady): sewers, capacity, upgrades
+
+Grady's calls: sewage should be a planning puzzle, but an outfall should not have to sit on a walkway (nobody walks to
+it) and a treatment plant should not need a path; services should scale with the town, by building more of them or
+by upgrading them; old saves don't matter (playtesting, start over). CLAUDE.md §6 "Sewers" and "Upgrades" hold the
+rules; what isn't written there:
+
+- **The model is Cities: Skylines 2's**: sewers ride under the streets, a pipe carries them anywhere else. Rejected:
+  a catchment radius per outfall (no routing, so no puzzle of where the outfall goes), and pipes drawn everywhere
+  (Skylines 1: a second street network to lay before anything works).
+- **Piers, docks and the harbor carry sewer too.** With streets only, a young town's street runs inland from the
+  pier and often no shore cell stood against it for an outfall: the start needed a pipe it could barely pay for (a
+  scripted start on Tidewater seed 2 couldn't, and every home backed up). Now the cheap outfall is beside the pier,
+  where it fouls the pier's own water and the flats beside it; a pipe to somewhere down-tide costs more. That
+  trade-off is the puzzle.
+- **Treatment plants are unstaffed** (upkeep 3 → 5) so they need no street: their workers could only walk there
+  along one. The cost is four fewer jobs a plant.
+- **Cesspits replace the town-wide backlog.** A home whose waste goes nowhere loses `HAPPY.cesspit` (0.15) × the
+  share backed up at once, and seeps `CESSPIT_SEEP` of it into the pollution field at its own cell, so the harm lands
+  where the fault is. (The backlog grew 0.003 a unit up to 0.3 and hit every home the same.)
+- **Wells share their capacity nearest-first** (`services.ts` shareOut): each paints its reach as before, then gives
+  its people to the occupied homes in reach not already served by unlimited water (river, oases, great cistern),
+  nearest first; a home's cells hold the share of its people served. The well's `output` is the people served, so
+  the settlement's output reset skips it (`servesPeople`).
+- **Upgrades are the building's own `level`** (homes already had one), raised by the player; `upkeepOf` scales the
+  base upkeep 1 / 1.5 / 2; removal refunds half the base price only. Models grow with the level (the mesh signature
+  already keys on it).
+- **The Sewers overlay is not a field**: it lays tiles on the street decks (the field quads sit under the decks),
+  draws the pipes, and stands an amber marker over every home with a cesspit. It comes up on its own while the pipe
+  tools, an outfall or a treatment plant are in hand, and puts back the previous overlay after unless the player
+  changed it meanwhile.
+- **`offStreet` pieces** (outfall, treatment plant, warehouse, shark and croc nets, breakwater, sea wall) never said
+  anything true with "No street touches it" / "Not connected to a pier": the sim never read `reached` for them.
+- **Balance probe** (seeds 2 / 4 / 7; level 2 and level 3 by cycle 30, after · before): Tidewater — / 7 / 11 and
+  none · — / 8 / 11 and — / 11 / —; Delta 15 / 15 / — and 21 / 23 / — · 15 / 15 / 4 and 23 / 22 / 21; Cinder 10 / 19 /
+  22 and 21 / — / — · 11 / 11 / 22 and 19 / — / —; Dunes 10 / 12 / 11 and — / — / 17 · 10 / 11 / 10 and none; Atoll
+  unchanged; Fjord 7 / — / 12 and none · 8 / — / — and 21 / — / —. No scripted home backs up (its outfall keeps the
+  site it always had and is piped to the street: `scenario.pipeTo`); the differences are the probe's own chaos (a few
+  dollars of pipe move its next purchase a cycle), not a trend. `TRACE=<coast>` now prints each home's backed-up share.
+- **Test scenarios**: `pipeTo` joins a building to the nearest sewer the shortest way; `placeShipyard` now takes a site a
+  reached street touches (else lays one), because the production-chain test only passed while the old outfall
+  happened to fill the one site whose yard couldn't be staffed.

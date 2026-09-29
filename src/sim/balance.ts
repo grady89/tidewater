@@ -21,8 +21,8 @@ export type BuildingKind =
   | "fort";
 
 /** Service coverage layers; each building that provides one writes its staffed fraction within `radius`. */
-export type ServiceKind = "water" | "leisure" | "night" | "treatment" | "lifeguard" | "firewatch";
-export const SERVICE_KINDS: ServiceKind[] = ["water", "leisure", "night", "treatment", "lifeguard", "firewatch"];
+export type ServiceKind = "water" | "leisure" | "night" | "lifeguard" | "firewatch";
+export const SERVICE_KINDS: ServiceKind[] = ["water", "leisure", "night", "lifeguard", "firewatch"];
 export type Category = "Homes" | "Streets" | "Sea" | "Production" | "Services" | "Leisure" | "Land";
 export const CATEGORIES: Category[] = ["Homes", "Streets", "Sea", "Production", "Services", "Leisure", "Land"];
 /**
@@ -83,6 +83,8 @@ export interface BuildingDef {
   service?: { kind: ServiceKind; radius: number };
   /** Must touch a building of this kind (market squares hug the fish market). */
   touches?: BuildingKind;
+  /** Does its job with no street to it: nobody walks there (outfalls, treatment plants, nets, walls, warehouses). */
+  offStreet?: boolean;
   desc: string;
 }
 
@@ -103,7 +105,7 @@ export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
   sawmill: { name: "Sawmill", category: "Production", w: 2, d: 2, cls: "flatOrHigh", cost: { money: 180 }, workers: 3, residents: 0, upkeep: 2, floor: "ground", network: "leaf", desc: "Timber → planks" },
   smokehouse: { name: "Smokehouse", category: "Production", w: 2, d: 1, cls: "flat", cost: { money: 160 }, workers: 3, residents: 0, upkeep: 2, floor: "stilts", network: "leaf", desc: "Fish → smoked goods; fire risk" },
   netLoft: { name: "Net loft", category: "Production", w: 1, d: 1, cls: "flat", cost: { money: 90 }, workers: 0, residents: 0, upkeep: 0.5, floor: "stilts", network: "leaf", desc: "+15% catch for boats within 8" },
-  warehouse: { name: "Warehouse", category: "Production", w: 2, d: 2, cls: "flat", cost: { money: 120 }, workers: 0, residents: 0, upkeep: 1, floor: "stilts", network: "leaf", desc: "+100 storage for every good" },
+  warehouse: { name: "Warehouse", category: "Production", w: 2, d: 2, cls: "flat", cost: { money: 120 }, workers: 0, residents: 0, upkeep: 1, floor: "stilts", network: "leaf", offStreet: true, desc: "+100 storage for every good" },
   toolworks: { name: "Toolworks", category: "Production", w: 2, d: 2, cls: "flatOrHigh", cost: { money: 220, planks: 10 }, workers: 3, residents: 0, upkeep: 2, floor: "ground", network: "leaf", desc: "Burns a little iron: +20% output for producers within 8" },
   // Fjord (BIOMES.md §3.3)
   stockfishRacks: { name: "Stockfish racks", category: "Production", w: 2, d: 1, cls: "flat", cost: { money: 110 }, workers: 2, residents: 0, upkeep: 1, floor: "stilts", network: "leaf", desc: "Fish + salt → stockfish; plain dried fish at half value without salt" },
@@ -136,9 +138,9 @@ export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
   spongeDivers: { name: "Sponge divers' hut", category: "Production", w: 1, d: 1, cls: "edge", material: "lagoon", cost: { money: 70 }, workers: 2, residents: 0, upkeep: 1, floor: 1.0, network: "leaf", desc: "Sponges from the lagoon at each low water" },
   greatCistern: { name: "Great cistern", category: "Services", w: 3, d: 3, cls: "flat", cost: { money: 200 }, workers: 2, residents: 0, upkeep: 3, floor: "stilts", network: "leaf", service: { kind: "water", radius: 16 }, desc: "Water for homes within 16 (wells here reach 3); holds half through a drought" },
   dredger: { name: "Dredger", category: "Sea", w: 1, d: 1, cls: "deep", touches: "harbor", cost: { money: 220 }, workers: 2, residents: 0, upkeep: 2, floor: 1.0, network: "leaf", desc: "Beside the harbor: clears the silt a sandstorm leaves" },
-  crocNet: { name: "Croc net", category: "Sea", w: 1, d: 1, cls: "flatOrDeep", cost: { money: 20 }, workers: 0, residents: 0, upkeep: 0.1, floor: 1.0, network: "leaf", stopsPredators: true, desc: "Per water cell; crocodiles can't cross" },
-  outfall: { name: "Sewage outfall", category: "Services", w: 1, d: 1, cls: "edge", cost: { money: 40 }, workers: 0, residents: 0, upkeep: 0.5, floor: 1.0, network: "leaf", desc: "Dumps the town's waste into the sea; the tide carries it" },
-  treatmentPlant: { name: "Treatment plant", category: "Services", w: 2, d: 2, cls: "flatOrHigh", cost: { money: 350 }, workers: 4, residents: 0, upkeep: 3, floor: "ground", network: "leaf", service: { kind: "treatment", radius: 12 }, desc: "Neutralises waste from homes within 12" },
+  crocNet: { name: "Croc net", category: "Sea", w: 1, d: 1, cls: "flatOrDeep", cost: { money: 20 }, workers: 0, residents: 0, upkeep: 0.1, floor: 1.0, network: "leaf", offStreet: true, stopsPredators: true, desc: "Per water cell; crocodiles can't cross" },
+  outfall: { name: "Sewage outfall", category: "Services", w: 1, d: 1, cls: "edge", cost: { money: 40 }, workers: 0, residents: 0, upkeep: 0.5, floor: 1.0, network: "leaf", offStreet: true, desc: "Where a sewer meets the sea: set it against a street or a sewer pipe, and the tide carries off what comes out" },
+  treatmentPlant: { name: "Treatment plant", category: "Services", w: 2, d: 2, cls: "flatOrHigh", cost: { money: 350 }, workers: 0, residents: 0, upkeep: 5, floor: "ground", network: "leaf", offStreet: true, desc: "Cleans the sewage of the network it joins (by a street or a sewer pipe), up to its capacity; runs itself, no street needed" },
   well: { name: "Well", category: "Services", w: 1, d: 1, cls: "flat", cost: { money: 50 }, workers: 0, residents: 0, upkeep: 0.5, floor: "stilts", network: "leaf", service: { kind: "water", radius: 8 }, desc: "Drinking water for homes within 8" },
   bathhouse: { name: "Bathhouse", category: "Leisure", w: 2, d: 1, cls: "shore", cost: { money: 130 }, workers: 0, residents: 0, upkeep: 1.5, floor: "stilts", network: "leaf", service: { kind: "leisure", radius: 8 }, desc: "Leisure for homes within 8; on the shore" },
   tavern: { name: "Tavern", category: "Leisure", w: 2, d: 1, cls: "flat", cost: { money: 150 }, workers: 2, residents: 0, upkeep: 2, floor: "stilts", network: "leaf", service: { kind: "leisure", radius: 10 }, desc: "Leisure within 10; pours smoked goods" },
@@ -146,13 +148,13 @@ export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
   marketSquare: { name: "Market square", category: "Leisure", w: 2, d: 2, cls: "flat", touches: "market", cost: { money: 100 }, workers: 0, residents: 0, upkeep: 0.5, floor: "stilts", network: "link", service: { kind: "leisure", radius: 6 }, desc: "Leisure within 6; must touch the fish market" },
   clinic: { name: "Clinic", category: "Services", w: 2, d: 1, cls: "flat", cost: { money: 200 }, workers: 3, residents: 0, upkeep: 2, floor: "stilts", network: "leaf", desc: "Heals the injured so they can work again" },
   lifeguard: { name: "Lifeguard tower", category: "Services", w: 1, d: 1, cls: "beach", cost: { money: 90 }, workers: 1, residents: 0, upkeep: 1, floor: "ground", network: "leaf", service: { kind: "lifeguard", radius: 5 }, desc: "On a beach; shark incidents within 5 drop 80%" },
-  sharkNet: { name: "Shark net", category: "Sea", w: 1, d: 1, cls: "flatOrDeep", cost: { money: 20 }, workers: 0, residents: 0, upkeep: 0.1, floor: 1.0, network: "leaf", stopsPredators: true, desc: "Per water cell; shark risk can't cross" },
+  sharkNet: { name: "Shark net", category: "Sea", w: 1, d: 1, cls: "flatOrDeep", cost: { money: 20 }, workers: 0, residents: 0, upkeep: 0.1, floor: 1.0, network: "leaf", offStreet: true, stopsPredators: true, desc: "Per water cell; shark risk can't cross" },
   harbor: { name: "Harbor", category: "Sea", w: 3, d: 3, cls: "deep", terrain: { min: -99, max: -1.5 }, cost: { money: 600, planks: 60 }, workers: 0, residents: 0, upkeep: 6, floor: 1.0, network: "root", slots: 6, desc: "Trade ship berth; 6 boats; needs water deeper than 1.5" },
   inn: { name: "Inn", category: "Leisure", w: 2, d: 2, cls: "flat", cost: { money: 250, planks: 20 }, workers: 2, residents: 0, upkeep: 2, floor: "stilts", network: "leaf", desc: "Tourists off the trade ship stay and spend" },
   lighthouse: { name: "Lighthouse", category: "Sea", w: 1, d: 1, cls: "highOrEdge", cost: { money: 400 }, workers: 0, residents: 0, upkeep: 2, floor: "ground", network: "leaf", desc: "Boats ride out storms; the trade ship calls every 2 tides" },
   fireWatch: { name: "Fire watch", category: "Services", w: 1, d: 1, cls: "flatOrHigh", cost: { money: 120 }, workers: 2, residents: 0, upkeep: 1.5, floor: "ground", network: "leaf", service: { kind: "firewatch", radius: 8 }, desc: "Damps fire risk and puts out fires within 8" },
-  breakwater: { name: "Breakwater", category: "Sea", w: 1, d: 1, cls: "deep", cost: { money: 60, planks: 4 }, workers: 0, residents: 0, upkeep: 0.2, floor: 1.0, network: "leaf", desc: "Per cell; shelters harbours within 6 from storms and blocks the wave" },
-  seaWall: { name: "Sea wall", category: "Sea", w: 1, d: 1, cls: "shore", cost: { money: 25, timber: 3 }, workers: 0, residents: 0, upkeep: 0.1, floor: "ground", network: "leaf", desc: "Per cell on the shore (flats against the hill); shields what stands behind it from the wave" },
+  breakwater: { name: "Breakwater", category: "Sea", w: 1, d: 1, cls: "deep", cost: { money: 60, planks: 4 }, workers: 0, residents: 0, upkeep: 0.2, floor: 1.0, network: "leaf", offStreet: true, desc: "Per cell; shelters harbours within 6 from storms and blocks the wave" },
+  seaWall: { name: "Sea wall", category: "Sea", w: 1, d: 1, cls: "shore", cost: { money: 25, timber: 3 }, workers: 0, residents: 0, upkeep: 0.1, floor: "ground", network: "leaf", offStreet: true, desc: "Per cell on the shore (flats against the hill); shields what stands behind it from the wave" },
 };
 
 /** The ferry crossing between the harbor and the isle's piers, as walking distance for job assignment. */
@@ -349,6 +351,8 @@ export const HAPPY = {
   damage: 0.15,
   /** The biome's favourite luxury in stock (BIOMES.md §2). */
   favourite: 0.05,
+  /** A home whose waste goes nowhere (no sewer, or a sewer with no way out): a cesspit, scaled by the share backed up. */
+  cesspit: 0.15,
 };
 /** Homes above this for LEVEL_UP_CYCLES cycles in a row grow a level (1..3): +1 resident per level, a nicer roof. */
 export const LEVEL_UP_HAPPINESS = 0.8;
@@ -367,14 +371,31 @@ export const POLLUTION_DIFFUSE = 0.03;
 export const POLLUTION_ADVECT = 0.05;
 export const OYSTER_POLLUTION_KILL = 0.25;
 export const OYSTER_KILL_CYCLES = 2;
-export const TREATMENT_RADIUS = 12;
 /** Pollution at home that costs a full happiness point. */
 export const POLLUTION_HAPPY_SCALE = 8;
-/** Waste with nowhere to go piles up cycle after cycle; each unit costs this much happiness, up to the cap. */
-export const WASTE_BACKLOG_PENALTY_PER_UNIT = 0.003;
-export const WASTE_BACKLOG_PENALTY_MAX = 0.3;
-/** How fast an outfall works off a backlog, in units per cycle on top of the current waste. */
-export const WASTE_BACKLOG_DRAIN = 30;
+
+// Sewers (sim/sewers.ts): every street carries one; pipes carry it anywhere else.
+/** A sewer pipe per cell: on land and the flats, and (dearer) across deep water. */
+export const SEWER_PIPE_COST = 2;
+export const SEWER_PIPE_DEEP_COST = 4;
+/** Share of a cesspit's waste that seeps into the ground at the home each cycle (the rest sits in the pit). */
+export const CESSPIT_SEEP = 0.5;
+
+/**
+ * Upgrades: a service building grows from level 1 to 3 in place, for money and planks, and each level serves
+ * more (`capacity`, in `unit`; for the fire watch it is the reach). Upkeep grows by UPGRADE_UPKEEP_STEP of the
+ * base per level. `names` are what the levels are called, where they have names of their own.
+ */
+export interface UpgradeDef { capacity: readonly [number, number, number]; unit: string; costs: readonly [Cost, Cost]; names?: readonly [string, string, string]; reach?: boolean }
+export const UPGRADES: Partial<Record<BuildingKind, UpgradeDef>> = {
+  well: { capacity: [24, 48, 80], unit: "people", costs: [{ money: 60, planks: 10 }, { money: 120, planks: 25 }], names: ["Well", "Cistern", "Water tower"] },
+  treatmentPlant: { capacity: [40, 90, 150], unit: "people", costs: [{ money: 250, planks: 25 }, { money: 450, planks: 50 }], names: ["Treatment plant", "Settling ponds", "Reed-bed works"] },
+  market: { capacity: [30, 60, 100], unit: "sold a cycle", costs: [{ money: 120, planks: 15 }, { money: 240, planks: 30 }], names: ["Fish market", "Fish hall", "Fish exchange"] },
+  clinic: { capacity: [2, 4, 7], unit: "healed a cycle", costs: [{ money: 150, planks: 15 }, { money: 300, planks: 30 }], names: ["Clinic", "Infirmary", "Hospital"] },
+  inn: { capacity: [6, 12, 20], unit: "beds", costs: [{ money: 200, planks: 20 }, { money: 400, planks: 40 }], names: ["Inn", "Guesthouse", "Grand hotel"] },
+  fireWatch: { capacity: [8, 11, 14], unit: "cells of reach", costs: [{ money: 90, planks: 10 }, { money: 180, planks: 20 }], names: ["Fire watch", "Watchtower", "Beacon tower"], reach: true },
+};
+export const UPGRADE_UPKEEP_STEP = 0.5;
 
 // Fish density (deep cells, 0..FISH_CAP)
 export const FISH_CAP = 1;

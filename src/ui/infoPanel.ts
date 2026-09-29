@@ -1,12 +1,15 @@
 // Click a building: what it is, who works there, what it made, and why it might be idle. Read-only over the sim.
-import { BUILDINGS, LEVEL_FOODS, MAX_LEVEL, ORDER_SIZE } from "../sim/balance";
+import { BUILDINGS, LEVEL_FOODS, MAX_LEVEL, ORDER_SIZE, UPGRADES } from "../sim/balance";
 import { districtOf } from "../sim/districts";
 import { foodsInStock, foreignLuxuriesInStock } from "../sim/food";
 import { GoodId, GOODS, isGood } from "../sim/goods";
 import { companyCarries, companySells, onOrder, tradeInterval } from "../sim/trade";
-import { Grid } from "../sim/grid";
+import { cellIndex, Grid } from "../sim/grid";
 import { at } from "../sim/fields";
+import { netFlow, sewerMap } from "../sim/sewers";
+import { serviceRadius } from "../sim/services";
 import { Building, SimState } from "../sim/state";
+import { costText, levelCapacity, levelName, upgradeBlocker, upgradeCost, upkeepOf } from "../sim/upgrades";
 import { jobsAt } from "../sim/workers";
 
 export class InfoPanel {
@@ -20,10 +23,18 @@ export class InfoPanel {
 
   /** Remove the selected building (phones: there is no right-click); shown only in the phone layout. */
   onRemove: (b: Building) => void = () => {};
+  /** Raise the selected building a level (sim/upgrades.ts). */
+  onUpgrade: (b: Building) => void = () => {};
+  private readonly upgrade: HTMLButtonElement;
 
   /** `onOrder` queues ORDER_SIZE of a good with the company (the harbor's purchase queue). */
   constructor(private readonly root: HTMLElement, private readonly grid: Grid, onOrder: (good: GoodId) => void = () => {}) {
-    root.innerHTML = `<div class="info-head"><h2></h2><button type="button" class="close" aria-label="Close">×</button></div><div class="info-body"></div><div class="info-orders" hidden></div><button type="button" class="remove">Remove · half the price back</button>`;
+    root.innerHTML = `<div class="info-head"><h2></h2><button type="button" class="close" aria-label="Close">×</button></div><div class="info-body"></div><div class="info-orders" hidden></div><button type="button" class="upgrade" hidden></button><button type="button" class="remove">Remove · half the price back</button>`;
+    this.upgrade = root.querySelector<HTMLButtonElement>(".upgrade")!;
+    this.upgrade.addEventListener("click", () => {
+      const b = this.selected !== null ? this.grid.state.buildings[this.selected] : null;
+      if (b && !this.upgrade.disabled) this.onUpgrade(b);
+    });
     root.querySelector<HTMLButtonElement>(".remove")!.addEventListener("click", () => {
       const b = this.selected !== null ? this.grid.state.buildings[this.selected] : null;
       if (b) this.onRemove(b);
@@ -50,7 +61,8 @@ export class InfoPanel {
   static status(b: Building): string {
     const def = BUILDINGS[b.kind];
     if (b.cut) return "Cut off by the tide";
-    if (!b.reached) return "Not connected to a pier";
+    if (b.damaged) return "Damaged: repaired when the purse allows";
+    if (!b.reached && !def.offStreet) return "Not connected to a pier";
     if (b.kind === "oysterBed" && b.stress > 0) return "Sickening in foul water";
     if (jobsAt(b) > 0 && b.workers === 0) return "Idle: no workers";
     if (def.residents > 0) return b.residents === 0 ? "Empty" : "Lived in";
@@ -64,15 +76,19 @@ export class InfoPanel {
     const b = state.buildings[this.selected];
     if (!b) { this.select(null); return; }
     const def = BUILDINGS[b.kind];
-    this.title.textContent = def.name + (def.residents > 0 ? ` · level ${b.level}` : "");
-    const rows: [string, string][] = [["Status", InfoPanel.status(b)]];
+    const up = UPGRADES[b.kind];
+    this.title.textContent = (up ? levelName(b) : def.name) + (def.residents > 0 || up ? ` · level ${b.level}` : "");
+    const rows: [string, string][] = [["Status", this.sewerStatus(b) ?? InfoPanel.status(b)]];
+    if (up) rows.push(this.capacityRow(state, b));
     if (def.residents > 0) {
       rows.push(["Residents", `${b.residents} / ${this.grid.capacityOf(b)}`]);
       rows.push(["Happiness", `${Math.round(b.happiness * 100)}%`]);
       const c = b.cells[0], cov = state.fields.coverage;
-      rows.push(["Water", at(cov.water, c) > 0 ? "yes" : "no well"]);
+      const water = at(cov.water, c);
+      rows.push(["Water", water >= 0.99 ? "yes" : water > 0 ? `${Math.round(water * 100)}% of them: the well can't keep up` : b.residents > 0 && this.wellInReach(state, b) ? "none: the wells in reach are full" : "no well"]);
       rows.push(["Leisure", at(cov.leisure, c) > 0 ? `${Math.round(at(cov.leisure, c) * 100)}%` : "none"]);
       rows.push(["Lit at night", at(cov.night, c) > 0 ? "yes" : "no"]);
+      rows.push(["Sewer", this.drainText(b)]);
       rows.push(["Pollution", at(state.fields.pollution, c).toFixed(2)]);
       // Biomes: the table decides the next level (sim/food.ts).
       const foods = foodsInStock(state), luxuries = foreignLuxuriesInStock(state);
@@ -89,7 +105,7 @@ export class InfoPanel {
     if (def.workers > 0 || (def.slots ?? 0) > 0 || b.kind === "oysterBed") rows.push(["Last cycle", b.output.toFixed(1)]);
     if (b.lantern) rows.push(["Lantern", "lit at dusk"]);
     if (def.floor === "stilts" || def.floor === "street") rows.push(["Stilts", `${Math.max(0, b.floorY - this.grid.groundUnder(b.cells)).toFixed(1)} m`]);
-    rows.push(["Upkeep", `${def.upkeep}$ / cycle`]);
+    rows.push(["Upkeep", `${+upkeepOf(b).toFixed(2)}$ / cycle`]);
     const d = districtOf(this.grid, b);
     const district = d
       ? `<div class="district"><h3>${d.name}</h3><span>${d.buildings} buildings · ${d.residents} / ${d.capacity} residents · ${d.workers} / ${d.jobs} jobs${d.boats ? ` · ${d.boats} boats` : ""}${d.residents ? ` · ${Math.round(d.happiness * 100)}% happy` : ""}</span></div>`
@@ -97,6 +113,62 @@ export class InfoPanel {
     const html = rows.map(([k, v]) => `<div class="row"><label>${k}</label><span>${v}</span></div>`).join("") + `<p class="desc">${def.desc}</p>` + district;
     if (html !== this.bodyHtml) { this.bodyHtml = html; this.body.innerHTML = html; }
     this.updateOrders(state, b);
+    this.updateUpgrade(state, b);
+  }
+
+  /** The upgrade button: the next level's name and price, greyed with the reason when it can't be paid for. */
+  private updateUpgrade(state: SimState, b: Building): void {
+    const cost = upgradeCost(b);
+    this.upgrade.hidden = !cost;
+    if (!cost) return;
+    const next = UPGRADES[b.kind]!.names?.[b.level] ?? `level ${b.level + 1}`;
+    const text = `Upgrade to ${next} · ${costText(cost)}`;
+    if (this.upgrade.textContent !== text) this.upgrade.textContent = text;
+    const why = upgradeBlocker(state, b);
+    this.upgrade.disabled = why !== null;
+    this.upgrade.title = why ?? `Serves ${UPGRADES[b.kind]!.capacity[b.level]} ${UPGRADES[b.kind]!.unit}`;
+  }
+
+  /** What the building serves at its level, and what it served last cycle where that is counted. */
+  private capacityRow(state: SimState, b: Building): [string, string] {
+    const cap = levelCapacity(b)!;
+    switch (b.kind) {
+      case "well": return ["Served last tide", `${Math.round(b.output)} of ${cap} people`];
+      case "treatmentPlant": return ["Cleaned last tide", `${Math.round(b.output)} of ${cap} people`];
+      case "market": return ["Sells up to", `${cap} a cycle`];
+      case "clinic": return ["Heals up to", `${cap} a cycle`];
+      case "inn": return ["Beds", `${cap}`];
+      case "fireWatch": return ["Reach", `${serviceRadius(state, b)} cells`];
+      default: return ["Capacity", `${cap} ${UPGRADES[b.kind]!.unit}`];
+    }
+  }
+
+  /** The sewer's two ends say what they are doing (sim/sewers.ts); null for everything else. */
+  private sewerStatus(b: Building): string | null {
+    if (b.kind !== "outfall" && b.kind !== "treatmentPlant") return null;
+    if (b.damaged) return "Damaged: repaired when the purse allows";
+    const map = sewerMap(this.grid);
+    const n = map.nets[map.net[cellIndex(b.cells[0].i, b.cells[0].j)]];
+    const f = n ? netFlow(n) : null;
+    if (!n || !n.homes.length) return "No homes drain here: set it against a street, or lay a sewer pipe to one";
+    if (b.kind === "outfall") return f!.toSea > 0 ? `Carries ${Math.round(f!.toSea)} people's waste to sea` : "Everything is cleaned before it gets here";
+    return f!.people > f!.treated ? `Full: ${Math.round(f!.people - f!.treated)} people's waste goes past untreated` : "Cleaning all the network's waste";
+  }
+
+  /** Where a home's waste goes. */
+  private drainText(b: Building): string {
+    const n = sewerMap(this.grid).drainOf.get(b.id);
+    if (!n) return "none: a cesspit (lay a sewer pipe, or build on a street)";
+    const f = netFlow(n);
+    if (f.backedUp > 0) return "backs up: its sewer has no outfall";
+    if (f.people > 0 && f.treated >= f.people) return "cleaned at a treatment plant";
+    if (f.treated > 0) return `${Math.round(f.treated / f.people * 100)}% cleaned, the rest out to sea`;
+    return "out to sea through an outfall";
+  }
+
+  /** Is a well (or any people-serving water) within reach of the home? */
+  private wellInReach(state: SimState, b: Building): boolean {
+    return Object.values(state.buildings).some(w => w.kind === "well" && !w.damaged && w.cells.some(x => b.cells.some(c => Math.max(Math.abs(c.i - x.i), Math.abs(c.j - x.j)) <= serviceRadius(state, w))));
   }
 
   /**

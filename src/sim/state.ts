@@ -50,7 +50,7 @@ export interface Building {
   progress: number;
   /** Consecutive cycles in foul water (oyster beds). */
   stress: number;
-  /** Homes grow from 1 to MAX_LEVEL. */
+  /** Homes grow from 1 to MAX_LEVEL on their own; the upgradable services (balance.UPGRADES) are raised by the player. */
   level: number;
   /** Consecutive happy cycles toward the next level (homes). */
   streak: number;
@@ -223,8 +223,8 @@ export interface SimState {
   /** Fires started so far, and buildings burnt out. */
   fires: number;
   burnt: number;
-  /** Waste with no outfall to go to, last cycle. */
-  wasteBacklog: number;
+  /** Sewer pipes (cell indices): the sewer where no street carries it (sim/sewers.ts). */
+  sewers: number[];
   /** Who is in the water this shift, per beach cell. */
   swimmers: Swimmers[];
   /** Shark incidents so far. */
@@ -275,7 +275,7 @@ export function createState(seed = 1, islandSeed = 0, biome: BiomeId = "tidewate
     fireEmitters: [],
     fires: 0,
     burnt: 0,
-    wasteBacklog: 0,
+    sewers: [],
     swimmers: [],
     incidents: 0,
     achievements: [],

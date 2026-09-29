@@ -158,8 +158,7 @@ export class MobileControls {
       if (this.armed) {
         if (this.drawing || tap) h.placement.touchEnd(p.x, p.y);
       } else if (tap) {
-        const c = h.placement.cellAt(p.x, p.y);
-        h.select(c ? h.buildingAt(c) : null);
+        h.select(h.placement.buildingUnder(p.x, p.y));
       }
     };
     canvas.addEventListener("pointerup", up);
@@ -213,15 +212,18 @@ export class MobileControls {
     if (!this.armed) return;
     const pending = p.pending;
     let note: string, ok = false, label = "Place";
+    const taking = p.tool === "clearPipe";
     if (pending === "run") {
       const n = p.line?.count ?? 0;
       ok = n > 0;
-      note = ok ? `${n} piece${n === 1 ? "" : "s"} · ${p.line!.cost}$` : "Nothing can be laid there";
-      label = ok ? `Build ${n}` : "Place";
+      const what = p.tool === "sewerPipe" || taking ? "pipe" : "piece";
+      note = ok ? `${n} ${what}${n === 1 ? "" : "s"}${taking ? "" : ` · ${p.line!.cost}$`}` : taking ? "No pipe there" : "Nothing can be laid there";
+      label = ok ? `${taking ? "Take up" : "Build"} ${n}` : "Place";
     } else if (pending === "piece") {
       ok = !p.blocker;
       note = p.blocker ?? [`${p.cost}$`, p.warn].filter(Boolean).join(" · ");
-    } else note = p.dragsLine ? "Drag along the map to lay it, or tap one spot" : "Tap the map where it goes";
+      if (taking && ok) label = "Take up";
+    } else note = taking ? "Drag along a pipe to take it up, or tap one" : p.dragsLine ? "Drag along the map to lay it, or tap one spot" : "Tap the map where it goes";
     if (this.note.textContent !== note) this.note.textContent = note;
     this.note.classList.toggle("blocked", !!pending && !ok);
     if (this.go.textContent !== label) this.go.textContent = label;

@@ -1,7 +1,8 @@
 // Bootstrap: engine, scene, the ledger, the fixed-timestep loop, and the dev/test console API.
 import { ArcRotateCamera, Color4, DefaultRenderingPipeline, Engine, Matrix, Scene, Vector3 } from "@babylonjs/core";
 import { CameraControl } from "./build/cameraControl";
-import { Placement, Tool } from "./build/placement";
+import { PIPE_TOOLS, Placement, Tool } from "./build/placement";
+import { upgradeBuilding } from "./sim/upgrades";
 import { HAZE_FAR, HAZE_NEAR, HAZE_TINT, LANES_ENABLED, SIM_TICK, SIZE, TIDE_PERIOD, TREMOR_SHAKE } from "./config";
 import { BUILDINGS, COMPANY_SLIDE_UNITS, STORM_WAVE_AMP, WAVE_WIDTH } from "./sim/balance";
 import { districtOf } from "./sim/districts";
@@ -622,6 +623,19 @@ const mobile: MobileControls | null = phoneMode()
   })
   : null;
 info.onRemove = b => placement.remove(b.cells[0]);
+info.onUpgrade = b => { if (upgradeBuilding(state, b)) playtest.record("upgrade", state.tide.cycle, state.resources.money, `${b.kind} to level ${b.level} at ${b.cells[0].i},${b.cells[0].j}`); };
+/** A sewer tool in hand (laying pipe, or an outfall or treatment plant) shows the Sewers overlay until it is put down. */
+let sewerView: { was: OverlayKind | null } | null = null;
+function syncSewerView(): void {
+  const tool = mobile && !mobile.armed ? null : placement.tool;
+  const on = tool !== null && (PIPE_TOOLS.has(tool) || tool === "outfall" || tool === "treatmentPlant") && document.body.dataset.mode === "island";
+  if (on && !sewerView) { sewerView = { was: overlays.kind }; overlays.show("sewer"); hud.markOverlay("sewer"); }
+  else if (!on && sewerView) {
+    // Put back what was showing, unless the player picked another overlay meanwhile.
+    if (overlays.kind === "sewer") { overlays.show(sewerView.was); hud.markOverlay(sewerView.was); }
+    sewerView = null;
+  }
+}
 
 window.addEventListener("keydown", e => {
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || dialogOpen()) return;
@@ -711,9 +725,10 @@ function syncView(): void {
   water.update(viewTime, camera.position, state.tide.level);
   cameraControl.leftDrag = mobile ? !mobile.drawing : !placement.dragsLine;
   mobile?.update();
+  syncSewerView();
   hud.update({ tool: placement.tool, blocker: placement.blocker, warn: placement.warn, line: placement.line, lift: placement.liftable ? placement.lift : null, rotatable: placement.rotatable, stilt: placement.stilt, cost: placement.cost, fate: placement.fate, state });
   info.update(state);
-  tutorial.update(state);
+  tutorial.update(state, grid);
   hud.highlight(tutorial.current);
   if (playtest.enabled) {
     playtest.hint(hud.lastHint.text, hud.lastHint.isDefault, state.tide.cycle, state.resources.money);
@@ -778,6 +793,7 @@ const api = {
   bootMs: 0,
   setOverlay(kind: OverlayKind | null) {
     overlays.show(kind);
+    hud.markOverlay(kind);
   },
   /** Place (and pay for) a building; "boat" buys a boat at the pier under (i, j). Null when blocked. */
   /** Place the tool at (i, j); `rot` is a quarter turn for buildings (omit to face the street). */
@@ -787,6 +803,11 @@ const api = {
   },
   remove(i: number, j: number) {
     placement.remove({ i, j });
+  },
+  /** Raise the building at (i, j) a level (sim/upgrades.ts); false when it can't. */
+  upgrade(i: number, j: number) {
+    const b = grid.buildingAt({ i, j });
+    return !!b && upgradeBuilding(state, b);
   },
   /** Open the info panel on the building at (i, j), or close it. */
   select(i: number, j: number) {

@@ -8,7 +8,7 @@ import {
   POLLUTION_HAPPY_SCALE, FOOD_PRICE, PURCHASABLE_BOATS, SAWMILL_RATE, SHIPYARD_BOAT_COST,
   SHIPYARD_CYCLES, SMOKEHOUSE_RATE, SPRING_LOW_BONUS, TAX_PER_RESIDENT, TIMBER_PER_TREE, TOOLWORKS_BONUS, TOOLWORKS_IRON_PER_CYCLE, TOOLWORKS_RADIUS, WAREHOUSE_CAP,
   COCONUT_PER_TREE, COCONUT_RADIUS, PEARL_RADIUS, PEARLS_PER_SHIFT, ICE_HOUSE_CAP_FACTOR, IRON_PER_CYCLE, SALT_PER_STOCKFISH, STOCKFISH_RATE, STOCKFISH_UNSALTED, WHALE_MEAT_PER_CYCLE, WHALE_OIL_PER_CYCLE,
-  WASTE_BACKLOG_PENALTY_MAX, WASTE_BACKLOG_PENALTY_PER_UNIT, mayTurn } from "./balance";
+  mayTurn } from "./balance";
 import { at } from "./fields";
 import { active, damageNear, fireSources, repairDamage, rollIgnitions } from "./fire";
 import { biomeFor, BiomeId, costOf } from "./biomes";
@@ -22,7 +22,9 @@ import { Grid } from "./grid";
 import { moveMoney } from "./money";
 import { depleteGround, fishAt, pollutionAt, routeWaste, settleFields } from "./pollution";
 import { chooseGround } from "./sea";
-import { announceLevel, rebuildCoverage } from "./services";
+import { announceLevel, rebuildCoverage, servesPeople } from "./services";
+import { backedUpShares } from "./sewers";
+import { levelCapacity, upkeepOf } from "./upgrades";
 import { healInjuries, sharkSources } from "./sharks";
 import { settleTrade } from "./trade";
 import { Building, buildingList, Cell, notify, Phase, population, SimState } from "./state";
@@ -298,18 +300,18 @@ function dist(a: Building, b: Building): number {
   return Math.hypot(a.cells[0].i - b.cells[0].i, a.cells[0].j - b.cells[0].j);
 }
 
-/** The happiness formula (balance.HAPPY). Injury and damage terms arrive with M8 and M10. */
-export function homeHappiness(state: SimState, home: Building, fed: number, jobs: number, grid: Grid): number {
+/** The happiness formula (balance.HAPPY). `backedUp` is the share of the home's waste its sewer can't take (sim/sewers.ts). */
+export function homeHappiness(state: SimState, home: Building, fed: number, jobs: number, grid: Grid, backedUp = 0): number {
   const c = home.cells[0];
   const cov = state.fields.coverage;
   const foul = Math.min(1, pollutionAt(state, c) / POLLUTION_HAPPY_SCALE);
-  const backlog = Math.min(WASTE_BACKLOG_PENALTY_MAX, state.wasteBacklog * WASTE_BACKLOG_PENALTY_PER_UNIT);
+  const cesspit = HAPPY.cesspit * backedUp;
   const injury = home.shock > 0 || home.injured > 0 ? HAPPY.injury : 0;
   const damage = home.damaged || damageNear(grid, c, DAMAGE_GRIEF_RADIUS) ? HAPPY.damage : 0;
   const favourite = favouriteInStock(state) ? HAPPY.favourite : 0;
   const biome = (biomeFor(state).happiness?.(state) ?? 0) + (biomeFor(state).homeHappiness?.(state, grid, home) ?? 0);
   const h = HAPPY.base + HAPPY.fed * fed + HAPPY.jobs * jobs + HAPPY.water * at(cov.water, c) + HAPPY.leisure * at(cov.leisure, c)
-    + HAPPY.night * at(cov.night, c) + favourite + biome - HAPPY.pollution * foul - backlog - injury - damage;
+    + HAPPY.night * at(cov.night, c) + favourite + biome - HAPPY.pollution * foul - cesspit - injury - damage;
   return Math.max(0, Math.min(1, h));
 }
 const DAMAGE_GRIEF_RADIUS = 3;
@@ -327,6 +329,7 @@ export function settleCycle(state: SimState, grid: Grid, opts: { quiet?: boolean
   // Residents eat first (across every food kind in stock), pay tax, and judge their lot. The variety on the
   // table at the start of the meal is what the house levels read.
   const variety = foodsInStock(state).length;
+  const backed = backedUpShares(state, grid);
   let pop = 0, happySum = 0, houses = 0, level3 = 0;
   for (const b of buildings) {
     if (BUILDINGS[b.kind].residents === 0) continue;
@@ -336,7 +339,7 @@ export function settleCycle(state: SimState, grid: Grid, opts: { quiet?: boolean
     const ate = eat(state, need);
     const fed = need > 0 ? ate / need : 1;
     const jobs = b.reached ? employed(state, b) / Math.max(1, b.residents - b.injured) : 0;
-    b.happiness = homeHappiness(state, b, fed, jobs, grid);
+    b.happiness = homeHappiness(state, b, fed, jobs, grid, backed.get(b.id) ?? 0);
     happySum += b.happiness; houses++;
     // Growth: a run of good cycles adds a storey, once the table is varied enough for it (sim/food.ts).
     if (b.happiness >= LEVEL_UP_HAPPINESS) b.streak++; else b.streak = 0;
@@ -351,10 +354,10 @@ export function settleCycle(state: SimState, grid: Grid, opts: { quiet?: boolean
   // first kinds first); producers' per-cycle output counters reset here.
   const reserve = (pop + IMMIGRANTS_PER_CYCLE) * FOOD_PER_CYCLE * FOOD_RESERVE_CYCLES;
   for (const b of buildings) {
-    if (b.kind !== "market") { if (BUILDINGS[b.kind].residents === 0) b.output = 0; continue; }
+    if (b.kind !== "market") { if (BUILDINGS[b.kind].residents === 0 && !servesPeople(b.kind)) b.output = 0; continue; }
     b.output = 0;
     if (!active(b)) continue;
-    let capacity = MARKET_SELL_PER_CYCLE * staffing(b);
+    let capacity = (levelCapacity(b) ?? MARKET_SELL_PER_CYCLE) * staffing(b);
     let keep = reserve;
     for (const g of FOODS) {
       const sold = Math.max(0, Math.min(r[g] - keep, capacity));
@@ -376,7 +379,7 @@ export function settleCycle(state: SimState, grid: Grid, opts: { quiet?: boolean
   produce(state, grid, buildings);
   regrowTrees(state);
   settleFields(state, grid);
-  routeWaste(state);
+  routeWaste(state, grid);
   state.sharkEmitters = sharkSources(state);
   state.fireEmitters = fireSources(state);
   if (!opts.quiet) rollIgnitions(state);
@@ -385,7 +388,7 @@ export function settleCycle(state: SimState, grid: Grid, opts: { quiet?: boolean
 
   // Upkeep, then the loan out of what is left of the cycle's earnings (never out of the purse).
   let upkeep = 0;
-  for (const b of buildings) upkeep += BUILDINGS[b.kind].upkeep;
+  for (const b of buildings) upkeep += upkeepOf(b);
   stats.expenses += upkeep;
   stats.expenses += repayLoan(state, stats.income - upkeep);
   moveMoney(state, stats.income - stats.expenses, "settlement");

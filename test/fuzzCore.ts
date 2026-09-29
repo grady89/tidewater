@@ -3,7 +3,7 @@
 // the page. The action stream comes from its own RNG (the ledger keeps its own), so a seed always replays the
 // same session; the last actions before a failure are the repro.
 import { SIM_TICK } from "../src/config";
-import { BuildingKind, BUILDINGS, FISH_CAP, GoodKind, LIFT_MAX, MAX_LEVEL } from "../src/sim/balance";
+import { BuildingKind, BUILDINGS, FISH_CAP, GoodKind, LIFT_MAX, MAX_LEVEL, UPGRADES } from "../src/sim/balance";
 import { addCapped, buyBoat, capFor, isHarbour, removeBuilding, tryPlace } from "../src/sim/economy";
 import { startStorm, startTsunami } from "../src/sim/events";
 import { BiomeId, chartedBiomes, tideScaleOf } from "../src/sim/biomes";
@@ -24,7 +24,9 @@ import { companyCarries, orderGood } from "../src/sim/trade";
 import { jobsAt } from "../src/sim/workers";
 import { neighboursOf, readLedger, settleWorldNow, WorldLedger, WorldSettlement } from "../src/sim/lanes";
 import { readSector, Store, writeSector } from "../src/sim/sectors";
-import { placeHarbor, starterTown } from "./scenario";
+import { layPipe, removePipe } from "../src/sim/sewers";
+import { upgradeBuilding } from "../src/sim/upgrades";
+import { pipeTo, placeHarbor, starterTown } from "./scenario";
 
 export interface Failure {
   seed: number;
@@ -69,10 +71,11 @@ function rng(seed: number): () => number {
   };
 }
 
-type Action = "place" | "remove" | "boat" | "loan" | "planks" | "storm" | "tsunami" | "fire" | "landfill" | "plant" | "clear" | "lantern" | "saveLoad" | "speed" | "grant";
+type Action = "place" | "remove" | "boat" | "loan" | "planks" | "storm" | "tsunami" | "fire" | "landfill" | "plant" | "clear" | "lantern" | "saveLoad" | "speed" | "grant" | "pipe" | "unpipe" | "upgrade";
 const WEIGHTS: [Action, number][] = [
   ["place", 40], ["remove", 8], ["boat", 6], ["loan", 3], ["planks", 3], ["storm", 2], ["tsunami", 1], ["fire", 2],
   ["landfill", 3], ["plant", 3], ["clear", 2], ["lantern", 3], ["saveLoad", 3], ["speed", 2], ["grant", 2],
+  ["pipe", 4], ["unpipe", 1], ["upgrade", 3],
 ];
 const TOTAL_WEIGHT = WEIGHTS.reduce((n, [, w]) => n + w, 0);
 
@@ -170,6 +173,7 @@ export function checkInvariants(state: SimState, grid: Grid, ledger: Ledger): st
     if (!grid.terrainOk(b.kind, b.cells)) out.push(`${b.kind} #${b.id} stands outside its terrain window`);
     if (!fin(b.floorY) || b.floorY < grid.groundUnder(b.cells) - 1e-6) out.push(`${b.kind} #${b.id} floor ${b.floorY} under the ground`);
     if (b.level < 1 || b.level > MAX_LEVEL) out.push(`${b.kind} #${b.id} level ${b.level}`);
+    if (b.level > 1 && BUILDINGS[b.kind].residents === 0 && !UPGRADES[b.kind]) out.push(`${b.kind} #${b.id} has no levels but is at ${b.level}`);
     if (b.residents < 0 || b.residents > grid.capacityOf(b)) out.push(`${b.kind} #${b.id} residents ${b.residents} of ${grid.capacityOf(b)}`);
     if (b.injured < 0 || b.injured > b.residents) out.push(`${b.kind} #${b.id} injured ${b.injured} of ${b.residents}`);
     if (b.boats < 0 || b.boats > (BUILDINGS[b.kind].slots ?? 0)) out.push(`${b.kind} #${b.id} boats ${b.boats} of ${BUILDINGS[b.kind].slots ?? 0}`);
@@ -179,6 +183,13 @@ export function checkInvariants(state: SimState, grid: Grid, ledger: Ledger): st
     if (b.rot < 0 || b.rot > 3) out.push(`${b.kind} #${b.id} rot ${b.rot}`);
   }
   if (state.nextId <= maxId) out.push(`nextId ${state.nextId} ≤ highest id ${maxId}`);
+  // 6b. Sewer pipes: each a cell on the map, listed once, and the grid's index agrees with the ledger's list.
+  const pipes = new Set(state.sewers);
+  if (pipes.size !== state.sewers.length) out.push(`sewer pipes listed twice (${state.sewers.length} entries, ${pipes.size} cells)`);
+  for (const k of state.sewers) if (!(k >= 0 && k < 64 * 64) || grid.pipes[k] !== 1) { out.push(`sewer pipe ${k} off the map or not in the grid's index`); break; }
+  let indexed = 0;
+  for (let k = 0; k < grid.pipes.length; k++) indexed += grid.pipes[k];
+  if (indexed !== pipes.size) out.push(`grid indexes ${indexed} pipes, the ledger lists ${pipes.size}`);
   // 7. Fields within their range. Fire risk is the one field that is not a fraction: the game's own rule is that
   // a cluster ignites once its risk climbs past FIRE_IGNITE_THRESHOLD (1.0), so it is only held to finite and ≥ 0.
   const f = state.fields;
@@ -285,6 +296,27 @@ export function runSeed(seed: number, cycles: number, onProgress?: (cycle: numbe
         break;
       }
       case "speed": speed = pick([1, 2, 4]); note(`speed ${speed}`); break;
+      case "pipe": {
+        // Half the time join an outfall or a plant to the street, as a player would; else a pipe somewhere near town.
+        const ends = buildingList(state).filter(b => b.kind === "outfall" || b.kind === "treatmentPlant");
+        if (ends.length && rand() < 0.5) { const b = pick(ends); note(`pipe from ${b.kind} #${b.id} → ${pipeTo(state, grid, b)} laid`); }
+        else { const c = nearTown(); note(`pipe ${c.i},${c.j} → ${layPipe(state, grid, c)}`); }
+        break;
+      }
+      case "unpipe": {
+        if (!state.sewers.length) break;
+        const k = pick(state.sewers);
+        const c = { i: Math.floor(k / 64) - HALF, j: (k % 64) - HALF };
+        note(`take up pipe ${c.i},${c.j} → ${removePipe(grid, c)}`);
+        break;
+      }
+      case "upgrade": {
+        const bs = buildingList(state).filter(b => UPGRADES[b.kind]);
+        if (!bs.length) break;
+        const b = pick(bs);
+        note(`upgrade ${b.kind} #${b.id} (level ${b.level}) → ${upgradeBuilding(state, b)}`);
+        break;
+      }
       case "grant": {
         moveMoney(state, 500, "grant");
         const g = pick(GOODS);

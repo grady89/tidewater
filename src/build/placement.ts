@@ -14,17 +14,22 @@ import { ground as groundHeight } from "../view/ground";
 import { addLandfill, clearBlocker, clearTree, landfillBlocker, plantBlocker, plantTree } from "../sim/land";
 import { MATERIAL_LABEL, UNBUILDABLE } from "../sim/materials";
 import { addLantern, lanternBlocker } from "../sim/services";
+import { layPipe, pipeBlocker, pipeCost, removePipe, sewered } from "../sim/sewers";
 import { Building, Cell } from "../sim/state";
 import { floodFate } from "../sim/tide";
 
-export type Tool = BuildingKind | "boat" | "lanternPost" | "landfill" | "plantTree" | "clearTree";
-const SPECIAL: ReadonlySet<Tool> = new Set<Tool>(["boat", "lanternPost", "landfill", "plantTree", "clearTree"]);
+export type Tool = BuildingKind | "boat" | "lanternPost" | "landfill" | "plantTree" | "clearTree" | "sewerPipe" | "clearPipe";
+const SPECIAL: ReadonlySet<Tool> = new Set<Tool>(["boat", "lanternPost", "landfill", "plantTree", "clearTree", "sewerPipe", "clearPipe"]);
+/** The two sewer tools: lay pipe, take it up. Both are dragged in runs like a street, over any ground. */
+export const PIPE_TOOLS: ReadonlySet<Tool> = new Set<Tool>(["sewerPipe", "clearPipe"]);
 export function isBuildingTool(t: Tool): t is BuildingKind { return !SPECIAL.has(t); }
 export type Fate = "safe" | "spring" | "always";
 
 const CLICK_SLOP_PX = 5;
+/** How far above its deck a building counts as hit by a tap (roofs, towers). */
+const PICK_HEIGHT = 1.6;
 /** Per-cell pieces that are laid in runs: drag from one cell to another and the whole line goes down. */
-const LINE_TOOLS: ReadonlySet<Tool> = new Set<Tool>(LINE_KINDS);
+const LINE_TOOLS: ReadonlySet<Tool> = new Set<Tool>([...LINE_KINDS, ...PIPE_TOOLS]);
 /** Buildings on land turn with R (streets, and everything in the water, keep their one orientation). */
 const ROTATABLE = ROTATABLE_CLASSES;
 /** Where the door is for each quarter turn: −z, −x, +z, +x. */
@@ -188,6 +193,7 @@ export class Placement {
   /** Height of the plane the pointer is picked against: the deck the tool would build. */
   private pickY(): number {
     const t = this.grid.tides;
+    if (PIPE_TOOLS.has(this.tool)) return this.grid.state.tide.level;
     if (this.tool === "boat" || this.tool === "lanternPost") return t.pierFloor;
     if (this.tool === "landfill") return t.hi;
     if (!isBuildingTool(this.tool)) return t.groundFloor;
@@ -200,7 +206,7 @@ export class Placement {
 
   /** Tools that can go on the hill are picked against the terrain itself. */
   private picksTerrain(): boolean {
-    if (this.tool === "plantTree" || this.tool === "clearTree") return true;
+    if (this.tool === "plantTree" || this.tool === "clearTree" || PIPE_TOOLS.has(this.tool)) return true;
     if (!isBuildingTool(this.tool)) return false;
     const cls = BUILDINGS[this.tool].cls;
     return cls === "high" || cls === "flatOrHigh" || cls === "street";
@@ -259,6 +265,8 @@ export class Placement {
     if (this.tool === "landfill") return { cells: [anchor], blocker: landfillBlocker(state, this.grid, anchor), warn: null, fate: "safe", y: this.grid.tides.landfillHeight + 0.03, stilt: 0, cost: LANDFILL_COST.money, rot: 0 };
     if (this.tool === "plantTree") return { cells: [anchor], blocker: plantBlocker(state, this.grid, anchor), warn: null, fate: "safe", y: this.grid.heightAt(anchor) + 0.05, stilt: 0, cost: PLANT_COST, rot: 0 };
     if (this.tool === "clearTree") return { cells: [anchor], blocker: clearBlocker(state, this.grid, anchor), warn: null, fate: "safe", y: this.grid.heightAt(anchor) + 0.05, stilt: 0, cost: 0, rot: 0 };
+    if (this.tool === "sewerPipe") return { cells: [anchor], blocker: pipeBlocker(state, this.grid, anchor), warn: null, fate: "safe", y: this.pipeY(anchor), stilt: 0, cost: inBounds(anchor.i, anchor.j) ? pipeCost(this.grid, anchor) : 0, rot: 0 };
+    if (this.tool === "clearPipe") return { cells: [anchor], blocker: this.grid.hasPipe(anchor) ? null : "No pipe here", warn: null, fate: "safe", y: this.pipeY(anchor), stilt: 0, cost: 0, rot: 0 };
     const kind = this.tool;
     const def = BUILDINGS[kind];
     const cells = this.grid.footprint(kind, anchor, this.turns ?? 0);
@@ -283,11 +291,19 @@ export class Placement {
     if (def.touches && !this.grid.touchesKind(cells, def.touches)) return no(`Must touch the ${BUILDINGS[def.touches].name.toLowerCase()}`);
     if (!canAfford(state, placeCost(kind, stilt, state.world.biome))) return no(`Costs ${costLabel(kind, stilt, state.world.biome)}`);
     // Placeable. Caution when nothing it touches is on the network: it would stand idle until a street reaches it.
+    // Pieces that need no street say nothing of one; the sewer's ends say whether a sewer reaches them.
     let warn: string | null = null;
-    if (def.network !== "root" && !cells.some(c => this.grid.neighbors(c).some(n => { const b = this.grid.buildingAt(n); return !!b && (b.reached || BUILDINGS[b.kind].network === "root"); }))) {
+    if (def.offStreet) {
+      if ((kind === "outfall" || kind === "treatmentPlant") && !cells.some(c => this.grid.hasPipe(c) || this.grid.neighbors(c).some(n => sewered(this.grid, n)))) warn = "Not on a sewer yet: set it against a street, or lay a sewer pipe to it";
+    } else if (def.network !== "root" && !cells.some(c => this.grid.neighbors(c).some(n => { const b = this.grid.buildingAt(n); return !!b && (b.reached || BUILDINGS[b.kind].network === "root"); }))) {
       warn = def.network === "link" ? "Not joined to the town yet: a street starts at a pier, dock or harbor and runs to here without a gap" : "No street touches it: nobody can reach it";
     }
     return { cells, blocker: null, warn, fate: floodFate(y, this.grid.tides), y, stilt, cost, rot };
+  }
+
+  /** Where a pipe's ghost sits: on the ground, or on the water over it. */
+  private pipeY(c: Cell): number {
+    return inBounds(c.i, c.j) ? Math.max(groundHeight(c.i + 0.5, c.j + 0.5), this.grid.state.tide.level) + 0.06 : this.pickY();
   }
 
   /** The blue door tab on the side the building will face. */
@@ -325,6 +341,7 @@ export class Placement {
    * a walkway — one drag, one street). Null where nothing fits.
    */
   private lineKindAt(c: Cell): BuildingKind | null {
+    if (PIPE_TOOLS.has(this.tool)) return null;
     const kind = this.tool as BuildingKind;
     if (this.fitsKind(kind, c)) return kind;
     const other = kind === "walkway" ? "path" : kind === "path" ? "walkway" : null;
@@ -333,7 +350,16 @@ export class Placement {
 
   /** Whether one cell of the current line tool can be laid at `c` (class, occupancy, the isle's ferry). */
   private lineFits(c: Cell): boolean {
+    // A pipe run goes anywhere on the map; the cells it can't take (a street already sewered, the lava) are skipped.
+    if (PIPE_TOOLS.has(this.tool)) return inBounds(c.i, c.j);
     return this.lineKindAt(c) !== null;
+  }
+
+  /** What a pipe run does in this cell: lay (or take up) a pipe, pass over it, or nothing it can do. */
+  private pipeAt(c: Cell): "do" | "pass" | "bad" {
+    if (this.tool === "clearPipe") return this.grid.hasPipe(c) ? "do" : "pass";
+    if (sewered(this.grid, c)) return "pass";
+    return pipeBlocker(this.grid.state, this.grid, c, false) ? "bad" : "do";
   }
 
   /** The nearest cell within `r` of `c` where `kind` can stand, `c` itself first (a pier click lands beside the spot). */
@@ -352,6 +378,8 @@ export class Placement {
 
   /** What laying the current line tool at `c` would cost (its own stilts against the ground; Infinity where nothing fits). */
   private lineCostAt(c: Cell): number {
+    // Pipes route along sewer already down where they can: it costs nothing to follow.
+    if (PIPE_TOOLS.has(this.tool)) return this.tool === "sewerPipe" && this.pipeAt(c) === "do" ? pipeCost(this.grid, c) : 1;
     const k = this.lineKindAt(c);
     if (!k) return Infinity;
     const cells = this.grid.footprint(k, c)!;
@@ -395,6 +423,17 @@ export class Placement {
 
   /** The cells of the run being dragged, with what each would cost; blocked cells are skipped, not fatal. */
   private evaluateLine(): { cells: Cell[]; ok: boolean[]; cost: number } {
+    if (PIPE_TOOLS.has(this.tool)) {
+      let cost = 0;
+      const cells: Cell[] = [], ok: boolean[] = [];
+      for (const c of this.linePath) {
+        const what = this.pipeAt(c);
+        if (what === "pass") continue; // sewer already there (or no pipe to take up): no ghost
+        cells.push(c); ok.push(what === "do");
+        if (what === "do" && this.tool === "sewerPipe") cost += pipeCost(this.grid, c);
+      }
+      return { cells, ok, cost };
+    }
     const kind = this.tool as BuildingKind;
     let cost = 0;
     const ok = this.linePath.map(c => {
@@ -410,6 +449,15 @@ export class Placement {
 
   /** Lay the dragged run in order, so each deck meets the one before; stop when the money runs out. */
   private placeLine(): void {
+    if (PIPE_TOOLS.has(this.tool)) {
+      const state = this.grid.state;
+      for (const c of this.linePath) if (this.tool === "sewerPipe" ? layPipe(state, this.grid, c) : removePipe(this.grid, c)) this.landChanged = true;
+      this.linePath = [];
+      this.line = null;
+      this.onSelect(null);
+      this.refresh();
+      return;
+    }
     const kind = this.tool as BuildingKind;
     for (const c of this.linePath) {
       const before = this.grid.state.resources.money;
@@ -428,6 +476,7 @@ export class Placement {
     this.line = { count: ok.filter(Boolean).length, cost };
     const okM: number[] = [], badM: number[] = [];
     cells.forEach((c, k) => {
+      if (PIPE_TOOLS.has(this.tool)) { Matrix.Compose(new Vector3(0.5, 1.5, 0.5), Quaternion.Identity(), new Vector3(c.i + 0.5, this.pipeY(c), c.j + 0.5)).copyToArray(ok[k] ? okM : badM, (ok[k] ? okM : badM).length); return; }
       // A ground piece's ghost stands on the rendered ground as a low block: a slab sinks into the slope.
       const kindAt = this.lineKindAt(c) ?? (this.tool as BuildingKind);
       const onGround = ok[k] && BUILDINGS[kindAt].floor === "terrain";
@@ -475,17 +524,20 @@ export class Placement {
       const axis = this.lineAxis ?? undefined;
       // A drag begun on ground the run cannot take, beside a street (the flats at the foot of the hill, where a
       // path cannot go), leaves from that street, so the run joins it.
-      const from = this.grid.buildingAt(start) ?? (this.lineFits(start) ? null : this.streetBeside(start));
-      const to = this.grid.buildingAt(end);
+      const pipes = PIPE_TOOLS.has(this.tool);
+      const from = pipes ? null : this.grid.buildingAt(start) ?? (this.lineFits(start) ? null : this.streetBeside(start));
+      const to = pipes ? null : this.grid.buildingAt(end);
       const kind = this.tool as BuildingKind;
-      const step = (p: Cell, q: Cell) => this.grid.stepOk(this.lineKindAt(p) ?? kind, p, this.lineKindAt(q) ?? kind, q);
+      const step = pipes ? undefined : (p: Cell, q: Cell) => this.grid.stepOk(this.lineKindAt(p) ?? kind, p, this.lineKindAt(q) ?? kind, q);
       const body = routePath(start, end, c => this.lineFits(c), MAX_LINE, { cost: c => this.lineCostAt(c), axis, step, startCells: from?.cells, goalCells: to?.cells })
         ?? linePath(start, end, axis).slice(1);
       this.linePath = (this.lineFits(start) ? [start, ...body] : body).slice(0, MAX_LINE);
       this.showLine();
       this.blocker = null; this.warn = null;
       const laid = this.line && this.line.count > 0;
-      this.setTag(laid ? `${this.line!.count} × ${BUILDINGS[this.tool as BuildingKind].name.toLowerCase()} · ${this.line!.cost}$` : "Nothing can be laid here", laid ? "ok" : "blocked", { x: this.hover.i + 0.5, y: this.pickY(), z: this.hover.j + 0.5 });
+      const what = this.tool === "sewerPipe" ? "sewer pipe" : this.tool === "clearPipe" ? "pipe taken up" : BUILDINGS[this.tool as BuildingKind].name.toLowerCase();
+      const none = this.tool === "clearPipe" ? "No pipe to take up here" : this.tool === "sewerPipe" ? "Sewer runs here already" : "Nothing can be laid here";
+      this.setTag(laid ? `${this.line!.count} × ${what}${this.tool === "clearPipe" ? "" : ` · ${this.line!.cost}$`}` : none, laid ? "ok" : "blocked", { x: this.hover.i + 0.5, y: PIPE_TOOLS.has(this.tool) ? this.pipeY(this.hover) : this.pickY(), z: this.hover.j + 0.5 });
       return;
     }
     this.lineGhosts.ok.setEnabled(false); this.lineGhosts.bad.setEnabled(false);
@@ -522,6 +574,7 @@ export class Placement {
   /** Left click: place if possible, otherwise inspect whatever is there. */
   private click(): void {
     if (!this.hover) return;
+    if (PIPE_TOOLS.has(this.tool)) { this.place(); this.onSelect(null); return; } // pipes go under buildings: a click lays, it doesn't inspect
     const existing = this.grid.buildingAt(this.hover);
     const placed = this.place();
     if (placed) { this.onSelect(null); return; }
@@ -531,6 +584,25 @@ export class Placement {
   /** The cell under a screen point (canvas pixels), picked as the current tool picks. */
   cellAt(x: number, y: number): Cell | null {
     return this.pickCell(x, y);
+  }
+
+  /**
+   * The building under a screen point (canvas pixels): the first one the eye ray passes through, deck to roof, before
+   * it meets the ground or the water. A tap on a tall piece on stilts selects it, not the street behind.
+   */
+  buildingUnder(x: number, y: number): Building | null {
+    const ray = this.scene.createPickingRay(x, y, Matrix.Identity(), this.camera);
+    const o = ray.origin, d = ray.direction;
+    const water = this.grid.state.tide.level;
+    for (let t = 0.5; t < 250; t += 0.1) {
+      const px = o.x + d.x * t, py = o.y + d.y * t, pz = o.z + d.z * t;
+      if (Math.abs(px) >= HALF || Math.abs(pz) >= HALF) { if (d.y >= 0 || py < -2) return null; continue; }
+      const c = worldToCell(px, pz);
+      const b = this.grid.buildingAt(c);
+      if (b && py <= b.floorY + PICK_HEIGHT && py >= b.floorY - 0.4) return b;
+      if (py < Math.max(groundHeight(px, pz), water)) return b;
+    }
+    return null;
   }
 
   /** A finger went down (touch mode): a street tool starts a run there. */
@@ -610,6 +682,10 @@ export class Placement {
       if (plantTree(state, this.grid, anchor)) this.landChanged = true;
     } else if (this.tool === "clearTree") {
       if (clearTree(state, this.grid, anchor)) this.landChanged = true;
+    } else if (this.tool === "sewerPipe") {
+      if (layPipe(state, this.grid, anchor)) this.landChanged = true;
+    } else if (this.tool === "clearPipe") {
+      if (removePipe(this.grid, anchor)) this.landChanged = true;
     } else {
       result = tryPlace(state, this.grid, this.tool, anchor, this.toolLift, rot === undefined ? this.turns : rot);
     }
@@ -620,6 +696,8 @@ export class Placement {
 
   remove(at: Cell | null = this.hover): void {
     if (!at) return;
+    // With a sewer tool in hand, a right-click takes up the pipe in the cell rather than the building over it.
+    if (PIPE_TOOLS.has(this.tool) && this.grid.hasPipe(at)) { removePipe(this.grid, at); this.refresh(); return; }
     const b = this.grid.buildingAt(at);
     if (!b) return;
     const refund = removeBuilding(this.grid.state, this.grid, b);
