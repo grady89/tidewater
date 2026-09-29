@@ -165,6 +165,7 @@ function adopt(next: SimState): void {
   syncGround();
   views.clear();
   walkers.clear();
+  boats.clear();
   info.select(null);
   achievements.adopt(state);
   syncView();
@@ -708,7 +709,7 @@ function syncView(): void {
   views.sync(state, light.lamp);
   trees.sync(state, stormMix);
   overlays.sync(state);
-  boats.sync(state, viewTime);
+  boats.sync(state, viewTime, walkers.visits(viewTime));
   ferry.sync(state, viewTime, crossCommuters(state, grid));
   walkers.sync(state, viewTime, ferry.riders());
   effects.sync(state, grid, viewTime);
@@ -887,6 +888,8 @@ const api = {
   view: {
     boats: () => boats.poses,
     walkers: () => walkers.count,
+    /** Every walker drawn now: where, and waiting, climbing, walking or standing. */
+    walkerProbe: () => walkers.probe(viewTime),
     swimmers: () => walkers.swimmerCount(state),
     fins: () => effects.finCount,
     ship: () => ship.pose,

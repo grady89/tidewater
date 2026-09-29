@@ -1,11 +1,16 @@
 // Boats as thin instances: hulls (per-instance colour) and sails (one draw call each). Positions are a pure
-// function of sim state and view time: moored at their harbour, heeled on the mud when the water is gone, or
-// along the deep-water path to the harbour's ground while the sim says they're at sea. View only.
+// function of sim state and view time: moored at their harbour, heeled on the mud when the water is gone, or on a
+// trip while the sim says they're at sea. A trip is one continuous track per boat: out along its own lane of the
+// deep-water route to its own spot on the harbour's ground, a hold there with the net out (drifting, swinging on
+// the net), a U-turn, and home along the other lane. Boats of one harbour spread across the ground and leave a
+// little apart, so no two share a line. The hull always points along its motion. View only.
 import { Color4, Matrix, Mesh, MeshBuilder, Quaternion, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
 import { BUILDINGS } from "../sim/balance";
 import { cellCenter, Grid, worldToCell } from "../sim/grid";
 import { ground as groundHeight } from "./ground";
-import { seaPath } from "../sim/sea";
+import { seaEntry, seaPath } from "../sim/sea";
+import { SIZE } from "../config";
+import { Visit, VISIT_SAIL } from "./walkers";
 import { Building, Cell, SimState } from "../sim/state";
 import { phaseProgress } from "../sim/tide";
 import { flatMaterial, mergeFlat, tint } from "../world/flatMesh";
@@ -15,7 +20,14 @@ import { BiomeLook, BoatKit } from "./biomes";
 
 const DRAFT = 0.12;
 const HEEL = 0.42; // radians, resting on the mud
-const OUT = 0.3, BACK = 0.7; // trip fractions: leaving, fishing, returning
+/** Trip fractions of the working phase: out until OUT, the net out until BACK, then a U-turn lasting TURN and home. */
+const OUT = 0.27, BACK = 0.58, TURN = 0.08;
+/** Half the gap between a route's outbound and homebound lanes (the U-turn's radius) for the first boat, the step
+ *  wider for each boat after it, and the spread of boats across the ground. */
+const LANE = 0.45, LANE_STEP = 0.3, LANE_MAX = 1.35, SPREAD = 1.2;
+/** Each boat after the first leaves (and turns for home) this much later, a fraction of the phase; a big fleet shares
+ *  at most STAGGER_TOTAL between them, so the last is still home by the end of the phase. */
+const STAGGER = 0.035, STAGGER_TOTAL = 0.12;
 
 export interface BoatPose { x: number; z: number; atSea: boolean; moored: boolean; fishing?: boolean }
 
@@ -35,13 +47,48 @@ function smooth(points: Vector3[]): Vector3[] {
   return pts;
 }
 
-/** The point a fraction `s` (0–1) along a polyline, by segment index. */
-function pointAt(path: Vector3[], s: number): { x: number; z: number } {
-  const idx = s * (path.length - 1);
-  const i0 = Math.min(path.length - 2, Math.max(0, Math.floor(idx))), f = idx - i0;
-  const a = path[i0], b = path[i0 + 1];
+/** A polyline with its running length, so a boat moves along it at an even speed. */
+interface Track { pts: Vector3[]; cum: number[]; len: number }
+function track(pts: Vector3[]): Track {
+  const cum = [0];
+  for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z));
+  return { pts, cum, len: cum[cum.length - 1] };
+}
+/** The point `d` along a track (clamped to its ends). */
+function along(t: Track, d: number): { x: number; z: number } {
+  if (t.pts.length === 1 || d <= 0) return { x: t.pts[0].x, z: t.pts[0].z };
+  if (d >= t.len) { const p = t.pts[t.pts.length - 1]; return { x: p.x, z: p.z }; }
+  let i = 1;
+  while (i < t.cum.length - 1 && t.cum[i] < d) i++;
+  const a = t.pts[i - 1], b = t.pts[i], f = (d - t.cum[i - 1]) / Math.max(1e-6, t.cum[i] - t.cum[i - 1]);
   return { x: a.x + (b.x - a.x) * f, z: a.z + (b.z - a.z) * f };
 }
+/** The travel heading (atan2(dx, dz)) at `d` along a track, from a short look either side. */
+function headingAt(t: Track, d: number): number {
+  const a = along(t, Math.max(0, d - 0.12)), b = along(t, Math.min(t.len, d + 0.12));
+  return Math.atan2(b.x - a.x, b.z - a.z);
+}
+const easeInOut = (u: number) => u * u * (3 - 2 * u);
+const clamp01 = (u: number) => Math.min(1, Math.max(0, u));
+
+/**
+ * A lane of a route: every point pushed `off` to the left of the direction of travel, easing in from nothing over
+ * 1.5 units at the mooring's end (the start going out, the end coming home) so the lane still meets the mooring.
+ */
+function lane(pts: Vector3[], off: number, mooringAtEnd: boolean): Vector3[] {
+  const run = [0];
+  for (let i = 1; i < pts.length; i++) run.push(run[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z));
+  const total = run[run.length - 1];
+  return pts.map((p, i) => {
+    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+    const dx = b.x - a.x, dz = b.z - a.z, l = Math.hypot(dx, dz) || 1;
+    const k = off * easeInOut(clamp01((mooringAtEnd ? total - run[i] : run[i]) / 1.5));
+    return new Vector3(p.x - (dz / l) * k, 0, p.z + (dx / l) * k);
+  });
+}
+
+/** One boat's trip: its lanes out and home, the U-turn between them, and where it holds with the net out. */
+interface Trip { out: Track; turn: Track; back: Track; hold: { x: number; z: number; heading: number } }
 
 interface Instance { pos: Vector3; yaw: number; roll: number; color: Color4 }
 
@@ -52,6 +99,9 @@ export class Boats {
   private readonly scene: Scene;
   private kit: BoatKit = "dory";
   private readonly paths = new Map<string, Vector3[]>();
+  private readonly trips = new Map<string, Trip>();
+  /** A visiting boat's way in from open water to where it lies alongside, per landing and spot. */
+  private readonly approaches = new Map<string, Track | null>();
   private matrices = new Float32Array(0);
   private colors = new Float32Array(0);
   private sailMatrices = new Float32Array(0);
@@ -256,6 +306,43 @@ export class Boats {
     return p;
   }
 
+  /**
+   * Boat `k` of `n` at harbour `h`, from its mooring `m` to the ground: the route smoothed, its end moved across to
+   * the boat's own spot, the outbound lane on one side, a U-turn round the spot, the homebound lane on the other.
+   */
+  private tripFor(h: Building, ground: Cell, route: Vector3[], k: number, n: number, m: { x: number; z: number }): Trip {
+    const key = `${h.id}:${ground.i},${ground.j}:${k}/${n}:${m.x.toFixed(2)},${m.z.toFixed(2)}`;
+    let trip = this.trips.get(key);
+    if (trip) return trip;
+    const base = smooth([new Vector3(m.x, 0, m.z), ...route]);
+    const end = base[base.length - 1], prev = base[Math.max(0, base.length - 2)];
+    let dx = end.x - prev.x, dz = end.z - prev.z;
+    const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
+    // Spread the boats across the ground, perpendicular to the way in; the last stretch bends over to the spot.
+    const spread = (k - (n - 1) / 2) * SPREAD;
+    const reach = Math.min(base.length - 1, 6);
+    const pts = base.map((p, i) => {
+      const w = i < base.length - reach ? 0 : easeInOut((i - (base.length - reach)) / Math.max(1, reach - 1));
+      return new Vector3(p.x - dz * spread * w, 0, p.z + dx * spread * w);
+    });
+    // Each boat keeps its own pair of lanes, a little wider than the boat before it.
+    const width = Math.min(LANE_MAX, LANE + k * LANE_STEP);
+    const out = lane(pts, width, false);
+    const back = lane(pts.slice().reverse(), width, true);
+    // The U-turn: from the outbound lane's end round the far side of the spot to the homebound lane's start.
+    const o = out[out.length - 1], bk = back[0];
+    const turn: Vector3[] = [];
+    for (let q = 0; q <= 10; q++) {
+      const th = (q / 10) * Math.PI;
+      // Lerp across the lanes on a half-circle bulging forward (dx, dz) past the spot.
+      const lx = o.x + (bk.x - o.x) * (1 - Math.cos(th)) / 2, lz = o.z + (bk.z - o.z) * (1 - Math.cos(th)) / 2;
+      turn.push(new Vector3(lx + dx * width * Math.sin(th), 0, lz + dz * width * Math.sin(th)));
+    }
+    trip = { out: track(out), turn: track(turn), back: track(back), hold: { x: o.x, z: o.z, heading: Math.atan2(dx, dz) } };
+    this.trips.set(key, trip);
+    return trip;
+  }
+
   /** Mooring positions alongside the harbour's deck, skipping cells something else stands on (a walkway laid
    *  beside a pier, say), so no boat is ever parked inside a deck. */
   private moorings(h: Building): { x: number; z: number; yaw: number }[] {
@@ -296,7 +383,7 @@ export class Boats {
     return out;
   }
 
-  sync(state: SimState, viewTime: number): void {
+  sync(state: SimState, viewTime: number, visits: Visit[] = []): void {
     const level = state.tide.level;
     const instances: Instance[] = [];
     const poses: BoatPose[] = [];
@@ -313,30 +400,42 @@ export class Boats {
         // sails through the deck. The route is smoothed so the boat rounds corners on an arc, and the hull
         // always points along its own motion: a boat moves along its keel, never sideways.
         const m0 = moorings[k % moorings.length];
-        const path = route && route.length > 0 ? smooth([new Vector3(m0.x, 0, m0.z), ...route]) : null;
-        if (path && path.length > 1) {
-          let s: number, drift = 0;
-          if (u < OUT) s = u / OUT;
-          else if (u < BACK) { s = 1; drift = (u - OUT) / (BACK - OUT); }
-          else s = 1 - (u - BACK) / (1 - BACK);
-          const outbound = u < BACK;
-          const at = pointAt(path, s);
-          // Heading from a short look along the path in the direction of travel.
-          const ahead = pointAt(path, Math.min(1, Math.max(0, s + (outbound ? 0.02 : -0.02))));
-          let dx = ahead.x - at.x, dz = ahead.z - at.z;
-          if (Math.hypot(dx, dz) < 1e-4) { const back = pointAt(path, Math.min(1, Math.max(0, s - (outbound ? 0.02 : -0.02)))); dx = at.x - back.x; dz = at.z - back.z; }
-          const heading = Math.atan2(dx, dz);
-          const side = (k - (h.boats - 1) / 2) * 0.7;
-          const px = at.x + Math.cos(heading) * side + Math.sin(drift * Math.PI * 2 + k) * 0.6 * (s === 1 ? 1 : 0);
-          const pz = at.z - Math.sin(heading) * side + Math.cos(drift * Math.PI * 2 + k) * 0.6 * (s === 1 ? 1 : 0);
+        if (route && route.length > 0) {
+          const trip = this.tripFor(h, h.ground!, route, k, h.boats, m0);
+          const lag = k * Math.min(STAGGER, STAGGER_TOTAL / Math.max(1, h.boats - 1));
+          const turnAt = BACK + lag;
+          let x: number, z: number, heading: number, fishing = false;
+          if (u < OUT) {
+            // Out along the outbound lane, easing away from the mooring and slowing onto the spot.
+            const d = trip.out.len * easeInOut(clamp01((u - lag) / (OUT - lag)));
+            ({ x, z } = along(trip.out, d));
+            heading = headingAt(trip.out, d);
+          } else if (u < turnAt) {
+            // The net is out: the boat lies on its spot, drifting a little ahead and back and swinging on the net.
+            const t = (u - OUT) / (turnAt - OUT);
+            const drift = 0.3 * Math.sin(Math.PI * t);
+            x = trip.hold.x + Math.sin(trip.hold.heading) * drift;
+            z = trip.hold.z + Math.cos(trip.hold.heading) * drift;
+            heading = trip.hold.heading + 0.18 * Math.sin(Math.PI * 2 * t);
+            fishing = true;
+          } else if (u < turnAt + TURN) {
+            const d = trip.turn.len * easeInOut((u - turnAt) / TURN);
+            ({ x, z } = along(trip.turn, d));
+            heading = headingAt(trip.turn, d);
+          } else {
+            // Home along the other lane, done a moment before the phase ends so it's moored when the sim says so.
+            const d = trip.back.len * easeInOut(clamp01((u - turnAt - TURN) / (0.98 - turnAt - TURN)));
+            ({ x, z } = along(trip.back, d));
+            heading = headingAt(trip.back, d);
+          }
           // The hull's bow is +x, so the yaw that puts +x onto the travel direction is heading − π/2.
-          const yaw = heading - Math.PI / 2 + (s === 1 ? drift * Math.PI * 2 : 0);
-          instances.push({ pos: new Vector3(px, level + waveHeight(px, pz, viewTime) - DRAFT * 0.3, pz), yaw, roll: 0.04 * Math.sin(viewTime * 1.3 + k), color });
-          poses.push({ x: px, z: pz, atSea: true, moored: false, fishing: s === 1 });
-          if (s === 1) {
+          const yaw = heading - Math.PI / 2;
+          instances.push({ pos: new Vector3(x, level + waveHeight(x, z, viewTime) - DRAFT * 0.3, z), yaw, roll: 0.04 * Math.sin(viewTime * 1.3 + k), color });
+          poses.push({ x, z, atSea: true, moored: false, fishing });
+          if (fishing) {
             // On the ground: the net is out — a line of floats trails off the quarter, bobbing.
             for (let f = 0; f < 4; f++) {
-              const fx = px - Math.cos(yaw) * (0.45 + f * 0.28) + Math.sin(yaw) * 0.25, fz = pz + Math.sin(yaw) * (0.45 + f * 0.28) + Math.cos(yaw) * 0.25;
+              const fx = x - Math.cos(yaw) * (0.45 + f * 0.28) + Math.sin(yaw) * 0.25, fz = z + Math.sin(yaw) * (0.45 + f * 0.28) + Math.cos(yaw) * 0.25;
               floats.push(new Vector3(fx, level + waveHeight(fx, fz, viewTime) + 0.02 + 0.02 * Math.sin(viewTime * 2.5 + f), fz));
             }
           }
@@ -351,6 +450,23 @@ export class Boats {
         }
       }
     }
+    // Visiting boats: in from open water, alongside the landing while the newcomers climb off, then away again.
+    visits.forEach((v, n) => {
+      const port = state.buildings[v.port];
+      const way = port ? this.approachFor(port, v) : null;
+      if (!way) return;
+      const t = viewTime - v.at;
+      // It stops with its bow at the deck's edge, where the newcomers climb off.
+      const berth = Math.max(0, way.len - 0.55);
+      let d: number;
+      if (t < VISIT_SAIL) d = berth * (1 - Math.pow(1 - t / VISIT_SAIL, 2));
+      else if (t < VISIT_SAIL + v.stay) d = berth;
+      else d = berth * (1 - Math.pow(Math.min(1, (t - VISIT_SAIL - v.stay) / VISIT_SAIL), 2));
+      const { x, z } = along(way, d);
+      const leaving = t >= VISIT_SAIL + v.stay;
+      const heading = headingAt(way, d) + (leaving ? Math.PI : 0);
+      instances.push({ pos: new Vector3(x, level + waveHeight(x, z, viewTime) - DRAFT * 0.3, z), yaw: heading - Math.PI / 2, roll: 0.04 * Math.sin(viewTime * 1.2 + n), color: Color4.FromHexString(PALETTE.hulls[3]) });
+    });
     this.poses = poses;
     this.write(instances);
     if (floats.length === 0) this.floats.setEnabled(false);
@@ -360,6 +476,24 @@ export class Boats {
       this.floats.thinInstanceSetBuffer("matrix", m, 16, false);
       this.floats.setEnabled(true);
     }
+  }
+
+  /** Another sea: its harbours and grounds share ids and cells with the last one's, so the routes start over. */
+  clear(): void {
+    this.paths.clear();
+    this.trips.clear();
+    this.approaches.clear();
+  }
+
+  /** From the open-water edge of the map to the spot beside the landing where the newcomers climb off. */
+  private approachFor(port: Building, v: Visit): Track | null {
+    const key = `${port.id}:${v.x.toFixed(2)},${v.z.toFixed(2)}`;
+    if (this.approaches.has(key)) return this.approaches.get(key)!;
+    const entry = seaEntry(this.grid, port);
+    const cells = entry ? seaPath(this.grid, port, entry, SIZE * 2).filter(c => !port.cells.some(h => h.i === c.i && h.j === c.j)) : [];
+    const t = cells.length ? track(smooth([...cells.slice().reverse().map(c => { const { x, z } = cellCenter(c); return new Vector3(x, 0, z); }), new Vector3(v.x, 0, v.z)])) : null;
+    this.approaches.set(key, t);
+    return t;
   }
 
   private write(instances: Instance[]): void {

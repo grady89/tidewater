@@ -1166,3 +1166,14 @@ rules; what isn't written there:
   works this cycle and `held` (when more) who keep the job without working it (injured, or the tide cut the way), so
   every reader of `n` (walkers, the HUD's "at work", ferry riders) was right as it was. Grady floated splitting a
   market's two workers between it and a new building; not done: a building never gives up a worker it has.
+- **Movement** (Grady: boats "go a little out and spin in circles"; people "appear out of thin air", "sink into the
+  dock", "walk in circles", arrive with "nothing indicating it"). The causes were all in the view: a fishing boat
+  orbited a 0.6-unit circle and turned 360° on the spot, jumping sideways into and out of it, and every boat of a
+  harbour shared one path and one spot; a walker stood visible on the walkway next to its start before setting off,
+  shrank from the feet at the end of a walk home (read as sinking into the deck), orbited its post at work, and was
+  deleted and respawned inside the workplace at every shift end; the height between two decks was a straight line
+  through the stair; newcomers had no walker at all. Now: boats keep their own lanes, hold with the net out and U-turn
+  (a probe at 4× measured at most 0.33 units and 51° between 60 ms samples); walks go door to door with a probe
+  (`api.view.walkerProbe()`) confirming every appearance is at a door or a deck's far edge; a visiting boat brings
+  newcomers. `test/_move.mjs` and `test/_arrive.mjs` (scratch) are the harnesses. Swimmers still appear at the start of
+  a high water and go at its end.

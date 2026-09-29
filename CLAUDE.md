@@ -169,7 +169,7 @@ Leisure & tourism
 ## 7. People
 
 - Population lives in houses. New residents move in at the start of each cycle when: connected housing is free, town
-  happiness ≥ `IMMIGRATION_HAPPINESS`, and food stock > 0. Arrive by trade ship if a harbor exists, otherwise walk in from the largest pier.
+  happiness ≥ `IMMIGRATION_HAPPINESS`, and food stock > 0. In the view a small visiting boat brings them from open water to the town's landing (the harbor, else the pier with the most berths); they climb off it with a bundle each and walk to their doors.
 - Jobs: each production/service building has a worker count. Jobs are kept: a resident who holds a job stays in it
   (`state.assignments` carry over each cycle), so a workplace built nearer never takes anyone from another; it hires only
   free hands. A job is lost only when its home or workplace goes, the home has fewer people or the workplace fewer jobs
@@ -181,11 +181,18 @@ Leisure & tourism
 - Happiness (per house, averaged for town): food, water coverage, job within reach, pollution at home, lantern/night
   coverage, leisure coverage, injuries and fires nearby, damaged buildings nearby. Formula in `balance.ts`.
 - Injuries: shark incidents and fires injure residents; clinic heals over cycles; uninjured residents work.
-- View: each worker has a home cell and a work cell. At shift change, spawn a walker that follows the graph path
-  (precomputed BFS, cached per pair) and despawns on arrival. Cap live walkers at `MAX_WALKERS` (200); beyond that, sample.
+- View: each worker has a home cell and a work cell. Every walk goes door to door over the walkway graph: at a shift
+  start a walker comes out of the home's door (hidden inside until it passes the wall) and stands still at the
+  workplace's door for the shift; when the shift ends the same figure walks home from that spot and goes in at the
+  door. Nobody appears or vanishes in the open: only at a door, or climbing onto or off a deck's far edge from a boat.
+  Walks climb the stairs where decks meet at different heights. Porters carry the catch from the landing boats to the
+  market's counter and walk back. Cap live walkers at `MAX_WALKERS` (200); beyond that, sample.
   Walkers are thin instances of one 3-primitive figure (body box, head sphere, hat cone) with per-instance color.
   Idle walkers loiter on market square and beach. Swimmers are walkers bobbing on the water at beach cells at high water.
-  Kids (small walkers) appear near houses at level 2+.
+  Kids (small walkers) play on the street in front of houses at level 2+.
+- Boats (view): a trip is one track per boat — out along its own lane of the deep-water route to its own spot on the
+  harbour's ground, a hold there with the net out (drifting and swinging on it), a U-turn, and home along the other
+  lane. Boats of one harbour spread across the ground, keep lanes a little apart and leave a little apart.
 
 ## 8. Fields and the tide's effect on them
 
