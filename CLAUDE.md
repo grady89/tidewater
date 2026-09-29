@@ -233,7 +233,7 @@ Leisure & tourism
 - Click a building: info panel (workers filled/needed, output last cycle, status: working / idle: no workers / cut / damaged / polluted;
   a home's sewer; a service's capacity and the Upgrade button). Pieces that need no street (outfalls, treatment
   plants, nets, walls, warehouses: `offStreet`) never warn that no street reaches them.
-- Overlays toggle: pollution, fish density, shark risk, fire risk, sewers.
+- Overlays toggle: pollution, fish density, shark risk, fire risk, happiness, water coverage, sewers (happiness and water coverage not built yet).
 - Notifications feed (immigrants arrived, oyster bed died, shark incident, boat lost, storm coming, the sea is pulling back).
 - Speed: pause / 1× / 2× / 4×. Time is game time; the tide period is in game seconds.
 - Quality presets (`ui/settings.ts`): High / Medium (no water reflections) / Low (no bloom, reflections, caustics or
